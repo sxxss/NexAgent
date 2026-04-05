@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+
+# uv
+uv.lock
+.uv-cache/
+
+# Node.js
+node_modules/
+.next/
+out/
+.pnpm-store/
+pnpm-lock.yaml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+.env.*.local
+config.yaml
+
+# Docker
+.deer-flow/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.pytest-basetemp/
+.pytest-tmp/
+.tmp/
+pytest_tmp/
+.test-artifacts/
+test-artifacts/
+
+# NexAgent local runtime data
+.nexagent/
+
+# Build
+*.so
+*.dylib
