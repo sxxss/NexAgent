@@ -1,0 +1,75 @@
+# NexAgent configuration template.
+# Copy this file to config.yaml and adjust it for your environment.
+
+debug: false
+default_model: qwen2.5-7b
+
+models:
+  - name: qwen2.5-7b
+    display_name: Qwen2.5 7B
+    provider: openai
+    model: Qwen/Qwen2.5-7B-Instruct
+    api_key: $SILICONFLOW_API_KEY
+    base_url: https://api.siliconflow.cn/v1
+
+  - name: deepseek-v3
+    display_name: DeepSeek V3
+    provider: openai
+    model: deepseek-ai/DeepSeek-V3
+    api_key: $SILICONFLOW_API_KEY
+    base_url: https://api.siliconflow.cn/v1
+
+  # Standard OpenAI example:
+  # - name: gpt-4o-mini
+  #   display_name: GPT-4o mini
+  #   provider: openai
+  #   model: gpt-4o-mini
+  #   api_key: $OPENAI_API_KEY
+
+knowledge:
+  milvus_host: localhost
+  milvus_port: 19530
+  neo4j_uri: bolt://localhost:7687
+  neo4j_user: neo4j
+  neo4j_password: $NEO4J_PASSWORD
+  embedding:
+    model: BAAI/bge-large-zh-v1.5
+    base_url: https://api.siliconflow.cn/v1
+    api_key: $SILICONFLOW_API_KEY
+    dimension: 1024
+
+web_search:
+  provider: auto
+  preferred_provider: duckduckgo
+  enabled_providers:
+    - duckduckgo
+  max_results: 5
+  fetch_max_chars: 12000
+  providers:
+    duckduckgo:
+      enabled: true
+    tavily:
+      enabled: false
+      # api_key: $TAVILY_API_KEY
+    brave:
+      enabled: false
+      # api_key: $BRAVE_SEARCH_API_KEY
+    serpapi:
+      enabled: false
+      # api_key: $SERPAPI_API_KEY
+    bing:
+      enabled: false
+      # api_key: $BING_SEARCH_API_KEY
+    exa:
+      enabled: false
+      # api_key: $EXA_API_KEY
+    searxng:
+      enabled: false
+      # base_url: http://localhost:8080
+
+mcp_servers: []
+
+sandbox:
+  enabled: true
+  timeout_seconds: 30
+  max_output_chars: 8000
