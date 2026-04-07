@@ -1,0 +1,48 @@
+name: Bug report
+description: Report a reproducible NexAgent problem.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What broke, and what did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Include commands, pages, API calls, or prompt flow.
+      placeholder: |
+        1. Run ...
+        2. Open ...
+        3. Send ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python, Node.js, browser, Docker, model provider, and relevant config.
+      placeholder: |
+        OS:
+        Python:
+        Node:
+        Docker:
+        Model provider:
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Doctor output
+      description: Paste non-secret output from scripts/doctor.ps1 if relevant.
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Paste relevant logs with secrets removed.
+      render: text
