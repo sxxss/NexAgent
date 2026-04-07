@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest a product, agent, knowledge, integration, or developer-experience improvement.
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem should NexAgent solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the expected behavior, UI, API, or workflow.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Agent runtime
+        - Frontend workbench
+        - Knowledge base
+        - Knowledge graph
+        - Skills
+        - MCP
+        - Sandbox
+        - Memory
+        - Evaluation
+        - Deployment
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional. Mention related projects, current workarounds, or tradeoffs.
