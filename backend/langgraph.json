@@ -1,0 +1,6 @@
+{
+    "graphs": {
+        "nexagent": "./packages/core/nexagent/agents/base.py:BaseAgent"
+    },
+    "env": ".env"
+}

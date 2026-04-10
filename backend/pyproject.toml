@@ -1,0 +1,37 @@
+[project]
+name = "nexagent"
+version = "0.1.0"
+description = "Knowledge-enhanced AI Agent platform — RAG + Knowledge Graph + Agent Orchestration"
+readme = "../README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "nexagent-core",
+    "fastapi>=0.115.0",
+    "httpx>=0.28.0",
+    "python-multipart>=0.0.26",
+    "sse-starlette>=2.1.0",
+    "uvicorn[standard]>=0.34.0",
+    "python-dotenv>=1.1.0",
+    "langgraph-sdk>=0.1.51",
+    "pymilvus>=2.6,<2.7",
+]
+
+[dependency-groups]
+dev = ["pytest>=9.0.3", "pytest-asyncio>=0.24.0", "ruff>=0.14.0"]
+
+[tool.uv.workspace]
+members = ["packages/core"]
+
+[tool.uv.sources]
+nexagent-core = { workspace = true }
+
+[tool.ruff]
+line-length = 120
+lint.select = ["F", "E", "W", "UP", "I"]
+
+[tool.pytest.ini_options]
+addopts = "-v --tb=short -p no:cacheprovider"
+testpaths = ["tests"]
+pythonpath = [".", "packages/core"]
+asyncio_mode = "auto"
+cache_dir = ".pytest-cache-local"
