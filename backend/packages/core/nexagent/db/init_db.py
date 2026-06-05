@@ -184,7 +184,11 @@ async def _run_lightweight_migrations(conn) -> None:
     ]
     for sql in migrations:
         try:
-            await conn.execute(text(sql))
+            # Wrap each statement in a SAVEPOINT so an expected "already exists"
+            # error (e.g. on a fresh PostgreSQL schema) only rolls back this one
+            # statement instead of aborting the whole create_all transaction.
+            async with conn.begin_nested():
+                await conn.execute(text(sql))
         except Exception as exc:
             message = str(exc).lower()
             if "duplicate column" not in message and "already exists" not in message:
