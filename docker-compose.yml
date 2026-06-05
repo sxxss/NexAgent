@@ -25,12 +25,7 @@ services:
       dockerfile: backend/Dockerfile
       target: dev
     container_name: nexagent-gateway
-    command: >
-      sh -c "pip install -e /app/backend/packages/core --quiet &&
-             cd /app/backend &&
-             python -m uvicorn app.gateway.app:app
-               --host 0.0.0.0 --port 8001
-               --reload --reload-dir /app/backend"
+    command: sh -c "pip install -e /app/backend/packages/core --quiet && cd /app/backend && python -m uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001 --reload --reload-dir /app/backend"
     volumes:
       # Mount source code so edits on host are reflected instantly (hot-reload)
       - ./backend:/app/backend
@@ -261,6 +256,7 @@ services:
     command: sh -c "npm install --silent && npm run dev -- --hostname 0.0.0.0"
     volumes:
       - ./frontend:/app/frontend
+      - /app/frontend/node_modules
     ports:
       - "3000:3000"
     environment:
