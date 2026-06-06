@@ -119,26 +119,44 @@ class WebSearchConfig:
 
 @dataclass
 class SpeechConfig:
-    """Voice (ASR / TTS) configuration.
+    """Voice (ASR / TTS) configuration — self-contained, independent of providers.
 
-    ``*_provider_id`` references a row in the DB ``model_providers`` table for the
-    base URL + API key. When empty, the speech service falls back to the default
-    chat provider so SiliconFlow works out of the box. Endpoints are
-    OpenAI-compatible (``/audio/transcriptions`` and ``/audio/speech``).
+    Each engine has its own ``base_url`` + ``api_key``. When both are empty, the
+    speech service falls back to the default chat provider so SiliconFlow works
+    out of the box. Endpoints are OpenAI-compatible (``/audio/transcriptions``
+    and ``/audio/speech``).
     """
 
     asr_enabled: bool = True
-    asr_provider_id: str = ""
+    asr_base_url: str = ""
+    asr_api_key: str = ""
     asr_model: str = "FunAudioLLM/SenseVoiceSmall"
     asr_language: str = ""  # empty = auto-detect
 
     tts_enabled: bool = True
-    tts_provider_id: str = ""
+    tts_base_url: str = ""
+    tts_api_key: str = ""
     tts_model: str = "FunAudioLLM/CosyVoice2-0.5B"
     tts_voice: str = "FunAudioLLM/CosyVoice2-0.5B:alex"
     tts_format: str = "mp3"
     tts_sample_rate: int = 32000
     tts_speed: float = 1.0
+
+
+@dataclass
+class ImageConfig:
+    """Image generation configuration — self-contained, independent of providers.
+
+    Calls the OpenAI-compatible ``/images/generations`` endpoint. When
+    ``base_url`` / ``api_key`` are empty, falls back to a provider that declares
+    the image capability.
+    """
+
+    enabled: bool = True
+    base_url: str = ""
+    api_key: str = ""
+    model: str = "Kwai-Kolors/Kolors"
+    size: str = "1024x1024"
 
 
 @dataclass
@@ -211,6 +229,7 @@ class AppConfig:
     knowledge: KnowledgeConfig = field(default_factory=KnowledgeConfig)
     web_search: WebSearchConfig = field(default_factory=WebSearchConfig)
     speech: SpeechConfig = field(default_factory=SpeechConfig)
+    image: ImageConfig = field(default_factory=ImageConfig)
     mcp_servers: list[MCPServerConfig] = field(default_factory=list)
     sandbox: SandboxConfig = field(default_factory=SandboxConfig)
     tracing: TracingConfig = field(default_factory=TracingConfig)
@@ -636,16 +655,27 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
     tts_raw = speech_raw.get("tts", {}) if isinstance(speech_raw.get("tts"), dict) else {}
     speech = SpeechConfig(
         asr_enabled=_as_bool(asr_raw.get("enabled", True)),
-        asr_provider_id=str(asr_raw.get("provider_id", "") or ""),
+        asr_base_url=str(asr_raw.get("base_url", "") or ""),
+        asr_api_key=str(asr_raw.get("api_key", "") or ""),
         asr_model=str(asr_raw.get("model", SpeechConfig().asr_model)),
         asr_language=str(asr_raw.get("language", "") or ""),
         tts_enabled=_as_bool(tts_raw.get("enabled", True)),
-        tts_provider_id=str(tts_raw.get("provider_id", "") or ""),
+        tts_base_url=str(tts_raw.get("base_url", "") or ""),
+        tts_api_key=str(tts_raw.get("api_key", "") or ""),
         tts_model=str(tts_raw.get("model", SpeechConfig().tts_model)),
         tts_voice=str(tts_raw.get("voice", SpeechConfig().tts_voice)),
         tts_format=str(tts_raw.get("format", "mp3") or "mp3"),
         tts_sample_rate=int(tts_raw.get("sample_rate", 32000) or 32000),
         tts_speed=float(tts_raw.get("speed", 1.0) or 1.0),
+    )
+
+    image_raw = raw.get("image", {}) if isinstance(raw.get("image"), dict) else {}
+    image = ImageConfig(
+        enabled=_as_bool(image_raw.get("enabled", True)),
+        base_url=str(image_raw.get("base_url", "") or ""),
+        api_key=str(image_raw.get("api_key", "") or ""),
+        model=str(image_raw.get("model", ImageConfig().model)),
+        size=str(image_raw.get("size", "1024x1024") or "1024x1024"),
     )
 
     # Parse MCP servers
@@ -702,6 +732,7 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
         knowledge=knowledge,
         web_search=web_search,
         speech=speech,
+        image=image,
         mcp_servers=mcp_servers,
         sandbox=sandbox,
         tracing=tracing,

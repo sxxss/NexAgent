@@ -191,7 +191,7 @@ export default function MCPPage() {
       />
 
       <main className="min-h-0 flex-1 overflow-y-auto p-6">
-        <section className="grid gap-4 xl:grid-cols-2">
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {installed.map((server) => (
             <InstalledMCPCard
               key={server.id}
@@ -205,7 +205,7 @@ export default function MCPPage() {
 
         <section className="mt-6">
           <h2 className="mb-3 text-sm font-semibold text-slate-950">内置市场</h2>
-          <div className="grid gap-4 xl:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {registry.map((item) => (
               <Card key={item.id}>
                 <CardContent className="p-5">

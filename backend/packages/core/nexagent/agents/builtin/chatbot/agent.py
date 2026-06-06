@@ -87,6 +87,13 @@ async def _load_context_tools(context: BaseContext):
         "knowledge_search",
         "web_search",
         "web_fetch",
+        # Basic sandbox workspace tools — let the model inspect and edit files.
+        "ls",
+        "read_file",
+        "write_file",
+        "str_replace",
+        "bash",
+        "present_artifacts",
         "list_skills",
         "read_skill",
         "skill_manage",

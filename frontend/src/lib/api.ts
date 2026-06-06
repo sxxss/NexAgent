@@ -616,7 +616,7 @@ export interface ProviderCreateBody {
   is_default?: boolean;
 }
 
-export type ProviderCapability = "chat" | "embedding" | "rerank" | "asr" | "tts";
+export type ProviderCapability = "chat" | "embedding" | "rerank";
 
 export interface ProviderModelConfig {
   id: string;
@@ -1359,13 +1359,17 @@ export async function updateSearchConfig(body: SearchConfigUpdate): Promise<Sear
 export interface SpeechConfig {
   asr: {
     enabled: boolean;
-    provider_id: string;
+    base_url: string;
+    api_key: string;
+    api_key_configured: boolean;
     model: string;
     language: string;
   };
   tts: {
     enabled: boolean;
-    provider_id: string;
+    base_url: string;
+    api_key: string;
+    api_key_configured: boolean;
     model: string;
     voice: string;
     format: string;
@@ -1382,11 +1386,13 @@ export async function fetchSpeechConfig(): Promise<SpeechConfig> {
 
 export async function updateSpeechConfig(body: {
   asr_enabled: boolean;
-  asr_provider_id: string;
+  asr_base_url: string;
+  asr_api_key: string | null;
   asr_model: string;
   asr_language: string;
   tts_enabled: boolean;
-  tts_provider_id: string;
+  tts_base_url: string;
+  tts_api_key: string | null;
   tts_model: string;
   tts_voice: string;
   tts_format: string;
@@ -1394,6 +1400,37 @@ export async function updateSpeechConfig(body: {
   tts_speed: number;
 }): Promise<SpeechConfig> {
   const res = await fetch(`${BASE}/settings/speech`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`);
+  return res.json();
+}
+
+export interface ImageConfig {
+  enabled: boolean;
+  base_url: string;
+  api_key: string;
+  api_key_configured: boolean;
+  model: string;
+  size: string;
+}
+
+export async function fetchImageConfig(): Promise<ImageConfig> {
+  const res = await fetch(`${BASE}/settings/image`);
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function updateImageConfig(body: {
+  enabled: boolean;
+  base_url: string;
+  api_key: string | null;
+  model: string;
+  size: string;
+}): Promise<ImageConfig> {
+  const res = await fetch(`${BASE}/settings/image`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -1743,10 +1780,16 @@ export async function analyzeVideo(file: File, model?: string) {
   return res.json();
 }
 
-export async function generateImage(prompt: string, model?: string) {
+/** Generate an image from a prompt; returns a displayable URL for the result. */
+export async function generateImage(prompt: string, model?: string): Promise<string> {
   const res = await fetch(`${BASE}/media/generate-image`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, model }) });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`);
-  return res.json();
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail ?? `HTTP ${res.status}`);
+  const rel = data?.artifact?.url as string | undefined;
+  if (!rel) throw new Error("生成结果缺少图片地址");
+  if (rel.startsWith("http")) return rel;
+  const origin = BASE.startsWith("http") ? new URL(BASE).origin : "";
+  return `${origin}${rel}`;
 }
 
 export async function generateVideo(prompt: string, model?: string) {

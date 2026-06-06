@@ -100,18 +100,28 @@ async def analyze_video(file: UploadFile = File(...), model: str | None = Form(d
 
 @router.post("/generate-image")
 async def generate_image(body: GenerateRequest):
-    caps = _capabilities_for_model(body.model)
-    if not caps.get("supports_image_generation"):
-        raise HTTPException(status_code=400, detail="当前模型未声明图片生成能力")
+    """Generate an image via a configured image-generation model."""
+    from nexagent.services.image_service import ImageConfigError
+    from nexagent.services.image_service import generate_image as gen
 
-    artifact_id = f"generated-image-{uuid.uuid4().hex}.txt"
+    try:
+        image_bytes = await gen(body.prompt, model=body.model)
+    except ImageConfigError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    artifact_id = f"generated-image-{uuid.uuid4().hex}.png"
     target = _artifact_dir() / artifact_id
-    target.write_text(f"Image generation prompt:\n{body.prompt}\n", encoding="utf-8")
+    target.write_bytes(image_bytes)
     return {
         "ok": True,
         "type": "image_generation",
-        "artifact": {"artifact_id": artifact_id, "path": str(target)},
-        "message": "已生成图片任务 artifact。真实图片模型接入后可替换为二进制结果。",
+        "artifact": {
+            "artifact_id": artifact_id,
+            "path": str(target),
+            "url": f"/api/media/artifact/{artifact_id}/raw",
+            "size": len(image_bytes),
+        },
+        "message": "图片已生成。",
     }
 
 
@@ -184,3 +194,15 @@ async def read_artifact(artifact_id: str):
         "bytes_base64": base64.b64encode(content).decode("ascii"),
         "size": len(content),
     }
+
+
+@router.get("/artifact/{artifact_id}/raw")
+async def read_artifact_raw(artifact_id: str):
+    """Serve an artifact as raw bytes (e.g. for <img src>)."""
+    import mimetypes
+
+    target = _artifact_dir() / artifact_id
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    mime = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+    return Response(content=target.read_bytes(), media_type=mime)

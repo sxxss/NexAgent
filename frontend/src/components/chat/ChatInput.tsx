@@ -31,7 +31,7 @@ export function ChatInput({ value, onChange, onSend, onStop, isStreaming, disabl
   const canSend = !isStreaming && !!value.trim() && !disabled;
 
   return (
-    <div className="input-glow rounded-2xl border border-white/85 bg-white/88 shadow-[0_18px_42px_rgba(83,101,132,0.12)] backdrop-blur">
+    <div className="input-glow rounded-2xl border border-white/85 bg-white/92 shadow-[0_20px_50px_rgba(83,101,132,0.20)] backdrop-blur-xl">
       <textarea
         ref={ref}
         rows={1}
@@ -46,13 +46,13 @@ export function ChatInput({ value, onChange, onSend, onStop, isStreaming, disabl
         }}
         placeholder="输入任务、问题，或交给 Agent 处理的目标..."
         className={cn(
-          "max-h-44 min-h-14 w-full resize-none bg-transparent px-4 py-4",
+          "max-h-40 min-h-11 w-full resize-none bg-transparent px-4 pt-3 pb-1.5",
           "text-sm leading-6 text-slate-900 outline-none",
           "placeholder:text-slate-400",
           "disabled:cursor-not-allowed disabled:opacity-60",
         )}
       />
-      <div className="flex items-center justify-between gap-3 px-3 pb-3">
+      <div className="flex items-center justify-between gap-3 px-3 pb-2.5">
         <div className="flex items-center gap-2">
           <ChatInputHint />
           {voice.error ? <span className="max-w-[180px] truncate text-[11px] text-rose-500">{voice.error}</span> : null}

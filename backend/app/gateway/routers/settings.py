@@ -97,16 +97,26 @@ class ModelProbeRequest(BaseModel):
 
 class SpeechConfigUpdate(BaseModel):
     asr_enabled: bool = True
-    asr_provider_id: str = ""
+    asr_base_url: str = ""
+    asr_api_key: str | None = None
     asr_model: str = "FunAudioLLM/SenseVoiceSmall"
     asr_language: str = ""
     tts_enabled: bool = True
-    tts_provider_id: str = ""
+    tts_base_url: str = ""
+    tts_api_key: str | None = None
     tts_model: str = "FunAudioLLM/CosyVoice2-0.5B"
     tts_voice: str = "FunAudioLLM/CosyVoice2-0.5B:alex"
     tts_format: str = "mp3"
     tts_sample_rate: int = 32000
     tts_speed: float = 1.0
+
+
+class ImageConfigUpdate(BaseModel):
+    enabled: bool = True
+    base_url: str = ""
+    api_key: str | None = None
+    model: str = "Kwai-Kolors/Kolors"
+    size: str = "1024x1024"
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -436,6 +446,21 @@ def _speech_config_payload() -> dict:
     return speech_status()
 
 
+def _image_config_payload() -> dict:
+    from nexagent.services.image_service import image_status
+
+    return image_status()
+
+
+def _resolve_secret(incoming: str | None, existing: str) -> str:
+    """Keep the stored secret when the client sends the masked placeholder or None."""
+    if incoming is None:
+        return existing
+    if "•" in incoming:
+        return existing
+    return incoming.strip()
+
+
 @router.get("/speech")
 async def get_speech_config():
     return _speech_config_payload()
@@ -452,15 +477,19 @@ async def update_speech_config(body: SpeechConfigUpdate):
 
     data, path = _read_config_yaml()
     section = dict(data.get("speech") or {})
+    prev_asr = dict(section.get("asr") or {})
+    prev_tts = dict(section.get("tts") or {})
     section["asr"] = {
         "enabled": body.asr_enabled,
-        "provider_id": body.asr_provider_id.strip(),
+        "base_url": body.asr_base_url.strip(),
+        "api_key": _resolve_secret(body.asr_api_key, str(prev_asr.get("api_key", ""))),
         "model": body.asr_model.strip(),
         "language": body.asr_language.strip(),
     }
     section["tts"] = {
         "enabled": body.tts_enabled,
-        "provider_id": body.tts_provider_id.strip(),
+        "base_url": body.tts_base_url.strip(),
+        "api_key": _resolve_secret(body.tts_api_key, str(prev_tts.get("api_key", ""))),
         "model": body.tts_model.strip(),
         "voice": body.tts_voice.strip(),
         "format": (body.tts_format or "mp3").strip() or "mp3",
@@ -471,6 +500,30 @@ async def update_speech_config(body: SpeechConfigUpdate):
     _write_config_yaml(data, path)
     reset_config_cache()
     return _speech_config_payload()
+
+
+@router.get("/image")
+async def get_image_config():
+    return _image_config_payload()
+
+
+@router.put("/image")
+async def update_image_config(body: ImageConfigUpdate):
+    from nexagent.config import reset_config_cache
+
+    data, path = _read_config_yaml()
+    section = dict(data.get("image") or {})
+    section = {
+        "enabled": body.enabled,
+        "base_url": body.base_url.strip(),
+        "api_key": _resolve_secret(body.api_key, str(section.get("api_key", ""))),
+        "model": body.model.strip(),
+        "size": (body.size or "1024x1024").strip() or "1024x1024",
+    }
+    data["image"] = section
+    _write_config_yaml(data, path)
+    reset_config_cache()
+    return _image_config_payload()
 
 
 @router.post("/search/test")

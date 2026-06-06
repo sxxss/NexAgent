@@ -9,6 +9,7 @@ import {
   Eye,
   EyeOff,
   Globe2,
+  Image as ImageIcon,
   KeyRound,
   Loader2,
   Mic,
@@ -16,25 +17,30 @@ import {
   RefreshCw,
   Search,
   Settings2,
+  Sparkles,
   Trash2,
   Volume2,
   Wifi,
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   createProvider,
   deleteProvider,
+  fetchImageConfig,
   fetchProviderModels,
   fetchProviders,
   fetchSearchConfig,
   fetchSpeechConfig,
+  generateImage,
   synthesizeSpeech,
   testSearchConfig,
+  updateImageConfig,
   updateProvider,
   updateSearchConfig,
   updateSpeechConfig,
+  type ImageConfig,
   type ModelProvider,
   type ProviderCapability,
   type ProviderCreateBody,
@@ -97,8 +103,6 @@ const CAPABILITIES: Array<{ value: ProviderCapability; label: string; tone: stri
   { value: "chat", label: "Chat", tone: "bg-sky-50 text-sky-700" },
   { value: "embedding", label: "Embedding", tone: "bg-emerald-50 text-emerald-700" },
   { value: "rerank", label: "Rerank", tone: "bg-amber-50 text-amber-700" },
-  { value: "asr", label: "ASR 语音识别", tone: "bg-violet-50 text-violet-700" },
-  { value: "tts", label: "TTS 语音合成", tone: "bg-rose-50 text-rose-700" },
 ];
 
 const DEFAULT_SEARCH_PROVIDERS: SearchConfig["providers"] = [
@@ -548,7 +552,7 @@ export default function SettingsPage() {
                   activeTab === "voice" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800",
                 )}
               >
-                语音
+                语音与图像
               </button>
             </div>
           </div>
@@ -598,7 +602,7 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {filteredViews.map((item) => (
                 <ProviderCard
                   key={item.key}
@@ -628,7 +632,7 @@ export default function SettingsPage() {
             onRefresh={() => void queryClient.invalidateQueries({ queryKey: ["search-config"] })}
           />
         ) : (
-          <VoiceSettingsPanel providers={providersQuery.data ?? []} />
+          <VoiceSettingsPanel />
         )}
       </main>
 
@@ -734,7 +738,7 @@ function SearchSettingsPanel({
         onSave={onSave}
       />
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {providers.map((provider) => (
           <SearchProviderCard
             key={provider.id}
@@ -1738,173 +1742,350 @@ function priceSummary(item: ProviderModelConfig) {
 }
 
 function normalizeCapabilities(value?: ProviderCapability[]) {
-  const values = (value?.length ? value : ["chat"]).filter((item): item is ProviderCapability => ["chat", "embedding", "rerank", "asr", "tts"].includes(item));
+  const values = (value?.length ? value : ["chat"]).filter((item): item is ProviderCapability => ["chat", "embedding", "rerank"].includes(item));
   return Array.from(new Set(values));
 }
 
-function VoiceSettingsPanel({ providers }: { providers: ModelProvider[] }) {
+const speechInputCls = "h-10 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 text-sm text-slate-800 outline-none transition focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-100";
+const speechLabelCls = "mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-400";
+
+function VoiceSettingsPanel() {
   const queryClient = useQueryClient();
   const speechQuery = useQuery({ queryKey: ["speech-config"], queryFn: fetchSpeechConfig });
-  const [form, setForm] = useState<SpeechConfig | null>(null);
-  const [syncedFrom, setSyncedFrom] = useState<SpeechConfig | null>(null);
-  const [testState, setTestState] = useState<{ kind: "idle" | "loading" | "ok" | "error"; message?: string }>({ kind: "idle" });
+  const imageQuery = useQuery({ queryKey: ["image-config"], queryFn: fetchImageConfig });
+  const [speech, setSpeech] = useState<SpeechConfig | null>(null);
+  const [speechSynced, setSpeechSynced] = useState<SpeechConfig | null>(null);
+  const [image, setImage] = useState<ImageConfig | null>(null);
+  const [imageSynced, setImageSynced] = useState<ImageConfig | null>(null);
 
-  // Seed the editable form from the fetched config once (render-phase reset on new data).
-  if (speechQuery.data && speechQuery.data !== syncedFrom) {
-    setSyncedFrom(speechQuery.data);
-    setForm(speechQuery.data);
+  if (speechQuery.data && speechQuery.data !== speechSynced) {
+    setSpeechSynced(speechQuery.data);
+    setSpeech(speechQuery.data);
+  }
+  if (imageQuery.data && imageQuery.data !== imageSynced) {
+    setImageSynced(imageQuery.data);
+    setImage(imageQuery.data);
   }
 
-  const saveMutation = useMutation({
-    mutationFn: (next: SpeechConfig) =>
+  const saveSpeech = useMutation({
+    mutationFn: (n: SpeechConfig) =>
       updateSpeechConfig({
-        asr_enabled: next.asr.enabled,
-        asr_provider_id: next.asr.provider_id,
-        asr_model: next.asr.model,
-        asr_language: next.asr.language,
-        tts_enabled: next.tts.enabled,
-        tts_provider_id: next.tts.provider_id,
-        tts_model: next.tts.model,
-        tts_voice: next.tts.voice,
-        tts_format: next.tts.format,
-        tts_sample_rate: next.tts.sample_rate,
-        tts_speed: next.tts.speed,
+        asr_enabled: n.asr.enabled,
+        asr_base_url: n.asr.base_url,
+        asr_api_key: n.asr.api_key,
+        asr_model: n.asr.model,
+        asr_language: n.asr.language,
+        tts_enabled: n.tts.enabled,
+        tts_base_url: n.tts.base_url,
+        tts_api_key: n.tts.api_key,
+        tts_model: n.tts.model,
+        tts_voice: n.tts.voice,
+        tts_format: n.tts.format,
+        tts_sample_rate: n.tts.sample_rate,
+        tts_speed: n.tts.speed,
       }),
     onSuccess: (data) => {
-      setForm(data);
+      setSpeech(data);
+      setSpeechSynced(data);
       void queryClient.invalidateQueries({ queryKey: ["speech-config"] });
     },
   });
+  const saveImage = useMutation({
+    mutationFn: (n: ImageConfig) =>
+      updateImageConfig({ enabled: n.enabled, base_url: n.base_url, api_key: n.api_key, model: n.model, size: n.size }),
+    onSuccess: (data) => {
+      setImage(data);
+      setImageSynced(data);
+      void queryClient.invalidateQueries({ queryKey: ["image-config"] });
+    },
+  });
 
-  if (!form) {
-    return <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> 加载语音配置...</div>;
+  if (!speech || !image) {
+    return <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> 加载配置...</div>;
   }
 
-  const enabledProviders = providers.filter((p) => p.is_enabled);
-  const providerOptions = (capability: ProviderCapability) => {
-    const tagged = enabledProviders.filter((p) => p.capabilities?.includes(capability));
-    return (tagged.length ? tagged : enabledProviders);
+  const patchAsr = (patch: Partial<SpeechConfig["asr"]>) => setSpeech((p) => (p ? { ...p, asr: { ...p.asr, ...patch } } : p));
+  const patchTts = (patch: Partial<SpeechConfig["tts"]>) => setSpeech((p) => (p ? { ...p, tts: { ...p.tts, ...patch } } : p));
+  const patchImage = (patch: Partial<ImageConfig>) => setImage((p) => (p ? { ...p, ...patch } : p));
+
+  return (
+    <div className="mx-auto grid max-w-5xl gap-5 lg:grid-cols-2">
+      {/* ASR card */}
+      <EngineCard
+        icon={<Mic size={20} />}
+        title="语音识别 · ASR"
+        subtitle="把麦克风语音转成文字 · /audio/transcriptions"
+        accent="violet"
+        badges={[<CapBadge key="t" tone="violet">ASR</CapBadge>, <CapBadge key="m">{speech.asr.model || "未设置模型"}</CapBadge>]}
+        enabled={speech.asr.enabled}
+        configured={speech.asr.enabled && !!speech.asr.model.trim()}
+        onToggle={(v) => patchAsr({ enabled: v })}
+        onSave={() => saveSpeech.mutate(speech)}
+        saving={saveSpeech.isPending}
+      >
+        <CredFields
+          baseUrl={speech.asr.base_url}
+          apiKey={speech.asr.api_key}
+          onBaseUrl={(v) => patchAsr({ base_url: v })}
+          onApiKey={(v) => patchAsr({ api_key: v })}
+        />
+        <div>
+          <label className={speechLabelCls}>识别模型</label>
+          <input className={speechInputCls} value={speech.asr.model} onChange={(e) => patchAsr({ model: e.target.value })} placeholder="FunAudioLLM/SenseVoiceSmall" />
+        </div>
+        <div>
+          <label className={speechLabelCls}>语言（留空自动识别）</label>
+          <input className={speechInputCls} value={speech.asr.language} onChange={(e) => patchAsr({ language: e.target.value })} placeholder="如 zh / en，留空自动" />
+        </div>
+      </EngineCard>
+
+      {/* TTS card */}
+      <EngineCard
+        icon={<Volume2 size={20} />}
+        title="语音合成 · TTS"
+        subtitle="朗读 Agent 回复 · /audio/speech"
+        accent="rose"
+        badges={[<CapBadge key="t" tone="rose">TTS</CapBadge>, <CapBadge key="f">{speech.tts.format.toUpperCase()}</CapBadge>]}
+        enabled={speech.tts.enabled}
+        configured={speech.tts.enabled && !!speech.tts.model.trim()}
+        onToggle={(v) => patchTts({ enabled: v })}
+        onSave={() => saveSpeech.mutate(speech)}
+        saving={saveSpeech.isPending}
+        onTest={async () => {
+          await saveSpeech.mutateAsync(speech);
+          const { url } = await synthesizeSpeech("你好，这是 NexAgent 的语音合成测试。", { voice: speech.tts.voice, model: speech.tts.model, format: speech.tts.format, speed: speech.tts.speed });
+          await new Audio(url).play();
+        }}
+        testLabel="试听"
+      >
+        <CredFields
+          baseUrl={speech.tts.base_url}
+          apiKey={speech.tts.api_key}
+          onBaseUrl={(v) => patchTts({ base_url: v })}
+          onApiKey={(v) => patchTts({ api_key: v })}
+        />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={speechLabelCls}>合成模型</label>
+            <input className={speechInputCls} value={speech.tts.model} onChange={(e) => patchTts({ model: e.target.value })} placeholder="FunAudioLLM/CosyVoice2-0.5B" />
+          </div>
+          <div>
+            <label className={speechLabelCls}>音色 voice</label>
+            <input className={speechInputCls} value={speech.tts.voice} onChange={(e) => patchTts({ voice: e.target.value })} placeholder="...:alex" />
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className={speechLabelCls}>格式</label>
+            <select className={speechInputCls} value={speech.tts.format} onChange={(e) => patchTts({ format: e.target.value })}>
+              {["mp3", "wav", "opus", "pcm"].map((f) => <option key={f} value={f}>{f}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={speechLabelCls}>采样率</label>
+            <input type="number" className={speechInputCls} value={speech.tts.sample_rate} onChange={(e) => patchTts({ sample_rate: Number(e.target.value) || 0 })} />
+          </div>
+          <div>
+            <label className={speechLabelCls}>语速 ×</label>
+            <input type="number" step="0.1" min="0.5" max="2" className={speechInputCls} value={speech.tts.speed} onChange={(e) => patchTts({ speed: Number(e.target.value) || 1 })} />
+          </div>
+        </div>
+      </EngineCard>
+
+      {/* Image card */}
+      <div className="lg:col-span-2">
+        <EngineCard
+          icon={<ImageIcon size={20} />}
+          title="图片生成"
+          subtitle="文生图 · /images/generations"
+          accent="fuchsia"
+          badges={[<CapBadge key="t" tone="fuchsia">IMAGE</CapBadge>, <CapBadge key="m">{image.model || "未设置模型"}</CapBadge>, <CapBadge key="s">{image.size}</CapBadge>]}
+          enabled={image.enabled}
+          configured={image.enabled && !!image.model.trim()}
+          onToggle={(v) => patchImage({ enabled: v })}
+          onSave={() => saveImage.mutate(image)}
+          saving={saveImage.isPending}
+          onTest={async () => {
+            await saveImage.mutateAsync(image);
+            const url = await generateImage("a cute cat astronaut floating in space, digital art");
+            window.open(url, "_blank");
+          }}
+          testLabel="试生成"
+        >
+          <div className="grid gap-3 md:grid-cols-2">
+            <CredFields
+              baseUrl={image.base_url}
+              apiKey={image.api_key}
+              onBaseUrl={(v) => patchImage({ base_url: v })}
+              onApiKey={(v) => patchImage({ api_key: v })}
+            />
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div>
+              <label className={speechLabelCls}>生成模型</label>
+              <input className={speechInputCls} value={image.model} onChange={(e) => patchImage({ model: e.target.value })} placeholder="Kwai-Kolors/Kolors" />
+            </div>
+            <div>
+              <label className={speechLabelCls}>尺寸</label>
+              <select className={speechInputCls} value={image.size} onChange={(e) => patchImage({ size: e.target.value })}>
+                {["1024x1024", "768x1024", "1024x768", "512x512"].map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+          </div>
+        </EngineCard>
+      </div>
+    </div>
+  );
+}
+
+const ACCENTS = {
+  violet: { from: "from-violet-500", to: "to-fuchsia-500", soft: "from-violet-500/10", shadow: "rgba(139,92,246,0.35)" },
+  rose: { from: "from-rose-500", to: "to-orange-400", soft: "from-rose-500/10", shadow: "rgba(244,63,94,0.32)" },
+  fuchsia: { from: "from-fuchsia-500", to: "to-pink-500", soft: "from-fuchsia-500/10", shadow: "rgba(217,70,239,0.32)" },
+} as const;
+
+function EngineCard({
+  icon,
+  title,
+  subtitle,
+  accent,
+  badges,
+  enabled,
+  configured,
+  onToggle,
+  onSave,
+  saving,
+  onTest,
+  testLabel,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  subtitle: string;
+  accent: keyof typeof ACCENTS;
+  badges: ReactNode[];
+  enabled: boolean;
+  configured: boolean;
+  onToggle: (v: boolean) => void;
+  onSave: () => void;
+  saving: boolean;
+  onTest?: () => Promise<void>;
+  testLabel?: string;
+  children: ReactNode;
+}) {
+  const a = ACCENTS[accent];
+  const [state, setState] = useState<{ kind: "idle" | "saved" | "testing" | "ok" | "error"; message?: string }>({ kind: "idle" });
+
+  const doSave = () => {
+    onSave();
+    setState({ kind: "saved" });
+    window.setTimeout(() => setState((s) => (s.kind === "saved" ? { kind: "idle" } : s)), 2000);
   };
-
-  const patchAsr = (patch: Partial<SpeechConfig["asr"]>) => setForm((prev) => (prev ? { ...prev, asr: { ...prev.asr, ...patch } } : prev));
-  const patchTts = (patch: Partial<SpeechConfig["tts"]>) => setForm((prev) => (prev ? { ...prev, tts: { ...prev.tts, ...patch } } : prev));
-
-  const runTtsTest = async () => {
-    setTestState({ kind: "loading" });
+  const doTest = async () => {
+    if (!onTest) return;
+    setState({ kind: "testing" });
     try {
-      // Persist first so the backend uses the latest selection.
-      await saveMutation.mutateAsync(form);
-      const { url } = await synthesizeSpeech("你好，这是 NexAgent 的语音合成测试。", { voice: form.tts.voice, model: form.tts.model, format: form.tts.format, speed: form.tts.speed });
-      await new Audio(url).play();
-      setTestState({ kind: "ok", message: "已播放测试语音" });
+      await onTest();
+      setState({ kind: "ok", message: "测试成功" });
     } catch (err) {
-      setTestState({ kind: "error", message: err instanceof Error ? err.message : "测试失败" });
+      setState({ kind: "error", message: err instanceof Error ? err.message : "测试失败" });
     }
   };
 
-  const inputCls = "h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-indigo-300";
-  const labelCls = "mb-1 block text-xs font-semibold text-slate-500";
-
   return (
-    <div className="mx-auto grid max-w-4xl gap-5 lg:grid-cols-2">
-      {/* ASR card */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="mb-4 flex items-center justify-between">
+    <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-[0_14px_36px_rgba(83,101,132,0.10)]">
+      <div className={cn("relative flex items-start gap-3 bg-gradient-to-br via-transparent to-transparent px-5 py-4", a.soft)}>
+        <span
+          className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br text-white", a.from, a.to)}
+          style={{ boxShadow: `0 8px 18px ${a.shadow}` }}
+        >
+          {icon}
+        </span>
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 text-violet-600"><Mic size={16} /></span>
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">语音识别 · ASR</h3>
-              <p className="text-xs text-slate-500">把麦克风语音转成文字（/audio/transcriptions）</p>
-            </div>
+            <h3 className="text-sm font-bold text-slate-900">{title}</h3>
+            <StatusPill ok={configured} />
           </div>
-          <Toggle checked={form.asr.enabled} onChange={(v) => patchAsr({ enabled: v })} />
+          <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>
         </div>
-        <div className="space-y-3">
-          <div>
-            <label className={labelCls}>供应商</label>
-            <select className={inputCls} value={form.asr.provider_id} onChange={(e) => patchAsr({ provider_id: e.target.value })}>
-              <option value="">默认供应商（跟随对话默认）</option>
-              {providerOptions("asr").map((p) => (
-                <option key={p.id} value={p.id}>{p.name}{p.capabilities?.includes("asr") ? " · ASR" : ""}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelCls}>识别模型</label>
-            <input className={inputCls} value={form.asr.model} onChange={(e) => patchAsr({ model: e.target.value })} placeholder="FunAudioLLM/SenseVoiceSmall" />
-          </div>
-          <div>
-            <label className={labelCls}>语言（留空自动识别）</label>
-            <input className={inputCls} value={form.asr.language} onChange={(e) => patchAsr({ language: e.target.value })} placeholder="如 zh / en，留空自动" />
-          </div>
-        </div>
-      </section>
-
-      {/* TTS card */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600"><Volume2 size={16} /></span>
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">语音合成 · TTS</h3>
-              <p className="text-xs text-slate-500">朗读 Agent 回复（/audio/speech）</p>
-            </div>
-          </div>
-          <Toggle checked={form.tts.enabled} onChange={(v) => patchTts({ enabled: v })} />
-        </div>
-        <div className="space-y-3">
-          <div>
-            <label className={labelCls}>供应商</label>
-            <select className={inputCls} value={form.tts.provider_id} onChange={(e) => patchTts({ provider_id: e.target.value })}>
-              <option value="">默认供应商（跟随对话默认）</option>
-              {providerOptions("tts").map((p) => (
-                <option key={p.id} value={p.id}>{p.name}{p.capabilities?.includes("tts") ? " · TTS" : ""}</option>
-              ))}
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={labelCls}>合成模型</label>
-              <input className={inputCls} value={form.tts.model} onChange={(e) => patchTts({ model: e.target.value })} placeholder="FunAudioLLM/CosyVoice2-0.5B" />
-            </div>
-            <div>
-              <label className={labelCls}>音色 voice</label>
-              <input className={inputCls} value={form.tts.voice} onChange={(e) => patchTts({ voice: e.target.value })} placeholder="...:alex" />
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className={labelCls}>格式</label>
-              <select className={inputCls} value={form.tts.format} onChange={(e) => patchTts({ format: e.target.value })}>
-                {["mp3", "wav", "opus", "pcm"].map((f) => <option key={f} value={f}>{f}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className={labelCls}>采样率</label>
-              <input type="number" className={inputCls} value={form.tts.sample_rate} onChange={(e) => patchTts({ sample_rate: Number(e.target.value) || 0 })} />
-            </div>
-            <div>
-              <label className={labelCls}>语速 ×</label>
-              <input type="number" step="0.1" min="0.5" max="2" className={inputCls} value={form.tts.speed} onChange={(e) => patchTts({ speed: Number(e.target.value) || 1 })} />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <div className="lg:col-span-2 flex flex-wrap items-center gap-3">
-        <button type="button" onClick={() => saveMutation.mutate(form)} disabled={saveMutation.isPending} className={primaryButtonClass}>
-          {saveMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-          保存语音配置
-        </button>
-        <button type="button" onClick={() => void runTtsTest()} disabled={testState.kind === "loading"} className={iconButtonClass + " w-auto gap-2 px-3"}>
-          {testState.kind === "loading" ? <Loader2 size={16} className="animate-spin" /> : <Volume2 size={16} />}
-          <span className="text-sm font-semibold">试听 TTS</span>
-        </button>
-        {saveMutation.isSuccess && !saveMutation.isPending ? <span className="text-sm text-emerald-600">已保存</span> : null}
-        {testState.kind === "ok" ? <span className="text-sm text-emerald-600">{testState.message}</span> : null}
-        {testState.kind === "error" ? <span className="max-w-md truncate text-sm text-rose-500">{testState.message}</span> : null}
+        <Toggle checked={enabled} onChange={onToggle} />
       </div>
-    </div>
+      <div className="flex flex-wrap gap-1.5 border-b border-slate-100 px-5 py-2.5">{badges}</div>
+      <div className="space-y-3 px-5 py-4">{children}</div>
+      <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 px-5 py-3">
+        <button type="button" onClick={doSave} disabled={saving} className={primaryButtonClass}>
+          {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+          保存
+        </button>
+        {onTest ? (
+          <button type="button" onClick={() => void doTest()} disabled={state.kind === "testing"} className={iconButtonClass + " w-auto gap-2 px-3"}>
+            {state.kind === "testing" ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+            <span className="text-sm font-semibold">{testLabel ?? "测试"}</span>
+          </button>
+        ) : null}
+        {state.kind === "saved" ? <span className="text-sm text-emerald-600">已保存</span> : null}
+        {state.kind === "ok" ? <span className="text-sm text-emerald-600">{state.message}</span> : null}
+        {state.kind === "error" ? <span className="max-w-xs truncate text-sm text-rose-500">{state.message}</span> : null}
+      </div>
+    </section>
+  );
+}
+
+function CredFields({
+  baseUrl,
+  apiKey,
+  onBaseUrl,
+  onApiKey,
+}: {
+  baseUrl: string;
+  apiKey: string;
+  onBaseUrl: (v: string) => void;
+  onApiKey: (v: string) => void;
+}) {
+  return (
+    <>
+      <div>
+        <label className={speechLabelCls}>Base URL（留空用默认对话供应商）</label>
+        <input className={speechInputCls} value={baseUrl} onChange={(e) => onBaseUrl(e.target.value)} placeholder="https://api.siliconflow.cn/v1" />
+      </div>
+      <div>
+        <label className={speechLabelCls}>API Key</label>
+        <input className={speechInputCls} value={apiKey} onChange={(e) => onApiKey(e.target.value)} placeholder="sk-..." />
+      </div>
+    </>
+  );
+}
+
+function StatusPill({ ok }: { ok: boolean }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold",
+        ok ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-400",
+      )}
+    >
+      <span className={cn("h-1.5 w-1.5 rounded-full", ok ? "bg-emerald-500" : "bg-slate-300")} />
+      {ok ? "已配置" : "未启用"}
+    </span>
+  );
+}
+
+function CapBadge({ children, tone }: { children: ReactNode; tone?: "violet" | "rose" | "fuchsia" }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-full items-center truncate rounded-md px-2 py-0.5 text-[11px] font-semibold",
+        tone === "violet"
+          ? "bg-violet-100 text-violet-700"
+          : tone === "rose"
+            ? "bg-rose-100 text-rose-700"
+            : tone === "fuchsia"
+              ? "bg-fuchsia-100 text-fuchsia-700"
+              : "bg-slate-100 text-slate-600",
+      )}
+    >
+      {children}
+    </span>
   );
 }
 

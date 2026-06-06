@@ -12,7 +12,6 @@ import {
   BookOpen,
   LayoutDashboard,
   Loader2,
-  Maximize2,
   MessageSquare,
   Phone,
   PanelLeftClose,
@@ -70,30 +69,6 @@ const INSPECTOR_COLLAPSED_KEY = "nexagent.home.inspectorCollapsed";
 const CHAT_PROFILES_KEY = "nexagent.home.chatProfiles";
 const SELECTED_PROFILE_KEY = "nexagent.home.selectedProfileId";
 const SELECTED_CHAT_MODE_KEY = "nexagent.home.selectedChatMode";
-const CHAT_WIDTH_KEY = "nexagent.home.chatWidth";
-const CHAT_DENSITY_KEY = "nexagent.home.chatDensity";
-
-type ChatWidth = "normal" | "wide" | "full";
-type ChatDensity = "comfortable" | "compact";
-
-const CHAT_WIDTH_ORDER: ChatWidth[] = ["normal", "wide", "full"];
-const CHAT_WIDTH_CLASS: Record<ChatWidth, string> = {
-  normal: "max-w-3xl",
-  wide: "max-w-5xl",
-  full: "max-w-none",
-};
-const CHAT_WIDTH_LABEL: Record<ChatWidth, string> = {
-  normal: "标准宽度",
-  wide: "宽屏",
-  full: "全宽",
-};
-
-function isChatWidth(value: string | null): value is ChatWidth {
-  return value === "normal" || value === "wide" || value === "full";
-}
-function isChatDensity(value: string | null): value is ChatDensity {
-  return value === "comfortable" || value === "compact";
-}
 const CHAT_STREAM_CLIENT_IDLE_TIMEOUT_MS = 35 * 60 * 1000;
 const ALL_REASONING_MODES: ReasoningMode[] = ["fast", "balanced", "deep", "ultra"];
 const REASONING_EFFORT_BY_MODE = {
@@ -520,8 +495,6 @@ export default function ChatPage() {
   const [storageReady, setStorageReady] = useState(false);
   const [conversationCollapsed, setConversationCollapsed] = useState(false);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
-  const [chatWidth, setChatWidth] = useState<ChatWidth>("normal");
-  const [chatDensity, setChatDensity] = useState<ChatDensity>("comfortable");
   const [showVoiceCall, setShowVoiceCall] = useState(false);
   const [showWiki, setShowWiki] = useState(false);
   const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
@@ -572,10 +545,6 @@ export default function ChatPage() {
       setProfiles(readStoredProfiles());
       setConversationCollapsed(readStoredBool(CONVERSATION_COLLAPSED_KEY));
       setInspectorCollapsed(readStoredBool(INSPECTOR_COLLAPSED_KEY));
-      const storedWidth = window.localStorage.getItem(CHAT_WIDTH_KEY);
-      if (isChatWidth(storedWidth)) setChatWidth(storedWidth);
-      const storedDensity = window.localStorage.getItem(CHAT_DENSITY_KEY);
-      if (isChatDensity(storedDensity)) setChatDensity(storedDensity);
       setStorageReady(true);
     }, 0);
     return () => window.clearTimeout(timer);
@@ -613,13 +582,6 @@ export default function ChatPage() {
     if (storageReady) window.localStorage.setItem(INSPECTOR_COLLAPSED_KEY, inspectorCollapsed ? "1" : "0");
   }, [inspectorCollapsed, storageReady]);
 
-  useEffect(() => {
-    if (storageReady) window.localStorage.setItem(CHAT_WIDTH_KEY, chatWidth);
-  }, [chatWidth, storageReady]);
-
-  useEffect(() => {
-    if (storageReady) window.localStorage.setItem(CHAT_DENSITY_KEY, chatDensity);
-  }, [chatDensity, storageReady]);
 
   useEffect(() => {
     const handler = (event: MouseEvent) => {
@@ -893,7 +855,7 @@ export default function ChatPage() {
         }}
       />
 
-      <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-3xl border border-white/80 bg-white/60 shadow-[0_18px_46px_rgba(83,101,132,0.10)] backdrop-blur">
+      <section className="relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-3xl border border-white/80 bg-white/60 shadow-[0_18px_46px_rgba(83,101,132,0.10)] backdrop-blur">
         <header className="border-b border-slate-200/70 px-5 py-4">
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex h-9 overflow-hidden rounded-xl border border-slate-200 bg-white/70 p-0.5 shadow-sm">
@@ -1056,31 +1018,6 @@ export default function ChatPage() {
               </button>
               <button
                 type="button"
-                onClick={() =>
-                  setChatWidth((prev) => CHAT_WIDTH_ORDER[(CHAT_WIDTH_ORDER.indexOf(prev) + 1) % CHAT_WIDTH_ORDER.length])
-                }
-                title={`对话宽度：${CHAT_WIDTH_LABEL[chatWidth]}（点击切换）`}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white/80 px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-white"
-              >
-                <Maximize2 size={14} />
-                {CHAT_WIDTH_LABEL[chatWidth]}
-              </button>
-              <button
-                type="button"
-                onClick={() => setChatDensity((prev) => (prev === "compact" ? "comfortable" : "compact"))}
-                title={chatDensity === "compact" ? "当前：紧凑（点击切回舒适）" : "当前：舒适（点击切到紧凑）"}
-                className={cn(
-                  "inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold shadow-sm",
-                  chatDensity === "compact"
-                    ? "border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
-                    : "border-slate-200 bg-white/80 text-slate-700 hover:bg-white",
-                )}
-              >
-                <SlidersHorizontal size={14} />
-                {chatDensity === "compact" ? "紧凑" : "舒适"}
-              </button>
-              <button
-                type="button"
                 onClick={startNew}
                 className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white/80 px-3.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-white"
               >
@@ -1110,7 +1047,7 @@ export default function ChatPage() {
               onStarter={(prompt) => void send(prompt)}
             />
           ) : (
-            <div className={cn("mx-auto px-5 py-5", CHAT_WIDTH_CLASS[chatWidth], chatDensity === "compact" && "chat-compact")}>
+            <div className="mx-auto max-w-3xl px-5 pt-5 pb-40">
               {messages.map((message) => (
                 <MessageBubble key={message.id} message={message} />
               ))}
@@ -1119,9 +1056,10 @@ export default function ChatPage() {
           )}
         </div>
 
-        <footer className="border-t border-slate-200/70 bg-white/55 px-5 py-4">
-          <div className={cn("mx-auto", CHAT_WIDTH_CLASS[chatWidth])}>
-            <div className="mb-2 flex items-center justify-end">
+        {/* Floating composer — overlays the message scroll area instead of a full bottom bar. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 px-4">
+          <div className="pointer-events-auto mx-auto max-w-3xl">
+            <div className="mb-1.5 flex items-center justify-end">
               <ProfilePicker
                 refNode={profilePickerRef}
                 open={showProfilePicker}
@@ -1155,7 +1093,7 @@ export default function ChatPage() {
               isStreaming={isStreaming}
             />
           </div>
-        </footer>
+        </div>
       </section>
 
       <Inspector

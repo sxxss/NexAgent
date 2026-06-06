@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   BarChart3,
+  BookOpen,
   Bot,
   Boxes,
   Brain,
@@ -28,6 +29,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "洞察", icon: LayoutDashboard },
   { href: "/agents", label: "Agent", icon: Bot },
   { href: "/knowledge", label: "知识库", icon: Database },
+  { href: "/wiki", label: "Wiki", icon: BookOpen },
   { href: "/memory", label: "记忆", icon: Brain },
   { href: "/mcp", label: "MCP", icon: Boxes },
   { href: "/skills", label: "Skills", icon: Wrench },
@@ -43,10 +45,13 @@ const STORAGE_KEY = "nexagent.sidebar.collapsed";
 export function Sidebar() {
   const path = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
 
-  useEffect(() => {
-    setCollapsed(window.localStorage.getItem(STORAGE_KEY) === "1");
-  }, []);
+  // Read the persisted state once, during render (avoids setState-in-effect).
+  if (!hydrated && typeof window !== "undefined") {
+    setHydrated(true);
+    if (window.localStorage.getItem(STORAGE_KEY) === "1") setCollapsed(true);
+  }
 
   const toggle = () => {
     setCollapsed((prev) => {
