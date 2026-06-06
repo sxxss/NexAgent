@@ -189,7 +189,15 @@ async def test_stream_chat_stamps_events_and_artifacts(monkeypatch):
     assert [event["seq"] for event in events] == [1, 2, 3, 4, 5]
     assert all(event["event_id"].startswith("req-1:") for event in events)
     assert events[2]["new_artifacts"] == ["/mnt/user-data/outputs/report.md"]
-    assert events[-1]["usage"] == {"input_tokens": 2, "output_tokens": 3}
+    assert events[-1]["usage"] == {
+        "input_tokens": 2,
+        "output_tokens": 3,
+        "raw_input_tokens": 2,
+        "raw_output_tokens": 3,
+        "estimated": False,
+        "token_estimated": False,
+        "token_source": "provider_reported",
+    }
     assert events[-1]["response_chars"] == len("hello world")
 
 

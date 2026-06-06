@@ -156,7 +156,7 @@ export default function AgentsPage() {
           <>
             <Link
               href="/creator?type=agent"
-              className="inline-flex h-9 items-center gap-2 rounded-lg border border-fuchsia-200 bg-fuchsia-50 px-3 text-xs font-semibold text-fuchsia-700 hover:bg-fuchsia-100"
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-semibold text-sky-700 hover:bg-sky-100"
             >
               <Sparkles size={14} />
               AI 创建
@@ -253,10 +253,10 @@ function AgentCard({
   onDelete: () => void;
 }) {
   return (
-    <Card className={cn("transition hover:-translate-y-0.5 hover:border-slate-300", selected && "border-fuchsia-300 ring-2 ring-fuchsia-100")}>
+    <Card className={cn("transition hover:-translate-y-0.5 hover:border-slate-300", selected && "border-sky-300 ring-2 ring-sky-100")}>
       <CardContent className="p-4">
         <button type="button" onClick={onSelect} className="flex w-full items-start gap-3 text-left">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-fuchsia-50 text-fuchsia-700">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-700">
             <Bot size={18} />
           </div>
           <div className="min-w-0 flex-1">
@@ -365,7 +365,7 @@ function AgentFormPanel({
                         onClick={() => field.onChange(mode.id)}
                         className={cn(
                           "rounded-lg border px-2 py-2 text-xs font-semibold",
-                          field.value === mode.id ? "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-800" : "border-slate-200 text-slate-600",
+                          field.value === mode.id ? "border-sky-300 bg-sky-50 text-sky-800" : "border-slate-200 text-slate-600",
                           disabled && "cursor-not-allowed opacity-35",
                         )}
                       >
@@ -408,7 +408,7 @@ function AgentFormPanel({
 }
 
 const inputClass =
-  "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-fuchsia-300 focus:ring-2 focus:ring-fuchsia-100";
+  "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100";
 
 function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
   return (

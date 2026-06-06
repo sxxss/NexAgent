@@ -123,7 +123,7 @@ export default function ResearchPage() {
     <div className="flex h-full min-w-0 flex-col bg-slate-100">
       <header className="border-b border-slate-200 bg-white px-5 py-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-700"><FlaskConical size={19} /></div>
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700"><FlaskConical size={19} /></div>
           <div className="min-w-0"><h1 className="text-sm font-semibold text-slate-950">深度研究</h1><p className="mt-0.5 truncate text-xs text-slate-500">Planner / Researcher / Synthesizer / Writer</p></div>
           <div className="ml-auto flex items-center gap-2">
             <div className="relative" ref={pickerRef}>
@@ -143,9 +143,9 @@ export default function ResearchPage() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {!hasContent ? (
           <div className="mx-auto flex max-w-6xl flex-col gap-5 px-6 py-8">
-            <Card><CardContent className="p-6"><p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Research Console</p><h2 className="mt-3 max-w-3xl text-3xl font-semibold tracking-tight text-slate-950">让 Agent 先规划，再检索，最后写出可交付报告。</h2><p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600">适合调研、方案设计、技术选型和复杂问题分析。研究过程中会展示计划步骤、工具调用和最终报告。</p></CardContent></Card>
-            <section className="grid gap-4 md:grid-cols-4">{FLOW.map(({ label, desc, icon: Icon }, index) => <Card key={label}><CardContent className="p-5"><div className="flex items-center justify-between"><Icon size={18} className="text-violet-700" /><span className="font-mono text-xs text-slate-400">0{index + 1}</span></div><p className="mt-4 text-sm font-semibold text-slate-950">{label}</p><p className="mt-1 text-xs text-slate-500">{desc}</p></CardContent></Card>)}</section>
-            <section className="grid gap-3 md:grid-cols-2">{EXAMPLES.map((item) => <button key={item} type="button" onClick={() => void startResearch(item)} className="rounded-xl border border-slate-200 bg-white p-4 text-left text-sm leading-6 text-slate-700 shadow-sm hover:border-violet-300 hover:shadow-md">{item}</button>)}</section>
+            <Card><CardContent className="p-6"><p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Research Console</p><h2 className="mt-3 max-w-3xl text-3xl font-semibold tracking-tight text-slate-950">让 Agent 先规划，再检索，最后写出可交付报告。</h2><p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600">适合调研、方案设计、技术选型和复杂问题分析。研究过程中会展示计划步骤、工具调用和最终报告。</p></CardContent></Card>
+            <section className="grid gap-4 md:grid-cols-4">{FLOW.map(({ label, desc, icon: Icon }, index) => <Card key={label}><CardContent className="p-5"><div className="flex items-center justify-between"><Icon size={18} className="text-indigo-700" /><span className="font-mono text-xs text-slate-400">0{index + 1}</span></div><p className="mt-4 text-sm font-semibold text-slate-950">{label}</p><p className="mt-1 text-xs text-slate-500">{desc}</p></CardContent></Card>)}</section>
+            <section className="grid gap-3 md:grid-cols-2">{EXAMPLES.map((item) => <button key={item} type="button" onClick={() => void startResearch(item)} className="rounded-xl border border-slate-200 bg-white p-4 text-left text-sm leading-6 text-slate-700 shadow-sm hover:border-indigo-300 hover:shadow-md">{item}</button>)}</section>
           </div>
         ) : (
           <div className="mx-auto grid max-w-6xl gap-4 px-6 py-5 xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -157,7 +157,7 @@ export default function ResearchPage() {
 
       <footer className="border-t border-slate-200 bg-white p-4">
         <div className="mx-auto flex max-w-4xl items-end gap-2">
-          <textarea value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void startResearch(); } }} placeholder="输入研究主题..." className="min-h-12 flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-violet-300 focus:ring-2 focus:ring-violet-100" />
+          <textarea value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void startResearch(); } }} placeholder="输入研究主题..." className="min-h-12 flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" />
           <button type="button" disabled={!query.trim() || running} onClick={() => void startResearch()} className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white hover:bg-slate-800 disabled:opacity-50">{running ? <Square size={15} /> : <Send size={15} />}</button>
         </div>
       </footer>

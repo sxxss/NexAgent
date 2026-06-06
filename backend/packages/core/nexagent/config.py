@@ -118,6 +118,30 @@ class WebSearchConfig:
 
 
 @dataclass
+class SpeechConfig:
+    """Voice (ASR / TTS) configuration.
+
+    ``*_provider_id`` references a row in the DB ``model_providers`` table for the
+    base URL + API key. When empty, the speech service falls back to the default
+    chat provider so SiliconFlow works out of the box. Endpoints are
+    OpenAI-compatible (``/audio/transcriptions`` and ``/audio/speech``).
+    """
+
+    asr_enabled: bool = True
+    asr_provider_id: str = ""
+    asr_model: str = "FunAudioLLM/SenseVoiceSmall"
+    asr_language: str = ""  # empty = auto-detect
+
+    tts_enabled: bool = True
+    tts_provider_id: str = ""
+    tts_model: str = "FunAudioLLM/CosyVoice2-0.5B"
+    tts_voice: str = "FunAudioLLM/CosyVoice2-0.5B:alex"
+    tts_format: str = "mp3"
+    tts_sample_rate: int = 32000
+    tts_speed: float = 1.0
+
+
+@dataclass
 class MCPServerConfig:
     """Configuration for a single MCP server."""
 
@@ -186,6 +210,7 @@ class AppConfig:
     models: list[ModelConfig] = field(default_factory=list)
     knowledge: KnowledgeConfig = field(default_factory=KnowledgeConfig)
     web_search: WebSearchConfig = field(default_factory=WebSearchConfig)
+    speech: SpeechConfig = field(default_factory=SpeechConfig)
     mcp_servers: list[MCPServerConfig] = field(default_factory=list)
     sandbox: SandboxConfig = field(default_factory=SandboxConfig)
     tracing: TracingConfig = field(default_factory=TracingConfig)
@@ -605,6 +630,24 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
         fetch_max_chars=int(ws_raw.get("fetch_max_chars", 12000)),
     )
 
+    # Parse speech (ASR/TTS) config
+    speech_raw = raw.get("speech", {}) if isinstance(raw.get("speech"), dict) else {}
+    asr_raw = speech_raw.get("asr", {}) if isinstance(speech_raw.get("asr"), dict) else {}
+    tts_raw = speech_raw.get("tts", {}) if isinstance(speech_raw.get("tts"), dict) else {}
+    speech = SpeechConfig(
+        asr_enabled=_as_bool(asr_raw.get("enabled", True)),
+        asr_provider_id=str(asr_raw.get("provider_id", "") or ""),
+        asr_model=str(asr_raw.get("model", SpeechConfig().asr_model)),
+        asr_language=str(asr_raw.get("language", "") or ""),
+        tts_enabled=_as_bool(tts_raw.get("enabled", True)),
+        tts_provider_id=str(tts_raw.get("provider_id", "") or ""),
+        tts_model=str(tts_raw.get("model", SpeechConfig().tts_model)),
+        tts_voice=str(tts_raw.get("voice", SpeechConfig().tts_voice)),
+        tts_format=str(tts_raw.get("format", "mp3") or "mp3"),
+        tts_sample_rate=int(tts_raw.get("sample_rate", 32000) or 32000),
+        tts_speed=float(tts_raw.get("speed", 1.0) or 1.0),
+    )
+
     # Parse MCP servers
     mcp_servers = []
     for srv in raw.get("mcp_servers", []):
@@ -658,6 +701,7 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
         models=models,
         knowledge=knowledge,
         web_search=web_search,
+        speech=speech,
         mcp_servers=mcp_servers,
         sandbox=sandbox,
         tracing=tracing,

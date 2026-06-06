@@ -95,6 +95,20 @@ class ModelProbeRequest(BaseModel):
     sample_text: str = "NexAgent model connectivity test"
 
 
+class SpeechConfigUpdate(BaseModel):
+    asr_enabled: bool = True
+    asr_provider_id: str = ""
+    asr_model: str = "FunAudioLLM/SenseVoiceSmall"
+    asr_language: str = ""
+    tts_enabled: bool = True
+    tts_provider_id: str = ""
+    tts_model: str = "FunAudioLLM/CosyVoice2-0.5B"
+    tts_voice: str = "FunAudioLLM/CosyVoice2-0.5B:alex"
+    tts_format: str = "mp3"
+    tts_sample_rate: int = 32000
+    tts_speed: float = 1.0
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _invalidate_model_cache() -> None:
@@ -414,6 +428,49 @@ async def update_search_config(body: SearchConfigUpdate):
     _write_config_yaml(data, path)
     reset_config_cache()
     return _search_config_payload()
+
+
+def _speech_config_payload() -> dict:
+    from nexagent.services.speech import speech_status
+
+    return speech_status()
+
+
+@router.get("/speech")
+async def get_speech_config():
+    return _speech_config_payload()
+
+
+@router.put("/speech")
+async def update_speech_config(body: SpeechConfigUpdate):
+    from nexagent.config import reset_config_cache
+
+    if body.tts_sample_rate < 8000 or body.tts_sample_rate > 48000:
+        raise HTTPException(status_code=422, detail="tts_sample_rate must be between 8000 and 48000")
+    if body.tts_speed < 0.5 or body.tts_speed > 2.0:
+        raise HTTPException(status_code=422, detail="tts_speed must be between 0.5 and 2.0")
+
+    data, path = _read_config_yaml()
+    section = dict(data.get("speech") or {})
+    section["asr"] = {
+        "enabled": body.asr_enabled,
+        "provider_id": body.asr_provider_id.strip(),
+        "model": body.asr_model.strip(),
+        "language": body.asr_language.strip(),
+    }
+    section["tts"] = {
+        "enabled": body.tts_enabled,
+        "provider_id": body.tts_provider_id.strip(),
+        "model": body.tts_model.strip(),
+        "voice": body.tts_voice.strip(),
+        "format": (body.tts_format or "mp3").strip() or "mp3",
+        "sample_rate": body.tts_sample_rate,
+        "speed": body.tts_speed,
+    }
+    data["speech"] = section
+    _write_config_yaml(data, path)
+    reset_config_cache()
+    return _speech_config_payload()
 
 
 @router.post("/search/test")

@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // 后端 (FastAPI) 用尾斜杠区分 collection 路由；关掉 Next 的尾斜杠重定向，
+  // 让 /api/xxx/ 原样转发给后端，避免与后端重定向形成循环。
+  skipTrailingSlashRedirect: true,
   experimental: {
     workerThreads: true,
   },

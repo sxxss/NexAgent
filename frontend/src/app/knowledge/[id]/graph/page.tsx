@@ -177,7 +177,7 @@ export default function KnowledgeGraphPage() {
               <span>/</span>
               <span className="text-slate-600">图谱浏览</span>
             </div>
-            <h1 className="flex items-center gap-2 text-xl font-bold text-slate-950"><Network size={20} className="text-violet-600" />图谱工作台</h1>
+            <h1 className="flex items-center gap-2 text-xl font-bold text-slate-950"><Network size={20} className="text-indigo-600" />图谱工作台</h1>
             <p className="mt-1 text-sm text-slate-500">按需渲染整图或实体邻域，查看关系、来源和上下文。</p>
           </div>
           <div className="flex items-center gap-2">
@@ -324,10 +324,10 @@ function GraphToolbar({
       <div className="grid gap-3 xl:grid-cols-[minmax(280px,1fr)_auto]">
         <div className="flex min-w-0 gap-2">
           <Input value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && onSearch()} placeholder="搜索实体，例如 K1、模型、配置" />
-          <button type="button" onClick={onSearch} disabled={loading} className={cn(iconButton, "border-fuchsia-600 bg-fuchsia-600 text-white hover:bg-fuchsia-700")}>{loading ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}</button>
+          <button type="button" onClick={onSearch} disabled={loading} className={cn(iconButton, "border-sky-600 bg-sky-600 text-white hover:bg-sky-700")}>{loading ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}</button>
         </div>
         <div className="flex flex-wrap items-center justify-start gap-2 xl:justify-end">
-          <button type="button" onClick={onLoadWhole} disabled={loading} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 text-xs font-semibold text-white shadow-sm shadow-violet-100 transition-all duration-200 hover:-translate-y-0.5 hover:bg-violet-700 hover:shadow-md disabled:translate-y-0 disabled:opacity-40 disabled:shadow-none"><GitBranch size={14} />渲染整图</button>
+          <button type="button" onClick={onLoadWhole} disabled={loading} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-xs font-semibold text-white shadow-sm shadow-indigo-100 transition-all duration-200 hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-md disabled:translate-y-0 disabled:opacity-40 disabled:shadow-none"><GitBranch size={14} />渲染整图</button>
           <button type="button" onClick={onFit} className={iconButton} title="适配视图"><Maximize2 size={14} /></button>
           <button type="button" onClick={onClear} className={iconButton} title="清除选择"><X size={14} /></button>
         </div>
@@ -349,7 +349,7 @@ function Segmented({ label, value, values, suffix = "", onChange }: { label: str
     <div className="flex h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 text-xs font-semibold text-slate-500 shadow-sm shadow-slate-100/60">
       <span className="px-2 text-slate-400">{label}</span>
       {values.map((item) => (
-        <button key={item} type="button" onClick={() => onChange(item)} className={cn("h-7 rounded-md px-2 transition-all duration-200 hover:bg-slate-50", value === item && "bg-violet-50 text-violet-700 shadow-sm shadow-violet-100")}>{item}{suffix}</button>
+        <button key={item} type="button" onClick={() => onChange(item)} className={cn("h-7 rounded-md px-2 transition-all duration-200 hover:bg-slate-50", value === item && "bg-indigo-50 text-indigo-700 shadow-sm shadow-indigo-100")}>{item}{suffix}</button>
       ))}
     </div>
   );
@@ -409,7 +409,7 @@ function GraphEmptyState({ loading, onLoadWhole }: { loading: boolean; onLoadWho
         </div>
         <p className="mt-4 text-sm font-semibold text-slate-900">{loading ? "图谱加载中..." : "尚未渲染图谱"}</p>
         <p className="mt-2 text-xs leading-5 text-slate-500">默认只加载摘要。点击渲染整图，或搜索实体后展开邻域子图。</p>
-        <button type="button" onClick={onLoadWhole} disabled={loading} className="mt-4 inline-flex h-10 items-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white shadow-sm shadow-violet-100 transition-all duration-200 hover:-translate-y-0.5 hover:bg-violet-700 hover:shadow-md disabled:translate-y-0 disabled:opacity-40 disabled:shadow-none">
+        <button type="button" onClick={onLoadWhole} disabled={loading} className="mt-4 inline-flex h-10 items-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white shadow-sm shadow-indigo-100 transition-all duration-200 hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-md disabled:translate-y-0 disabled:opacity-40 disabled:shadow-none">
           {loading ? <Loader2 size={15} className="animate-spin" /> : <GitBranch size={15} />}
           渲染整图
         </button>
@@ -474,11 +474,11 @@ function GraphCanvas({ nodes, edges, selected, onSelect, onExpand, onInit }: { n
       target: edge.target,
       label: active ? (edge.relation || "related") : undefined,
       animated: Boolean(active),
-      style: { stroke: active ? "#9d2bc7" : "#cbd5e1", strokeWidth: active ? 2.4 : 1, opacity: muted ? 0.18 : 0.72 },
-      labelStyle: { fill: "#9d2bc7", fontSize: 10, fontWeight: 700 },
+      style: { stroke: active ? "#4338ca" : "#cbd5e1", strokeWidth: active ? 2.4 : 1, opacity: muted ? 0.18 : 0.72 },
+      labelStyle: { fill: "#4338ca", fontSize: 10, fontWeight: 700 },
       labelBgPadding: [5, 3],
       labelBgBorderRadius: 4,
-      labelBgStyle: { fill: "#fbeefe", fillOpacity: 0.95 },
+      labelBgStyle: { fill: "#eef2ff", fillOpacity: 0.95 },
       className: active ? "graph-edge-active" : undefined,
     };
   }), [edges, nodeSet, selected]);
@@ -503,7 +503,7 @@ function GraphCanvas({ nodes, edges, selected, onSelect, onExpand, onInit }: { n
         }}
       >
         <Background color="#dbe3ef" gap={22} />
-        <MiniMap pannable zoomable nodeStrokeWidth={3} nodeColor={(node) => node.data?.active ? "#9d2bc7" : node.data?.noise ? "#f59e0b" : "#8b5cf6"} />
+        <MiniMap pannable zoomable nodeStrokeWidth={3} nodeColor={(node) => node.data?.active ? "#4338ca" : node.data?.noise ? "#f59e0b" : "#6366f1"} />
         <Controls />
       </ReactFlow>
     </div>
@@ -516,9 +516,9 @@ function EntityNode({ data }: NodeProps<EntityNodeData>) {
       title={data.fullLabel}
       style={{ animationDelay: `${Math.min(data.index, 20) * 18}ms` }}
       className={cn(
-        "animate-[graphNodeIn_260ms_ease-out_both] rounded-lg border bg-white px-3 py-2 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.02] hover:border-fuchsia-200 hover:shadow-md",
-        data.active && "border-fuchsia-500 bg-fuchsia-50 shadow-lg shadow-fuchsia-100",
-        data.adjacent && !data.active && "border-fuchsia-200 shadow-fuchsia-50",
+        "animate-[graphNodeIn_260ms_ease-out_both] rounded-lg border bg-white px-3 py-2 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.02] hover:border-sky-200 hover:shadow-md",
+        data.active && "border-sky-500 bg-sky-50 shadow-lg shadow-sky-100",
+        data.adjacent && !data.active && "border-sky-200 shadow-sky-50",
         data.muted && "opacity-25",
         data.noise && !data.active && "border-amber-200 bg-amber-50 text-amber-800",
       )}
@@ -549,7 +549,7 @@ function GraphInspector({ selected, edges, mode, onCopy, onExpand, onLoadWhole, 
               <p className="mt-1 text-xs text-slate-500">出现 {selected.count} 次 · {selected.files?.length || 0} 个来源 · {edges.length} 条当前关系</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button type="button" onClick={() => onCopy(selected.name)} className={graphButton}><Copy size={14} />复制 ID</button>
-                <button type="button" onClick={() => onExpand(selected)} className={cn(graphButton, "border-fuchsia-200 text-fuchsia-700")}><GitBranch size={14} />展开邻域</button>
+                <button type="button" onClick={() => onExpand(selected)} className={cn(graphButton, "border-sky-200 text-sky-700")}><GitBranch size={14} />展开邻域</button>
                 <button type="button" onClick={onClear} className={iconButton} title="清除选择"><X size={14} /></button>
               </div>
             </div>
@@ -557,9 +557,9 @@ function GraphInspector({ selected, edges, mode, onCopy, onExpand, onLoadWhole, 
               <p className="mb-2 text-xs font-semibold text-slate-400">相邻关系</p>
               <div className="space-y-2">
                 {edges.length ? edges.slice(0, 30).map((edge, index) => (
-                  <div key={`${edge.source}-${edge.target}-${index}`} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-600 transition-all duration-200 hover:border-fuchsia-100 hover:bg-white hover:shadow-sm">
+                  <div key={`${edge.source}-${edge.target}-${index}`} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-600 transition-all duration-200 hover:border-sky-100 hover:bg-white hover:shadow-sm">
                     <p className="break-words font-semibold text-slate-800">{edge.source}</p>
-                    <p className="my-1 text-[11px] text-fuchsia-700">{edge.relation || "related"} · {edge.count} 次</p>
+                    <p className="my-1 text-[11px] text-sky-700">{edge.relation || "related"} · {edge.count} 次</p>
                     <p className="break-words font-semibold text-slate-800">{edge.target}</p>
                   </div>
                 )) : <p className="rounded-lg border border-dashed border-slate-200 px-3 py-4 text-xs text-slate-400">当前画布没有相邻关系。</p>}
@@ -579,7 +579,7 @@ function GraphInspector({ selected, edges, mode, onCopy, onExpand, onLoadWhole, 
             <Network className="mx-auto text-slate-300" size={30} />
             <p className="mt-3 text-sm font-semibold text-slate-800">未选择节点</p>
             <p className="mt-1 text-xs leading-5 text-slate-500">点击画布中的实体节点后，会在这里显示关系、来源和展开操作。</p>
-            <button type="button" onClick={onLoadWhole} className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg bg-violet-600 px-3 text-xs font-semibold text-white transition hover:bg-violet-700">
+            <button type="button" onClick={onLoadWhole} className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white transition hover:bg-indigo-700">
               <RotateCcw size={14} />
               返回整图
             </button>

@@ -696,7 +696,7 @@ function RetrievalConfigEditor({ kind, value, onChange, onUseKbDefault }: { kind
     <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs font-semibold text-slate-600">{kind === "lightrag" ? "图谱上下文策略" : "Milvus 检索策略"}</p>
-        {onUseKbDefault ? <button type="button" onClick={onUseKbDefault} className="text-xs font-semibold text-violet-600 hover:text-violet-700">使用知识库默认值</button> : null}
+        {onUseKbDefault ? <button type="button" onClick={onUseKbDefault} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">使用知识库默认值</button> : null}
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="检索模式"><SelectBox value={String(value.search_mode || value.mode || modes[0].value)} options={modes} onChange={(mode) => onChange({ ...value, mode: mode as RetrievalMode, search_mode: mode as RetrievalMode })} /></Field>
@@ -727,7 +727,7 @@ function TypeSelector({ value, onChange }: { value: EvalType; onChange: (value: 
         const Icon = item.icon;
         const selected = value === item.value;
         return (
-          <button key={item.value} type="button" onClick={() => onChange(item.value)} className={cn("rounded-xl border p-3 text-left transition", selected ? "border-violet-300 bg-violet-50 text-violet-700" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300")}>
+          <button key={item.value} type="button" onClick={() => onChange(item.value)} className={cn("rounded-xl border p-3 text-left transition", selected ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300")}>
             <div className="flex items-center gap-2 text-sm font-semibold"><Icon size={15} />{item.label}{item.advanced ? <span className="ml-auto rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">高级</span> : null}</div>
             <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-slate-400">{item.hint}</p>
           </button>
@@ -749,16 +749,16 @@ function SelectBox({ value, options, onChange, placeholder = "请选择", classN
   const filtered = searchable && query ? options.filter((item) => item.label.toLowerCase().includes(query.toLowerCase())) : options;
   return (
     <div className={cn("relative", className)}>
-      <button type="button" onClick={() => setOpen((next) => !next)} className="flex h-10 w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 text-left text-sm text-slate-700 outline-none transition hover:border-slate-300 focus:border-violet-300 focus:ring-2 focus:ring-violet-100">
+      <button type="button" onClick={() => setOpen((next) => !next)} className="flex h-10 w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 text-left text-sm text-slate-700 outline-none transition hover:border-slate-300 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100">
         <span className="truncate">{selected?.label || placeholder}</span>
         <ChevronDown size={15} className={cn("text-slate-400 transition", open && "rotate-180")} />
       </button>
       {open ? (
         <div className="absolute z-40 mt-2 w-full rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
-          {searchable ? <div className="relative m-1"><Search size={14} className="absolute left-2 top-2.5 text-slate-300" /><input className="h-9 w-full rounded-lg border border-slate-100 pl-7 pr-2 text-sm outline-none focus:border-violet-200" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索" /></div> : null}
+          {searchable ? <div className="relative m-1"><Search size={14} className="absolute left-2 top-2.5 text-slate-300" /><input className="h-9 w-full rounded-lg border border-slate-100 pl-7 pr-2 text-sm outline-none focus:border-indigo-200" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索" /></div> : null}
           <div className="max-h-60 overflow-auto">
             {filtered.length ? filtered.map((item) => (
-              <button key={item.value || "__empty"} type="button" onClick={() => { onChange(item.value); setOpen(false); setQuery(""); }} className={cn("flex w-full items-center rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-50", item.value === value ? "bg-violet-50 text-violet-700" : "text-slate-600")}>
+              <button key={item.value || "__empty"} type="button" onClick={() => { onChange(item.value); setOpen(false); setQuery(""); }} className={cn("flex w-full items-center rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-50", item.value === value ? "bg-indigo-50 text-indigo-700" : "text-slate-600")}>
                 <span className="truncate">{item.label}</span>
                 {item.value === value ? <CheckCircle size={14} className="ml-auto" /> : null}
               </button>
@@ -791,7 +791,7 @@ function KnowledgeSelector({ value, kbs, required, onChange }: { value: string[]
 function KbStrategyNotice({ kind, selected }: { kind: KBKind; selected: KBMeta[] }) {
   if (!selected.length) return <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">请选择要评估的知识库。</p>;
   if (kind === "milvus") return <p className="rounded-xl bg-sky-50 px-3 py-2 text-xs text-sky-700">Milvus 使用向量、关键词或混合检索，可选 rerank。</p>;
-  if (kind === "lightrag") return <p className="rounded-xl bg-violet-50 px-3 py-2 text-xs text-violet-700">LightRAG 使用图谱上下文策略，不显示 BM25 和向量权重。</p>;
+  if (kind === "lightrag") return <p className="rounded-xl bg-indigo-50 px-3 py-2 text-xs text-indigo-700">LightRAG 使用图谱上下文策略，不显示 BM25 和向量权重。</p>;
   return <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700">已混合选择 Milvus 和 LightRAG，将分别使用各知识库默认策略。</p>;
 }
 
@@ -818,7 +818,7 @@ function DiagnosticsPanel({ diagnostics }: { diagnostics: EvalGenerationDiagnost
 function SuitePreview({ form, selectedKbs }: { form: SuiteForm; selectedKbs: KBMeta[] }) {
   return (
     <div>
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-500">Suite Preview</p>
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-500">Suite Preview</p>
       <h3 className="mt-2 text-lg font-semibold text-slate-950">{form.name || "未命名评估集"}</h3>
       <div className="mt-4 space-y-3 text-sm text-slate-600">
         <PreviewLine label="类型" value={typeLabel(form.type)} />
@@ -967,7 +967,7 @@ function ScorePills({ scores }: { scores?: EvalScores }) {
 function ResultIcon({ result, running }: { result?: EvalResult; running: boolean }) {
   if (running) return <Loader2 size={18} className="animate-spin text-sky-600" />;
   if (!result) return <Clock size={18} className="text-slate-300" />;
-  if (result.passed === true) return <CheckCircle size={18} className="text-fuchsia-600" />;
+  if (result.passed === true) return <CheckCircle size={18} className="text-sky-600" />;
   if (result.passed === false) return <XCircle size={18} className="text-rose-600" />;
   return <Clock size={18} className="text-slate-300" />;
 }
@@ -1144,7 +1144,7 @@ function formatObjectInline(value: Record<string, unknown>) {
   return entries.join(" · ") || "无 metadata";
 }
 
-const inputClass = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-violet-300 focus:ring-2 focus:ring-violet-100 disabled:bg-slate-50 disabled:text-slate-400";
+const inputClass = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-50 disabled:text-slate-400";
 const outlineButton = "inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50";
 const primaryHeaderButton = "inline-flex h-9 items-center gap-2 rounded-lg bg-slate-950 px-3 text-xs font-semibold text-white hover:bg-slate-800";
 const primaryButton = "inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-slate-950 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50";

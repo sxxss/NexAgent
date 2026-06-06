@@ -174,7 +174,7 @@ export default function MCPPage() {
         description="管理 MCP server，测试连接状态，并控制每个 server 暴露给 Agent 的具体工具。"
         actions={
           <>
-            <Link href="/creator?type=mcp" className="inline-flex h-9 items-center gap-2 rounded-lg border border-fuchsia-200 bg-fuchsia-50 px-3 text-xs font-semibold text-fuchsia-700 hover:bg-fuchsia-100">
+            <Link href="/creator?type=mcp" className="inline-flex h-9 items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-semibold text-sky-700 hover:bg-sky-100">
               <Sparkles size={14} />
               AI 创建
             </Link>
@@ -312,7 +312,7 @@ function MCPFormFields({ form, setForm, lockedId = false }: { form: MCPForm; set
                 key={item.id}
                 type="button"
                 onClick={() => setForm({ ...form, transport: item.id })}
-                className={`min-h-24 rounded-xl border px-3 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm ${active ? "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-800 shadow-sm" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+                className={`min-h-24 rounded-xl border px-3 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm ${active ? "border-sky-300 bg-sky-50 text-sky-800 shadow-sm" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
               >
                 <span className="block text-xs font-bold">{item.label}</span>
                 <span className="mt-1 block text-sm font-semibold">{item.description}</span>
@@ -357,7 +357,7 @@ function InstalledMCPCard({
     <Card>
       <CardContent className="p-5">
         <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-fuchsia-50 text-fuchsia-700"><Boxes size={18} /></div>
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-50 text-sky-700"><Boxes size={18} /></div>
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-sm font-semibold text-slate-950">{server.name}</h2>
             <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{server.description || server.id}</p>
@@ -741,5 +741,5 @@ function maskEnv(env: Record<string, string>) {
   );
 }
 
-const inputClass = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-fuchsia-300 focus:ring-2 focus:ring-fuchsia-100";
+const inputClass = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100";
 const outlineButton = "inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50";

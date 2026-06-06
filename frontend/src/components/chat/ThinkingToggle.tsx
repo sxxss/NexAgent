@@ -63,10 +63,10 @@ export function ThinkingToggle({
         title="思考模式"
         className={cn(
           "flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-semibold shadow-sm transition",
-          "border-slate-200 bg-white/80 text-slate-700 hover:border-[#d8cdfa] hover:bg-white hover:text-[#4733c9]",
+          "border-slate-200 bg-white/80 text-slate-700 hover:border-[#c7d2fe] hover:bg-white hover:text-[#3730a3]",
         )}
       >
-        <ActiveIcon size={14} className="text-[#6d5cf0]" />
+        <ActiveIcon size={14} className="text-[#4f46e5]" />
         {active.label}
         <ChevronDown size={13} className="text-slate-400" />
       </button>
@@ -78,7 +78,7 @@ export function ThinkingToggle({
         >
           <div className="border-b border-slate-100 px-4 py-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <Sparkles size={15} className="text-[#6d5cf0]" />
+              <Sparkles size={15} className="text-[#4f46e5]" />
               思考模式
             </div>
             <p className="mt-1 text-xs leading-5 text-slate-500">
@@ -101,7 +101,7 @@ export function ThinkingToggle({
                   className={cn(
                     "flex items-start gap-3 rounded-xl px-3 py-2.5 text-left transition",
                     supported ? "hover:bg-slate-50" : "cursor-not-allowed opacity-40",
-                    mode === item.id && supported && "bg-[#efeafe] text-[#4733c9]",
+                    mode === item.id && supported && "bg-[#eef2ff] text-[#3730a3]",
                   )}
                 >
                   <Icon size={16} className="mt-0.5 shrink-0" />

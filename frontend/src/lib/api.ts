@@ -1,6 +1,8 @@
-// NexAgent API client — talks to the FastAPI backend via Next.js rewrites
-
-const BASE = "/api";
+// NexAgent API client — talks to the FastAPI backend.
+// Defaults to the same-origin "/api" (Next.js rewrites in local dev). In Docker
+// the browser can't reach the gateway via Next's proxy due to trailing-slash
+// handling, so NEXT_PUBLIC_API_BASE points the client straight at the backend.
+const BASE = process.env.NEXT_PUBLIC_API_BASE || "/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -614,7 +616,7 @@ export interface ProviderCreateBody {
   is_default?: boolean;
 }
 
-export type ProviderCapability = "chat" | "embedding" | "rerank";
+export type ProviderCapability = "chat" | "embedding" | "rerank" | "asr" | "tts";
 
 export interface ProviderModelConfig {
   id: string;
@@ -1350,6 +1352,131 @@ export async function updateSearchConfig(body: SearchConfigUpdate): Promise<Sear
   });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`);
   return res.json();
+}
+
+// ── Speech (ASR / TTS) ──────────────────────────────────────────────────────
+
+export interface SpeechConfig {
+  asr: {
+    enabled: boolean;
+    provider_id: string;
+    model: string;
+    language: string;
+  };
+  tts: {
+    enabled: boolean;
+    provider_id: string;
+    model: string;
+    voice: string;
+    format: string;
+    sample_rate: number;
+    speed: number;
+  };
+}
+
+export async function fetchSpeechConfig(): Promise<SpeechConfig> {
+  const res = await fetch(`${BASE}/settings/speech`);
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function updateSpeechConfig(body: {
+  asr_enabled: boolean;
+  asr_provider_id: string;
+  asr_model: string;
+  asr_language: string;
+  tts_enabled: boolean;
+  tts_provider_id: string;
+  tts_model: string;
+  tts_voice: string;
+  tts_format: string;
+  tts_sample_rate: number;
+  tts_speed: number;
+}): Promise<SpeechConfig> {
+  const res = await fetch(`${BASE}/settings/speech`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`);
+  return res.json();
+}
+
+/** Speech-to-text: send a recorded audio blob, get back the transcript. */
+export async function transcribeAudio(blob: Blob, filename = "audio.webm"): Promise<string> {
+  const form = new FormData();
+  form.append("file", blob, filename);
+  const res = await fetch(`${BASE}/media/transcribe`, { method: "POST", body: form });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`);
+  return (await res.json()).text ?? "";
+}
+
+/** Text-to-speech: returns a playable object URL for the synthesized audio. */
+export async function synthesizeSpeech(
+  text: string,
+  opts?: { voice?: string; model?: string; format?: string; speed?: number },
+): Promise<{ url: string; mime: string }> {
+  const res = await fetch(`${BASE}/media/tts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, ...opts }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`);
+  const mime = res.headers.get("Content-Type") || "audio/mpeg";
+  const buf = await res.blob();
+  return { url: URL.createObjectURL(buf), mime };
+}
+
+// ── LLM Wiki ────────────────────────────────────────────────────────────────
+
+export interface WikiPage {
+  id: string;
+  title: string;
+  tags: string[];
+  thread_id: string;
+  kb_id?: string | null;
+  file_id?: string | null;
+  created_at: number;
+  char_count: number;
+  warning?: string;
+  content?: string;
+}
+
+export async function crystallizeWiki(body: { thread_id: string; kb_id?: string; model?: string }): Promise<WikiPage> {
+  const res = await fetch(`${BASE}/wiki/crystallize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function fetchWikiPages(): Promise<WikiPage[]> {
+  const res = await fetch(`${BASE}/wiki/pages`);
+  if (!res.ok) return [];
+  return (await res.json()).pages ?? [];
+}
+
+export async function fetchWikiPage(id: string): Promise<WikiPage | null> {
+  const res = await fetch(`${BASE}/wiki/pages/${id}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function deleteWikiPage(id: string): Promise<void> {
+  await fetch(`${BASE}/wiki/pages/${id}`, { method: "DELETE" });
+}
+
+// ── Realtime voice call ─────────────────────────────────────────────────────
+
+/** Resolve the WebSocket URL for the realtime voice call endpoint. */
+export function voiceCallWsUrl(): string {
+  if (typeof window === "undefined") return "";
+  const base = BASE.startsWith("http")
+    ? BASE.replace(/^http/, "ws")
+    : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}${BASE}`;
+  return `${base}/voice/call`;
 }
 
 export async function testSearchConfig(body: {

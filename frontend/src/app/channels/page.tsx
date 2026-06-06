@@ -44,9 +44,9 @@ export default function ChannelsPage() {
       <main className="grid min-h-0 flex-1 gap-5 overflow-y-auto p-6 xl:grid-cols-[420px_minmax(0,1fr)]">
         <section className="space-y-3">
           {channels.map((channel) => (
-            <button key={channel.id} type="button" onClick={() => setSelected(channel.id)} className={cn("w-full rounded-xl border bg-white p-4 text-left shadow-sm transition hover:border-slate-300", current?.id === channel.id ? "border-fuchsia-300 ring-2 ring-fuchsia-100" : "border-slate-200")}>
+            <button key={channel.id} type="button" onClick={() => setSelected(channel.id)} className={cn("w-full rounded-xl border bg-white p-4 text-left shadow-sm transition hover:border-slate-300", current?.id === channel.id ? "border-sky-300 ring-2 ring-sky-100" : "border-slate-200")}>
               <div className="mb-2 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-fuchsia-50 text-fuchsia-700"><Send size={15} /></div><div><p className="text-sm font-semibold text-slate-950">{channel.name}</p><p className="font-mono text-xs text-slate-400">{channel.id}</p></div></div>
+                <div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-700"><Send size={15} /></div><div><p className="text-sm font-semibold text-slate-950">{channel.name}</p><p className="font-mono text-xs text-slate-400">{channel.id}</p></div></div>
                 <Badge variant={channel.enabled ? "success" : "secondary"}>{channel.enabled ? "启用" : "关闭"}</Badge>
               </div>
               <p className="text-xs leading-5 text-slate-500">{channel.description}</p>
@@ -59,7 +59,7 @@ export default function ChannelsPage() {
           <CardContent className="p-5">
             <div className="mb-5 flex items-center justify-between">
               <div><h2 className="text-sm font-semibold text-slate-950">{current?.name ?? "渠道控制台"}</h2><p className="mt-1 text-xs text-slate-500">用标准 payload 模拟入站消息</p></div>
-              {current?.enabled ? <CheckCircle size={18} className="text-fuchsia-600" /> : null}
+              {current?.enabled ? <CheckCircle size={18} className="text-sky-600" /> : null}
             </div>
             <div className="space-y-4">
               <Field label="用户 ID"><input className={inputClass} value={userId} onChange={(event) => setUserId(event.target.value)} /></Field>
@@ -78,5 +78,5 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <label className="block text-xs font-medium text-slate-600"><span>{label}</span><div className="mt-1">{children}</div></label>;
 }
 
-const inputClass = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-fuchsia-300 focus:ring-2 focus:ring-fuchsia-100";
+const inputClass = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100";
 const outlineButton = "inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50";

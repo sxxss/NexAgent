@@ -11,11 +11,13 @@ import {
   Globe2,
   KeyRound,
   Loader2,
+  Mic,
   Plus,
   RefreshCw,
   Search,
   Settings2,
   Trash2,
+  Volume2,
   Wifi,
   X,
   type LucideIcon,
@@ -27,14 +29,18 @@ import {
   fetchProviderModels,
   fetchProviders,
   fetchSearchConfig,
+  fetchSpeechConfig,
+  synthesizeSpeech,
   testSearchConfig,
   updateProvider,
   updateSearchConfig,
+  updateSpeechConfig,
   type ModelProvider,
   type ProviderCapability,
   type ProviderCreateBody,
   type ProviderModelConfig,
   type SearchConfig,
+  type SpeechConfig,
   type SearchProviderId,
   type SearchServiceId,
 } from "@/lib/api";
@@ -74,7 +80,7 @@ type ProviderView = {
   created: boolean;
 };
 
-type SettingsTab = "models" | "search";
+type SettingsTab = "models" | "search" | "voice";
 
 type SearchForm = {
   provider: SearchProviderId;
@@ -91,6 +97,8 @@ const CAPABILITIES: Array<{ value: ProviderCapability; label: string; tone: stri
   { value: "chat", label: "Chat", tone: "bg-sky-50 text-sky-700" },
   { value: "embedding", label: "Embedding", tone: "bg-emerald-50 text-emerald-700" },
   { value: "rerank", label: "Rerank", tone: "bg-amber-50 text-amber-700" },
+  { value: "asr", label: "ASR 语音识别", tone: "bg-violet-50 text-violet-700" },
+  { value: "tts", label: "TTS 语音合成", tone: "bg-rose-50 text-rose-700" },
 ];
 
 const DEFAULT_SEARCH_PROVIDERS: SearchConfig["providers"] = [
@@ -532,6 +540,16 @@ export default function SettingsPage() {
               >
                 搜索服务
               </button>
+              <button
+                type="button"
+                onClick={() => switchSettingsTab("voice")}
+                className={cn(
+                  "rounded-lg px-3 py-1.5 transition",
+                  activeTab === "voice" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800",
+                )}
+              >
+                语音
+              </button>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -541,12 +559,12 @@ export default function SettingsPage() {
                 <StatPill value={enabledCount} label="个启用" />
                 <StatPill value={modelCount} label="个模型" />
               </>
-            ) : (
+            ) : activeTab === "search" ? (
               <>
                 <StatPill value={searchConfigQuery.data?.providers.length ?? 2} label="个搜索供应商" />
                 <StatPill value={searchConfigQuery.data?.providers.filter((provider) => provider.enabled).length ?? 1} label="个启用" />
               </>
-            )}
+            ) : null}
           </div>
         </div>
       </header>
@@ -595,7 +613,7 @@ export default function SettingsPage() {
               ))}
             </section>
           </>
-        ) : (
+        ) : activeTab === "search" ? (
           <SearchSettingsPanel
             config={searchConfigQuery.data}
             form={searchForm}
@@ -609,6 +627,8 @@ export default function SettingsPage() {
             onTest={(override) => testSearchMutation.mutate(override)}
             onRefresh={() => void queryClient.invalidateQueries({ queryKey: ["search-config"] })}
           />
+        ) : (
+          <VoiceSettingsPanel providers={providersQuery.data ?? []} />
         )}
       </main>
 
@@ -693,7 +713,7 @@ function SearchSettingsPanel({
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#6d5cf0]">Web Search Runtime</p>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#4f46e5]">Web Search Runtime</p>
           <h2 className="mt-2 text-xl font-bold text-slate-950">搜索服务</h2>
           <p className="mt-1 text-sm text-slate-500">
             Agent 统一调用 web_search 和 web_fetch，底层供应商在这里切换。
@@ -777,14 +797,14 @@ function SearchStrategyPanel({
             <button
               type="button"
               onClick={() => onFormChange({ ...form, provider: "auto" })}
-              className={cn("rounded-lg px-4 transition", form.provider === "auto" ? "bg-white text-[#6d5cf0] shadow-sm" : "text-slate-500 hover:text-slate-800")}
+              className={cn("rounded-lg px-4 transition", form.provider === "auto" ? "bg-white text-[#4f46e5] shadow-sm" : "text-slate-500 hover:text-slate-800")}
             >
               Auto
             </button>
             <button
               type="button"
               onClick={() => onFormChange({ ...form, provider: manualProvider })}
-              className={cn("rounded-lg px-4 transition", form.provider !== "auto" ? "bg-white text-[#6d5cf0] shadow-sm" : "text-slate-500 hover:text-slate-800")}
+              className={cn("rounded-lg px-4 transition", form.provider !== "auto" ? "bg-white text-[#4f46e5] shadow-sm" : "text-slate-500 hover:text-slate-800")}
             >
               手动
             </button>
@@ -808,7 +828,7 @@ function SearchStrategyPanel({
                     className={cn(
                       "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition",
                       selectedProvider?.id === provider.id
-                        ? "bg-[#efeafe] font-semibold text-[#6d5cf0]"
+                        ? "bg-[#eef2ff] font-semibold text-[#4f46e5]"
                         : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
                     )}
                   >
@@ -980,7 +1000,7 @@ function SearchCardHeader({
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#efeafe] text-[#6d5cf0]">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#eef2ff] text-[#4f46e5]">
             <Icon size={20} />
           </div>
           <div className="min-w-0">
@@ -997,7 +1017,7 @@ function SearchCardHeader({
         className={cn(
           "inline-flex h-7 shrink-0 items-center rounded-md px-2 text-xs font-bold",
           active
-            ? "bg-[#efeafe] text-[#6d5cf0]"
+            ? "bg-[#eef2ff] text-[#4f46e5]"
             : enabled
               ? "bg-emerald-50 text-emerald-700"
               : configured
@@ -1114,7 +1134,7 @@ function ProviderCard({
       <div className="flex items-center gap-2 border-t border-slate-100 bg-slate-50/80 px-5 py-3">
         {item.created ? (
           <>
-            <button type="button" onClick={onManage} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-[#9a3fc4] hover:bg-white">
+            <button type="button" onClick={onManage} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-[#4f46e5] hover:bg-white">
               <Settings2 size={14} />
               管理模型
             </button>
@@ -1132,7 +1152,7 @@ function ProviderCard({
             </button>
           </>
         ) : (
-          <button type="button" onClick={onCreate} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-[#9a3fc4] hover:bg-white">
+          <button type="button" onClick={onCreate} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-[#4f46e5] hover:bg-white">
             <Plus size={14} />
             配置并启用
           </button>
@@ -1246,7 +1266,7 @@ function ProviderModal({
                   onClick={() => update({ capabilities: toggleCapability(form.capabilities, item.value) })}
                   className={cn(
                     "inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition",
-                    active ? "bg-[#b14fd6] text-white" : "bg-slate-50 text-slate-500 hover:bg-slate-100",
+                    active ? "bg-[#6366f1] text-white" : "bg-slate-50 text-slate-500 hover:bg-slate-100",
                   )}
                 >
                   {active ? <Check size={14} /> : <Plus size={14} />}
@@ -1262,7 +1282,7 @@ function ProviderModal({
             <div className="text-sm font-semibold text-slate-700">状态</div>
             <div className="text-xs text-slate-400">启用后模型会进入首页模型选择列表。</div>
           </div>
-          <button type="button" onClick={() => update({ is_enabled: !form.is_enabled })} className={cn(switchClass, form.is_enabled && "bg-[#b14fd6]")}>
+          <button type="button" onClick={() => update({ is_enabled: !form.is_enabled })} className={cn(switchClass, form.is_enabled && "bg-[#6366f1]")}>
             <span className={cn("h-5 w-5 rounded-full bg-white shadow transition", form.is_enabled && "translate-x-5")} />
           </button>
         </div>
@@ -1718,12 +1738,192 @@ function priceSummary(item: ProviderModelConfig) {
 }
 
 function normalizeCapabilities(value?: ProviderCapability[]) {
-  const values = (value?.length ? value : ["chat"]).filter((item): item is ProviderCapability => ["chat", "embedding", "rerank"].includes(item));
+  const values = (value?.length ? value : ["chat"]).filter((item): item is ProviderCapability => ["chat", "embedding", "rerank", "asr", "tts"].includes(item));
   return Array.from(new Set(values));
 }
 
+function VoiceSettingsPanel({ providers }: { providers: ModelProvider[] }) {
+  const queryClient = useQueryClient();
+  const speechQuery = useQuery({ queryKey: ["speech-config"], queryFn: fetchSpeechConfig });
+  const [form, setForm] = useState<SpeechConfig | null>(null);
+  const [syncedFrom, setSyncedFrom] = useState<SpeechConfig | null>(null);
+  const [testState, setTestState] = useState<{ kind: "idle" | "loading" | "ok" | "error"; message?: string }>({ kind: "idle" });
+
+  // Seed the editable form from the fetched config once (render-phase reset on new data).
+  if (speechQuery.data && speechQuery.data !== syncedFrom) {
+    setSyncedFrom(speechQuery.data);
+    setForm(speechQuery.data);
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: (next: SpeechConfig) =>
+      updateSpeechConfig({
+        asr_enabled: next.asr.enabled,
+        asr_provider_id: next.asr.provider_id,
+        asr_model: next.asr.model,
+        asr_language: next.asr.language,
+        tts_enabled: next.tts.enabled,
+        tts_provider_id: next.tts.provider_id,
+        tts_model: next.tts.model,
+        tts_voice: next.tts.voice,
+        tts_format: next.tts.format,
+        tts_sample_rate: next.tts.sample_rate,
+        tts_speed: next.tts.speed,
+      }),
+    onSuccess: (data) => {
+      setForm(data);
+      void queryClient.invalidateQueries({ queryKey: ["speech-config"] });
+    },
+  });
+
+  if (!form) {
+    return <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> 加载语音配置...</div>;
+  }
+
+  const enabledProviders = providers.filter((p) => p.is_enabled);
+  const providerOptions = (capability: ProviderCapability) => {
+    const tagged = enabledProviders.filter((p) => p.capabilities?.includes(capability));
+    return (tagged.length ? tagged : enabledProviders);
+  };
+
+  const patchAsr = (patch: Partial<SpeechConfig["asr"]>) => setForm((prev) => (prev ? { ...prev, asr: { ...prev.asr, ...patch } } : prev));
+  const patchTts = (patch: Partial<SpeechConfig["tts"]>) => setForm((prev) => (prev ? { ...prev, tts: { ...prev.tts, ...patch } } : prev));
+
+  const runTtsTest = async () => {
+    setTestState({ kind: "loading" });
+    try {
+      // Persist first so the backend uses the latest selection.
+      await saveMutation.mutateAsync(form);
+      const { url } = await synthesizeSpeech("你好，这是 NexAgent 的语音合成测试。", { voice: form.tts.voice, model: form.tts.model, format: form.tts.format, speed: form.tts.speed });
+      await new Audio(url).play();
+      setTestState({ kind: "ok", message: "已播放测试语音" });
+    } catch (err) {
+      setTestState({ kind: "error", message: err instanceof Error ? err.message : "测试失败" });
+    }
+  };
+
+  const inputCls = "h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-indigo-300";
+  const labelCls = "mb-1 block text-xs font-semibold text-slate-500";
+
+  return (
+    <div className="mx-auto grid max-w-4xl gap-5 lg:grid-cols-2">
+      {/* ASR card */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 text-violet-600"><Mic size={16} /></span>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">语音识别 · ASR</h3>
+              <p className="text-xs text-slate-500">把麦克风语音转成文字（/audio/transcriptions）</p>
+            </div>
+          </div>
+          <Toggle checked={form.asr.enabled} onChange={(v) => patchAsr({ enabled: v })} />
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className={labelCls}>供应商</label>
+            <select className={inputCls} value={form.asr.provider_id} onChange={(e) => patchAsr({ provider_id: e.target.value })}>
+              <option value="">默认供应商（跟随对话默认）</option>
+              {providerOptions("asr").map((p) => (
+                <option key={p.id} value={p.id}>{p.name}{p.capabilities?.includes("asr") ? " · ASR" : ""}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>识别模型</label>
+            <input className={inputCls} value={form.asr.model} onChange={(e) => patchAsr({ model: e.target.value })} placeholder="FunAudioLLM/SenseVoiceSmall" />
+          </div>
+          <div>
+            <label className={labelCls}>语言（留空自动识别）</label>
+            <input className={inputCls} value={form.asr.language} onChange={(e) => patchAsr({ language: e.target.value })} placeholder="如 zh / en，留空自动" />
+          </div>
+        </div>
+      </section>
+
+      {/* TTS card */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600"><Volume2 size={16} /></span>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">语音合成 · TTS</h3>
+              <p className="text-xs text-slate-500">朗读 Agent 回复（/audio/speech）</p>
+            </div>
+          </div>
+          <Toggle checked={form.tts.enabled} onChange={(v) => patchTts({ enabled: v })} />
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className={labelCls}>供应商</label>
+            <select className={inputCls} value={form.tts.provider_id} onChange={(e) => patchTts({ provider_id: e.target.value })}>
+              <option value="">默认供应商（跟随对话默认）</option>
+              {providerOptions("tts").map((p) => (
+                <option key={p.id} value={p.id}>{p.name}{p.capabilities?.includes("tts") ? " · TTS" : ""}</option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>合成模型</label>
+              <input className={inputCls} value={form.tts.model} onChange={(e) => patchTts({ model: e.target.value })} placeholder="FunAudioLLM/CosyVoice2-0.5B" />
+            </div>
+            <div>
+              <label className={labelCls}>音色 voice</label>
+              <input className={inputCls} value={form.tts.voice} onChange={(e) => patchTts({ voice: e.target.value })} placeholder="...:alex" />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className={labelCls}>格式</label>
+              <select className={inputCls} value={form.tts.format} onChange={(e) => patchTts({ format: e.target.value })}>
+                {["mp3", "wav", "opus", "pcm"].map((f) => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>采样率</label>
+              <input type="number" className={inputCls} value={form.tts.sample_rate} onChange={(e) => patchTts({ sample_rate: Number(e.target.value) || 0 })} />
+            </div>
+            <div>
+              <label className={labelCls}>语速 ×</label>
+              <input type="number" step="0.1" min="0.5" max="2" className={inputCls} value={form.tts.speed} onChange={(e) => patchTts({ speed: Number(e.target.value) || 1 })} />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="lg:col-span-2 flex flex-wrap items-center gap-3">
+        <button type="button" onClick={() => saveMutation.mutate(form)} disabled={saveMutation.isPending} className={primaryButtonClass}>
+          {saveMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+          保存语音配置
+        </button>
+        <button type="button" onClick={() => void runTtsTest()} disabled={testState.kind === "loading"} className={iconButtonClass + " w-auto gap-2 px-3"}>
+          {testState.kind === "loading" ? <Loader2 size={16} className="animate-spin" /> : <Volume2 size={16} />}
+          <span className="text-sm font-semibold">试听 TTS</span>
+        </button>
+        {saveMutation.isSuccess && !saveMutation.isPending ? <span className="text-sm text-emerald-600">已保存</span> : null}
+        {testState.kind === "ok" ? <span className="text-sm text-emerald-600">{testState.message}</span> : null}
+        {testState.kind === "error" ? <span className="max-w-md truncate text-sm text-rose-500">{testState.message}</span> : null}
+      </div>
+    </div>
+  );
+}
+
+function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={cn("relative h-6 w-11 rounded-full transition", checked ? "bg-indigo-500" : "bg-slate-300")}
+    >
+      <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition", checked ? "left-[22px]" : "left-0.5")} />
+    </button>
+  );
+}
+
 function isSettingsTab(value: string | null): value is SettingsTab {
-  return value === "models" || value === "search";
+  return value === "models" || value === "search" || value === "voice";
 }
 
 function toggleCapability(values: ProviderCapability[], capability: ProviderCapability) {
@@ -1795,11 +1995,11 @@ async function invalidateProviderData(queryClient: ReturnType<typeof useQueryCli
   await queryClient.invalidateQueries({ queryKey: ["models"] });
 }
 
-const inputClass = "h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-[#b14fd6] focus:ring-4 focus:ring-[#b14fd6]/10 disabled:bg-slate-50 disabled:text-slate-400";
-const primaryButtonClass = "inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#b14fd6] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#287da8] disabled:opacity-50";
+const inputClass = "h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-[#6366f1] focus:ring-4 focus:ring-[#6366f1]/10 disabled:bg-slate-50 disabled:text-slate-400";
+const primaryButtonClass = "inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#6366f1] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#287da8] disabled:opacity-50";
 const outlineButtonClass = "inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50";
 const iconButtonClass = "flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50";
 const miniButtonClass = "flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 disabled:bg-emerald-50 disabled:text-emerald-600";
 const switchClass = "flex h-6 w-11 items-center rounded-full bg-slate-300 p-0.5 transition";
 const searchCardClass = "flex h-full min-h-[430px] flex-col rounded-2xl border bg-white p-5 shadow-sm transition";
-const activeSearchCardClass = "border-[#6d5cf0] shadow-[0_14px_32px_rgba(109,92,240,0.12)]";
+const activeSearchCardClass = "border-[#4f46e5] shadow-[0_14px_32px_rgba(79,70,229,0.12)]";

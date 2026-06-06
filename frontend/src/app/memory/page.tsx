@@ -89,7 +89,7 @@ function MemoryCard({ entry, onEdit, onDelete }: { entry: MemoryEntry; onEdit: (
     <Card className="group">
       <CardContent className="p-5">
         <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-fuchsia-50 text-fuchsia-700"><Icon size={18} /></div>
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-700"><Icon size={18} /></div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-1.5"><h2 className="truncate text-sm font-semibold text-slate-950">{entry.key}</h2><Badge variant="secondary">{meta.label}</Badge><Badge variant="secondary">{entry.source === "agent" ? <Bot size={10} /> : <User size={10} />}{entry.source === "agent" ? "Agent" : "手动"}</Badge></div>
             <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-600">{entry.value}</p>
@@ -123,7 +123,7 @@ function MemoryModal({ open, initial, onClose, onSaved }: { open: boolean; initi
         <input className={inputClass} placeholder="标签，例如 编程语言偏好" value={form.key} onChange={(event) => setForm({ ...form, key: event.target.value })} />
         <textarea className={`${inputClass} min-h-28 resize-none`} placeholder="内容" value={form.value} onChange={(event) => setForm({ ...form, value: event.target.value })} />
         <select className={inputClass} value={form.memory_type} onChange={(event) => setForm({ ...form, memory_type: event.target.value as MemoryEntry["memory_type"] })}>{Object.entries(TYPES).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}</select>
-        <label className="block text-xs font-medium text-slate-600">重要度 {Math.round(form.importance * 100)}%<input className="mt-2 w-full accent-fuchsia-600" type="range" min={0} max={1} step={0.1} value={form.importance} onChange={(event) => setForm({ ...form, importance: Number(event.target.value) })} /></label>
+        <label className="block text-xs font-medium text-slate-600">重要度 {Math.round(form.importance * 100)}%<input className="mt-2 w-full accent-sky-600" type="range" min={0} max={1} step={0.1} value={form.importance} onChange={(event) => setForm({ ...form, importance: Number(event.target.value) })} /></label>
         <button type="button" disabled={!form.key.trim() || !form.value.trim() || mutation.isPending} onClick={() => mutation.mutate()} className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-slate-950 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50">保存</button>
       </div>
     </Dialog>
@@ -134,6 +134,6 @@ function Stat({ label, value, icon: Icon }: { label: string; value: number; icon
   return <Card><CardContent className="p-5"><div className="flex items-center gap-2 text-sm text-slate-500"><Icon size={16} />{label}</div><p className="mt-2 text-3xl font-semibold text-slate-950">{value}</p></CardContent></Card>;
 }
 
-const inputClass = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-fuchsia-300 focus:ring-2 focus:ring-fuchsia-100";
+const inputClass = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100";
 const outlineButton = "inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50";
 const tabClass = (active: boolean) => `h-9 px-3 text-xs font-semibold ${active ? "bg-slate-950 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`;

@@ -22,6 +22,8 @@ NexAgent 是一个知识增强型 AI Agent 平台，融合基于图的智能体�
 | --- | --- |
 | Agent 运行时 | 基于 LangGraph 的聊天与深度研究 Agent，支持流式响应 |
 | 工具 | 知识库搜索、Web 搜索/抓取、Python 代码执行、MCP 工具、Sub-Agent 委派 |
+| 语音 | ASR 语音输入、TTS 语音播报、实时语音通话（按住说话）；供应商在「设置 → 语音」卡片可配 |
+| LLM Wiki | 一键把对话沉淀成结构化 Wiki 知识页面，可写入知识库参与向量/图谱检索 |
 | 知识系统 | Milvus 兼容向量库、LightRAG/Neo4j 风格图谱库、本地开发降级 |
 | 前端工作台 | Next.js 页面：对话、仪表盘、Agent、知识库、记忆、MCP、Skills、渠道、评估、创建、设置 |
 | API | FastAPI 网关、OpenAPI 文档、健康检查、系统信息和模块化路由 |
@@ -89,6 +91,25 @@ cd frontend
 npm install
 npm run dev
 ```
+
+## 数据库（生产配置）
+
+NexAgent 默认使用 **PostgreSQL**（关系数据）+ **Milvus**（向量）+ **Neo4j**（知识图谱）。
+本地开发前先拉起基础设施：
+
+```bash
+docker compose up -d postgres redis milvus neo4j minio
+```
+
+连接串由 `DATABASE_URL` 决定（未设置时默认连本机 `postgresql+asyncpg://nexagent:nexagent@localhost:5432/nexagent`）。
+应用启动时会自动建表并初始化内置 Agent / 模型供应商，无需手动迁移。
+
+- 想完全离线、用 SQLite 跑：设置 `NEXAGENT_DB_BACKEND=sqlite` 且 `NEXAGENT_KB_STORAGE=legacy`。
+- 已有旧的 SQLite 数据要迁到 Postgres：
+
+  ```bash
+  uv run python scripts/migrate_sqlite_to_postgres.py
+  ```
 
 ## Docker
 

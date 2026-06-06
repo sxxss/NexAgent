@@ -114,16 +114,16 @@ export default function DashboardPage() {
   );
   const tokenSplit = useMemo(
     () => [
-      { label: "输入", value: summary?.input_tokens ?? 0, color: "#6d5cf0" },
-      { label: "输出", value: summary?.output_tokens ?? 0, color: "#c451e8" },
+      { label: "输入", value: summary?.input_tokens ?? 0, color: "#4f46e5" },
+      { label: "输出", value: summary?.output_tokens ?? 0, color: "#6366f1" },
     ],
     [summary],
   );
   const tokenSourceSplit = useMemo(() => {
     const sources = summary?.token_sources;
     return [
-      { label: "真实", value: sources?.provider_reported ?? 0, color: "#6d5cf0" },
-      { label: "估算", value: sources?.estimated ?? 0, color: "#c451e8" },
+      { label: "真实", value: sources?.provider_reported ?? 0, color: "#4f46e5" },
+      { label: "估算", value: sources?.estimated ?? 0, color: "#6366f1" },
       { label: "忽略", value: sources?.ignored ?? 0, color: "#f59e0b" },
     ];
   }, [summary]);
@@ -219,13 +219,13 @@ export default function DashboardPage() {
 
         <section className="mt-5 grid items-start gap-4 xl:grid-cols-3">
           <Panel title="调用量趋势" icon={BarChart3} action={loading ? "更新中..." : `${days} 天窗口`}>
-            <TrendChart data={callSeriesQuery.data ?? []} days={days} color="#6d5cf0" unit="次" size="large" />
+            <TrendChart data={callSeriesQuery.data ?? []} days={days} color="#4f46e5" unit="次" size="large" />
           </Panel>
           <Panel title="Token 消耗趋势" icon={Zap} action={loading ? "更新中..." : `${days} 天窗口`}>
-            <TrendChart data={tokenSeriesQuery.data ?? []} days={days} color="#c451e8" unit="tok" size="large" />
+            <TrendChart data={tokenSeriesQuery.data ?? []} days={days} color="#6366f1" unit="tok" size="large" />
           </Panel>
           <Panel title={`成本趋势 ${activeCostCurrency}`} icon={Gauge} action={loading ? "更新中..." : `${days} 天窗口`}>
-            <TrendChart data={costSeries} days={days} color="#6d5cf0" unit={activeCostCurrency} size="large" valueFormatter={(value) => formatCost(value, activeCostCurrency)} />
+            <TrendChart data={costSeries} days={days} color="#4f46e5" unit={activeCostCurrency} size="large" valueFormatter={(value) => formatCost(value, activeCostCurrency)} />
           </Panel>
         </section>
 
@@ -352,7 +352,7 @@ function ResourceCard({ icon: Icon, label, value, description }: { icon: LucideI
   return (
     <div className="rounded-3xl border border-white/80 bg-white/78 p-5 shadow-[0_18px_40px_rgba(39,56,87,0.08)]">
       <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#efeafe] text-[#6d5cf0]">
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#eef2ff] text-[#4f46e5]">
           <Icon size={18} />
         </div>
         <div className="min-w-0">
@@ -394,7 +394,7 @@ function HealthStrip({
           <div className="flex items-center gap-3">
             <div
               className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full"
-              style={{ background: `conic-gradient(${successRate >= 95 ? "#c451e8" : "#f59e0b"} ${Math.max(0, Math.min(successRate, 100)) * 3.6}deg, #e8edf5 0deg)` }}
+              style={{ background: `conic-gradient(${successRate >= 95 ? "#6366f1" : "#f59e0b"} ${Math.max(0, Math.min(successRate, 100)) * 3.6}deg, #e8edf5 0deg)` }}
             >
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-xs font-bold text-slate-900">
                 {successRate ? `${successRate.toFixed(0)}%` : "-"}
@@ -406,7 +406,7 @@ function HealthStrip({
             </div>
           </div>
         </div>
-        <MiniBars title="状态分布" items={statusItems.length ? statusItems.map((item) => ({ label: statusLabel(item.status), value: item.count, color: item.status === "error" ? "#ef4444" : "#c451e8" })) : [{ label: "暂无", value: 0, color: "#94a3b8" }]} total={totalCalls} />
+        <MiniBars title="状态分布" items={statusItems.length ? statusItems.map((item) => ({ label: statusLabel(item.status), value: item.count, color: item.status === "error" ? "#ef4444" : "#6366f1" })) : [{ label: "暂无", value: 0, color: "#94a3b8" }]} total={totalCalls} />
         <MiniBars title="Token 拆分" items={tokenSplit} />
         <MiniBars title="Token 来源" items={tokenSourceSplit} />
         <div className="rounded-2xl border border-slate-100 bg-slate-50/72 p-4">
@@ -415,7 +415,7 @@ function HealthStrip({
             <span className="font-mono text-xs font-semibold text-slate-600">{(pricingCoverage?.percent ?? 0).toFixed(1)}%</span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-            <div className="h-full rounded-full bg-[#6d5cf0]" style={{ width: `${Math.max(0, Math.min(pricingCoverage?.percent ?? 0, 100))}%` }} />
+            <div className="h-full rounded-full bg-[#4f46e5]" style={{ width: `${Math.max(0, Math.min(pricingCoverage?.percent ?? 0, 100))}%` }} />
           </div>
           <p className="mt-3 text-xs text-slate-500">
             {pricingCoverage?.priced_calls ?? 0}/{pricingCoverage?.total_calls ?? 0} 次调用已计价
@@ -575,7 +575,7 @@ function StatusBreakdown({ items, total }: { items: { status: string; count: num
               <span className="font-mono text-slate-400">{item.count}</span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-              <div className={cn("h-full rounded-full", item.status === "error" ? "bg-rose-500" : "bg-fuchsia-500")} style={{ width: `${percent}%` }} />
+              <div className={cn("h-full rounded-full", item.status === "error" ? "bg-rose-500" : "bg-sky-500")} style={{ width: `${percent}%` }} />
             </div>
           </div>
         );
@@ -618,7 +618,7 @@ function PricingCoverage({ coverage }: { coverage?: { priced_calls: number; tota
         <span className="font-mono text-xs font-semibold text-slate-600">{percent.toFixed(1)}%</span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-        <div className="h-full rounded-full bg-[#6d5cf0]" style={{ width: `${Math.max(0, Math.min(percent, 100))}%` }} />
+        <div className="h-full rounded-full bg-[#4f46e5]" style={{ width: `${Math.max(0, Math.min(percent, 100))}%` }} />
       </div>
       <p className="mt-2 text-xs text-slate-500">
         {coverage?.priced_calls ?? 0}/{coverage?.total_calls ?? 0} 次调用已匹配模型价格。
@@ -629,7 +629,7 @@ function PricingCoverage({ coverage }: { coverage?: { priced_calls: number; tota
 
 function UnpricedModels({ items }: { items: { model_name: string; calls: number; tokens: number; reason: string }[] }) {
   return (
-    <Panel title="未计价模型" icon={AlertTriangle} action={<Link className="text-xs font-semibold text-[#6d5cf0] hover:underline" href="/settings">去配置价格</Link>}>
+    <Panel title="未计价模型" icon={AlertTriangle} action={<Link className="text-xs font-semibold text-[#4f46e5] hover:underline" href="/settings">去配置价格</Link>}>
       {items.length === 0 ? (
         <p className="py-10 text-center text-sm text-slate-400">当前窗口内没有未计价模型。</p>
       ) : (
@@ -730,7 +730,7 @@ function RecentLogs({ logs }: { logs: LogRow[] }) {
         <div className="max-h-[470px] divide-y divide-slate-100 overflow-y-auto">
           {logs.map((log) => (
             <div key={log.id} className="grid grid-cols-[10px_1fr_auto] items-center gap-3 py-3">
-              <span className={cn("h-2.5 w-2.5 rounded-full", log.status === "error" ? "bg-rose-500" : "bg-fuchsia-500")} />
+              <span className={cn("h-2.5 w-2.5 rounded-full", log.status === "error" ? "bg-rose-500" : "bg-sky-500")} />
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-slate-800">{log.agent_name || log.agent_id || "unknown agent"}</p>
                 <p className="truncate font-mono text-xs text-slate-400">{log.model_name || "default model"}</p>
@@ -808,7 +808,7 @@ function RankPanel({
                 <span className="font-mono text-xs text-slate-400">{formatNum(row.value)}</span>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                <div className="h-full rounded-full bg-[#6d5cf0]" style={{ width: `${(row.value / max) * 100}%` }} />
+                <div className="h-full rounded-full bg-[#4f46e5]" style={{ width: `${(row.value / max) * 100}%` }} />
               </div>
             </div>
           ))}
@@ -829,8 +829,8 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 
 function StatusBadge({ text, tone }: { text: string; tone: "blue" | "teal" | "amber" | "rose" | "slate" }) {
   const tones = {
-    blue: "bg-violet-50 text-violet-700",
-    teal: "bg-fuchsia-50 text-fuchsia-700",
+    blue: "bg-indigo-50 text-indigo-700",
+    teal: "bg-sky-50 text-sky-700",
     amber: "bg-amber-50 text-amber-700",
     rose: "bg-rose-50 text-rose-700",
     slate: "bg-slate-100 text-slate-600",
@@ -947,7 +947,7 @@ function rankValue(item: { calls: number; tokens: number; cost: number }, metric
 function toneClass(tone: "blue" | "teal" | "amber" | "rose" | "emerald") {
   const tones = {
     blue: "bg-sky-50 text-sky-700",
-    teal: "bg-fuchsia-50 text-fuchsia-700",
+    teal: "bg-sky-50 text-sky-700",
     amber: "bg-amber-50 text-amber-700",
     rose: "bg-rose-50 text-rose-700",
     emerald: "bg-emerald-50 text-emerald-700",

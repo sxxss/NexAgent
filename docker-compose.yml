@@ -261,7 +261,12 @@ services:
       - "3000:3000"
     environment:
       - NEXT_TELEMETRY_DISABLED=1
-      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8001/api
+      # Next.js rewrites /api/* to this target (server-side, inside the compose network).
+      # Must use the gateway service name, not localhost (which is the frontend container itself).
+      - NEXT_PUBLIC_API_URL=http://gateway:8001
+      # Browser-side API base: the browser runs on the host, so it reaches the gateway
+      # via the published port on localhost (CORS is enabled on the backend).
+      - NEXT_PUBLIC_API_BASE=http://localhost:8001/api
     depends_on:
       gateway:
         condition: service_started

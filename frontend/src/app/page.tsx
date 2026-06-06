@@ -9,9 +9,12 @@ import {
   ChevronDown,
   Database,
   History,
+  BookOpen,
   LayoutDashboard,
   Loader2,
+  Maximize2,
   MessageSquare,
+  Phone,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -30,6 +33,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { MessageBubble, type Message, type ProcessBlock, type ToolCallRuntime } from "@/components/chat/MessageBubble";
 import { ThinkingToggle } from "@/components/chat/ThinkingToggle";
+import { VoiceCallOverlay } from "@/components/chat/VoiceCallOverlay";
+import { WikiModal } from "@/components/chat/WikiModal";
 import {
   deleteConversation,
   fetchAgents,
@@ -65,6 +70,30 @@ const INSPECTOR_COLLAPSED_KEY = "nexagent.home.inspectorCollapsed";
 const CHAT_PROFILES_KEY = "nexagent.home.chatProfiles";
 const SELECTED_PROFILE_KEY = "nexagent.home.selectedProfileId";
 const SELECTED_CHAT_MODE_KEY = "nexagent.home.selectedChatMode";
+const CHAT_WIDTH_KEY = "nexagent.home.chatWidth";
+const CHAT_DENSITY_KEY = "nexagent.home.chatDensity";
+
+type ChatWidth = "normal" | "wide" | "full";
+type ChatDensity = "comfortable" | "compact";
+
+const CHAT_WIDTH_ORDER: ChatWidth[] = ["normal", "wide", "full"];
+const CHAT_WIDTH_CLASS: Record<ChatWidth, string> = {
+  normal: "max-w-3xl",
+  wide: "max-w-5xl",
+  full: "max-w-none",
+};
+const CHAT_WIDTH_LABEL: Record<ChatWidth, string> = {
+  normal: "标准宽度",
+  wide: "宽屏",
+  full: "全宽",
+};
+
+function isChatWidth(value: string | null): value is ChatWidth {
+  return value === "normal" || value === "wide" || value === "full";
+}
+function isChatDensity(value: string | null): value is ChatDensity {
+  return value === "comfortable" || value === "compact";
+}
 const CHAT_STREAM_CLIENT_IDLE_TIMEOUT_MS = 35 * 60 * 1000;
 const ALL_REASONING_MODES: ReasoningMode[] = ["fast", "balanced", "deep", "ultra"];
 const REASONING_EFFORT_BY_MODE = {
@@ -491,6 +520,10 @@ export default function ChatPage() {
   const [storageReady, setStorageReady] = useState(false);
   const [conversationCollapsed, setConversationCollapsed] = useState(false);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  const [chatWidth, setChatWidth] = useState<ChatWidth>("normal");
+  const [chatDensity, setChatDensity] = useState<ChatDensity>("comfortable");
+  const [showVoiceCall, setShowVoiceCall] = useState(false);
+  const [showWiki, setShowWiki] = useState(false);
   const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
   const [renameSaving, setRenameSaving] = useState(false);
@@ -539,6 +572,10 @@ export default function ChatPage() {
       setProfiles(readStoredProfiles());
       setConversationCollapsed(readStoredBool(CONVERSATION_COLLAPSED_KEY));
       setInspectorCollapsed(readStoredBool(INSPECTOR_COLLAPSED_KEY));
+      const storedWidth = window.localStorage.getItem(CHAT_WIDTH_KEY);
+      if (isChatWidth(storedWidth)) setChatWidth(storedWidth);
+      const storedDensity = window.localStorage.getItem(CHAT_DENSITY_KEY);
+      if (isChatDensity(storedDensity)) setChatDensity(storedDensity);
       setStorageReady(true);
     }, 0);
     return () => window.clearTimeout(timer);
@@ -575,6 +612,14 @@ export default function ChatPage() {
   useEffect(() => {
     if (storageReady) window.localStorage.setItem(INSPECTOR_COLLAPSED_KEY, inspectorCollapsed ? "1" : "0");
   }, [inspectorCollapsed, storageReady]);
+
+  useEffect(() => {
+    if (storageReady) window.localStorage.setItem(CHAT_WIDTH_KEY, chatWidth);
+  }, [chatWidth, storageReady]);
+
+  useEffect(() => {
+    if (storageReady) window.localStorage.setItem(CHAT_DENSITY_KEY, chatDensity);
+  }, [chatDensity, storageReady]);
 
   useEffect(() => {
     const handler = (event: MouseEvent) => {
@@ -860,7 +905,7 @@ export default function ChatPage() {
                   className={cn(
                     "px-3 text-xs font-semibold transition",
                     selectedChatMode === mode.id
-                      ? "brand-gradient rounded-[10px] text-white shadow-[0_8px_18px_rgba(109,92,240,0.28)]"
+                      ? "brand-gradient rounded-[10px] text-white shadow-[0_8px_18px_rgba(79,70,229,0.28)]"
                       : "text-slate-500 hover:text-slate-800",
                   )}
                 >
@@ -873,7 +918,7 @@ export default function ChatPage() {
               refNode={agentPickerRef}
               open={showAgentPicker}
               setOpen={setShowAgentPicker}
-              icon={<Bot size={15} className="text-[#6d5cf0]" />}
+              icon={<Bot size={15} className="text-[#4f46e5]" />}
               label={selectedAgent?.name ?? "选择 Agent"}
               width="w-80"
             >
@@ -891,7 +936,7 @@ export default function ChatPage() {
                     setShowAgentPicker(false);
                   }}
                 >
-                  <Bot size={15} className="mt-0.5 shrink-0 text-[#6d5cf0]" />
+                  <Bot size={15} className="mt-0.5 shrink-0 text-[#4f46e5]" />
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-semibold">{agent.name}</span>
                     <span className="block truncate text-xs text-slate-500">{agent.description || agent.base_type}</span>
@@ -989,14 +1034,60 @@ export default function ChatPage() {
               />
             </div>
 
-            <button
-              type="button"
-              onClick={startNew}
-              className="ml-auto inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white/80 px-3.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-white"
-            >
-              <Plus size={14} />
-              新对话
-            </button>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowVoiceCall(true)}
+                title="发起语音通话"
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-600 shadow-sm hover:bg-emerald-100"
+              >
+                <Phone size={14} />
+                通话
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowWiki(true)}
+                disabled={messages.length === 0}
+                title="把当前对话沉淀为 Wiki 知识页面"
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 text-xs font-semibold text-indigo-600 shadow-sm hover:bg-indigo-100 disabled:opacity-40"
+              >
+                <BookOpen size={14} />
+                沉淀 Wiki
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setChatWidth((prev) => CHAT_WIDTH_ORDER[(CHAT_WIDTH_ORDER.indexOf(prev) + 1) % CHAT_WIDTH_ORDER.length])
+                }
+                title={`对话宽度：${CHAT_WIDTH_LABEL[chatWidth]}（点击切换）`}
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white/80 px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-white"
+              >
+                <Maximize2 size={14} />
+                {CHAT_WIDTH_LABEL[chatWidth]}
+              </button>
+              <button
+                type="button"
+                onClick={() => setChatDensity((prev) => (prev === "compact" ? "comfortable" : "compact"))}
+                title={chatDensity === "compact" ? "当前：紧凑（点击切回舒适）" : "当前：舒适（点击切到紧凑）"}
+                className={cn(
+                  "inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold shadow-sm",
+                  chatDensity === "compact"
+                    ? "border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
+                    : "border-slate-200 bg-white/80 text-slate-700 hover:bg-white",
+                )}
+              >
+                <SlidersHorizontal size={14} />
+                {chatDensity === "compact" ? "紧凑" : "舒适"}
+              </button>
+              <button
+                type="button"
+                onClick={startNew}
+                className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white/80 px-3.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-white"
+              >
+                <Plus size={14} />
+                新对话
+              </button>
+            </div>
           </div>
         </header>
 
@@ -1019,7 +1110,7 @@ export default function ChatPage() {
               onStarter={(prompt) => void send(prompt)}
             />
           ) : (
-            <div className="mx-auto max-w-3xl px-5 py-5">
+            <div className={cn("mx-auto px-5 py-5", CHAT_WIDTH_CLASS[chatWidth], chatDensity === "compact" && "chat-compact")}>
               {messages.map((message) => (
                 <MessageBubble key={message.id} message={message} />
               ))}
@@ -1029,7 +1120,7 @@ export default function ChatPage() {
         </div>
 
         <footer className="border-t border-slate-200/70 bg-white/55 px-5 py-4">
-          <div className="mx-auto max-w-3xl">
+          <div className={cn("mx-auto", CHAT_WIDTH_CLASS[chatWidth])}>
             <div className="mb-2 flex items-center justify-end">
               <ProfilePicker
                 refNode={profilePickerRef}
@@ -1102,6 +1193,21 @@ export default function ChatPage() {
       onCancel={closeProfileRenameDialog}
       onSubmit={submitProfileRename}
     />
+    {showVoiceCall ? (
+      <VoiceCallOverlay
+        onClose={() => setShowVoiceCall(false)}
+        agent={runtimeAgentId}
+        threadId={threadId}
+        model={effectiveSelectedModelName || undefined}
+      />
+    ) : null}
+    <WikiModal
+      open={showWiki}
+      onClose={() => setShowWiki(false)}
+      threadId={threadId}
+      kbs={kbs}
+      model={effectiveSelectedModelName || undefined}
+    />
     </>
   );
 }
@@ -1136,7 +1242,7 @@ function ConversationPanel({
         <button
           type="button"
           onClick={onToggle}
-          className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#efeafe] text-[#6d5cf0] hover:bg-[#e9e3fd]"
+          className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#eef2ff] text-[#4f46e5] hover:bg-[#e0e7ff]"
           title="展开对话记录"
           aria-label="展开对话记录"
         >
@@ -1213,7 +1319,7 @@ function ConversationPanel({
               className={cn(
                 "group flex items-start gap-1 rounded-2xl border pr-1 transition",
                 selectedId === conversation.id
-                  ? "border-[#cdc0f7] bg-[#efeafe] shadow-sm"
+                  ? "border-[#c7d2fe] bg-[#eef2ff] shadow-sm"
                   : "border-transparent hover:border-slate-200 hover:bg-white/70",
               )}
             >
@@ -1270,7 +1376,7 @@ function EmptyState({
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-5 px-5 py-6">
       <div className="rounded-3xl border border-white/80 bg-white/72 p-6 shadow-[0_18px_46px_rgba(83,101,132,0.10)]">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#6d5cf0]">Agent Workbench</p>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#4f46e5]">Agent Workbench</p>
         <div className="mt-3 grid gap-6 lg:grid-cols-[1fr_320px]">
           <div>
             <h1 className="max-w-2xl text-2xl font-bold text-slate-900 md:text-3xl">
@@ -1282,7 +1388,7 @@ function EmptyState({
             <div className="mt-5 flex flex-wrap gap-3">
               <Link
                 href="/creator"
-                className="brand-gradient inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(109,92,240,0.32)] hover:brightness-[1.06]"
+                className="brand-gradient inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(79,70,229,0.32)] hover:brightness-[1.06]"
               >
                 <Sparkles size={15} />
                 AI 创建工具
@@ -1318,7 +1424,7 @@ function EmptyState({
               onClick={() => onStarter(prompt)}
               className="group rounded-2xl border border-white/80 bg-white/76 p-5 text-left shadow-[0_12px_28px_rgba(83,101,132,0.09)] transition hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_18px_42px_rgba(83,101,132,0.14)]"
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#efeafe] text-[#6d5cf0]">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#eef2ff] text-[#4f46e5]">
                 <Icon size={18} />
               </div>
               <h2 className="mt-4 text-sm font-semibold text-slate-900">{title}</h2>
@@ -1371,7 +1477,7 @@ function Inspector({
         <button
           type="button"
           onClick={onToggle}
-          className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#efeafe] text-[#6d5cf0] hover:bg-[#e9e3fd]"
+          className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#eef2ff] text-[#4f46e5] hover:bg-[#e0e7ff]"
           title="展开模型能力"
           aria-label="展开模型能力"
         >
@@ -1391,7 +1497,7 @@ function Inspector({
       <div className="border-b border-slate-200/70 p-6">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#6d5cf0]">Chat Profile</p>
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#4f46e5]">Chat Profile</p>
             <h2 className="mt-3 text-xl font-bold leading-tight text-slate-900">{profile.name}</h2>
           </div>
           <button
@@ -1580,7 +1686,7 @@ function ResourcePickerDialog({
         <div className="border-b border-slate-100 p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#6d5cf0]">Resource Picker</p>
+              <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#4f46e5]">Resource Picker</p>
               <h2 className="mt-2 text-base font-bold text-slate-900">{titleMap[section]}</h2>
               <p className="mt-1 text-xs leading-5 text-slate-500">{descriptionMap[section]}</p>
             </div>
@@ -1660,7 +1766,7 @@ function ResourcePickerDialog({
                         <p className="text-sm font-bold text-slate-900">子 Agent 模型</p>
                         <p className="mt-0.5 text-[11px] leading-4 text-slate-400">控制委派任务使用的模型</p>
                       </div>
-                      <span className="shrink-0 rounded-full bg-[#efeafe] px-2.5 py-1 text-[10px] font-bold text-[#6d5cf0]">
+                      <span className="shrink-0 rounded-full bg-[#eef2ff] px-2.5 py-1 text-[10px] font-bold text-[#4f46e5]">
                         {profile.subagentModelStrategy === "custom" ? "指定" : profile.subagentModelStrategy === "main_agent" ? "跟随" : "默认"}
                       </span>
                     </div>
@@ -1683,7 +1789,7 @@ function ResourcePickerDialog({
                           className={cn(
                             "flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left transition",
                             profile.subagentModelStrategy === strategy
-                              ? "border-[#bcaff8] bg-[#efeafe] text-[#4733c9]"
+                              ? "border-[#a5b4fc] bg-[#eef2ff] text-[#3730a3]"
                               : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
                           )}
                         >
@@ -1695,7 +1801,7 @@ function ResourcePickerDialog({
                             className={cn(
                               "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
                               profile.subagentModelStrategy === strategy
-                                ? "border-[#bcaff8] bg-white text-[#6d5cf0]"
+                                ? "border-[#a5b4fc] bg-white text-[#4f46e5]"
                                 : "border-slate-200 text-slate-300",
                             )}
                           >
@@ -1727,7 +1833,7 @@ function ResourcePickerDialog({
                                 value={subagentModelSearch}
                                 onChange={(event) => setSubagentModelSearch(event.target.value)}
                                 placeholder="搜索模型或供应商"
-                                className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-[#bcaff8] focus:ring-4 focus:ring-[#6d5cf0]/10"
+                                className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-[#a5b4fc] focus:ring-4 focus:ring-[#4f46e5]/10"
                               />
                             </div>
                             <div className="mt-2 max-h-44 space-y-1 overflow-y-auto pr-1">
@@ -1747,7 +1853,7 @@ function ResourcePickerDialog({
                                     }}
                                     className={cn(
                                       "flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition",
-                                      active ? "bg-[#efeafe] text-[#4733c9]" : "text-slate-700 hover:bg-white",
+                                      active ? "bg-[#eef2ff] text-[#3730a3]" : "text-slate-700 hover:bg-white",
                                     )}
                                   >
                                     <span className="min-w-0">
@@ -1796,7 +1902,7 @@ function ResourcePickerDialog({
           <button
             type="button"
             onClick={onClose}
-            className="h-10 w-full rounded-xl bg-[#6d5cf0] text-sm font-semibold text-white shadow-[0_10px_22px_rgba(109,92,240,0.22)] hover:bg-[#5a45e3]"
+            className="h-10 w-full rounded-xl bg-[#4f46e5] text-sm font-semibold text-white shadow-[0_10px_22px_rgba(79,70,229,0.22)] hover:bg-[#4338ca]"
           >
             完成
           </button>
@@ -1851,7 +1957,7 @@ function ProfilePicker({
               key={profile.id}
               className={cn(
                 "flex items-center gap-1 px-2 py-1.5",
-                profile.id === selectedProfile.id && "bg-[#efeafe] text-[#4733c9]",
+                profile.id === selectedProfile.id && "bg-[#eef2ff] text-[#3730a3]",
               )}
             >
               <button
@@ -1948,7 +2054,7 @@ function ConfigOption({
       className={cn(
         "flex w-full items-center justify-between gap-3 rounded-xl border px-3 text-left transition",
         compact ? "py-2" : "py-2.5",
-        active ? "border-[#bcaff8] bg-[#efeafe] text-[#4733c9]" : "border-slate-200 bg-white/80 text-slate-700 hover:bg-white",
+        active ? "border-[#a5b4fc] bg-[#eef2ff] text-[#3730a3]" : "border-slate-200 bg-white/80 text-slate-700 hover:bg-white",
         disabled && "cursor-not-allowed opacity-55 hover:bg-white/80",
       )}
     >
@@ -1964,7 +2070,7 @@ function ConfigOption({
         className={cn(
           "flex shrink-0 items-center justify-center rounded-lg border",
           compact ? "h-5 w-5" : "h-6 w-6",
-          active ? "border-[#bcaff8] bg-white text-[#6d5cf0]" : "border-slate-200 text-slate-300",
+          active ? "border-[#a5b4fc] bg-white text-[#4f46e5]" : "border-slate-200 text-slate-300",
         )}
       >
         {active ? <Check size={compact ? 11 : 13} /> : <Plus size={compact ? 11 : 13} />}
@@ -2028,7 +2134,7 @@ function PickerItem({ active, onClick, children }: { active: boolean; onClick: (
       onClick={onClick}
       className={cn(
         "flex w-full items-start gap-3 px-3.5 py-2.5 text-left transition",
-        active ? "bg-[#efeafe] text-[#4733c9]" : "hover:bg-slate-50",
+        active ? "bg-[#eef2ff] text-[#3730a3]" : "hover:bg-slate-50",
       )}
     >
       {children}
@@ -2040,7 +2146,7 @@ function Stat({ label, value, icon: Icon }: { label: string; value: string | num
   return (
     <div className="rounded-2xl border border-slate-200/70 bg-white/70 p-3">
       <div className="flex items-center gap-2">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#efeafe] text-[#6d5cf0]">
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#eef2ff] text-[#4f46e5]">
           <Icon size={13} />
         </div>
         <span className="text-xs font-medium text-slate-500">{label}</span>
@@ -2116,7 +2222,7 @@ function RenameDialog({
       >
         <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-5">
           <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#6d5cf0]">{eyebrow}</p>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#4f46e5]">{eyebrow}</p>
             <h2 className="mt-2 text-lg font-bold text-slate-900">{heading}</h2>
             <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p>
           </div>
@@ -2142,7 +2248,7 @@ function RenameDialog({
             onChange={(event) => onTitleChange(event.target.value)}
             maxLength={80}
             disabled={saving}
-            className="mt-2 h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-[#bcaff8] focus:ring-4 focus:ring-[#6d5cf0]/10 disabled:opacity-60"
+            className="mt-2 h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-[#a5b4fc] focus:ring-4 focus:ring-[#4f46e5]/10 disabled:opacity-60"
             placeholder={placeholder}
           />
           <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
@@ -2163,7 +2269,7 @@ function RenameDialog({
           <button
             type="submit"
             disabled={!canSubmit}
-            className="brand-gradient inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(109,92,240,0.3)] hover:brightness-[1.06] disabled:opacity-50"
+            className="brand-gradient inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(79,70,229,0.3)] hover:brightness-[1.06] disabled:opacity-50"
           >
             {saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
             保存

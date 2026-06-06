@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -15,6 +16,14 @@ router = APIRouter()
 class GenerateRequest(BaseModel):
     prompt: str
     model: str | None = None
+
+
+class TTSRequest(BaseModel):
+    text: str
+    voice: str | None = None
+    model: str | None = None
+    format: str | None = None
+    speed: float | None = None
 
 
 def _artifact_dir() -> Path:
@@ -121,6 +130,47 @@ async def generate_video(body: GenerateRequest):
         "artifact": {"artifact_id": artifact_id, "path": str(target)},
         "message": "已生成视频任务 artifact。真实视频模型接入后可替换为二进制结果。",
     }
+
+
+@router.post("/transcribe")
+async def transcribe_audio(
+    file: UploadFile = File(...),
+    language: str | None = Form(default=None),
+):
+    """Speech-to-text: upload an audio clip, get back the transcript."""
+    from nexagent.services.speech import SpeechConfigError, transcribe
+
+    audio = await file.read()
+    if not audio:
+        raise HTTPException(status_code=400, detail="音频内容为空")
+    try:
+        text = await transcribe(
+            audio,
+            filename=file.filename or "audio.webm",
+            content_type=file.content_type or "audio/webm",
+            language=language,
+        )
+    except SpeechConfigError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"text": text}
+
+
+@router.post("/tts")
+async def text_to_speech(body: TTSRequest):
+    """Text-to-speech: returns the synthesized audio as a binary stream."""
+    from nexagent.services.speech import SpeechConfigError, synthesize
+
+    try:
+        audio, mime = await synthesize(
+            body.text,
+            voice=body.voice,
+            model=body.model,
+            audio_format=body.format,
+            speed=body.speed,
+        )
+    except SpeechConfigError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return Response(content=audio, media_type=mime)
 
 
 @router.get("/artifact/{artifact_id}")

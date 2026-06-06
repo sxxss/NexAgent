@@ -93,10 +93,10 @@ function CreatorContent() {
                   }}
                   className={cn(
                     "flex items-start gap-3 rounded-xl border bg-white p-4 text-left shadow-sm transition hover:border-slate-300",
-                    kind === item.id ? "border-fuchsia-300 ring-2 ring-fuchsia-100" : "border-slate-200",
+                    kind === item.id ? "border-sky-300 ring-2 ring-sky-100" : "border-slate-200",
                   )}
                 >
-                  <Icon size={18} className="mt-0.5 text-fuchsia-700" />
+                  <Icon size={18} className="mt-0.5 text-sky-700" />
                   <span>
                     <span className="block text-sm font-semibold text-slate-950">{item.label}</span>
                     <span className="mt-1 block text-xs leading-5 text-slate-500">{item.desc}</span>
@@ -109,7 +109,7 @@ function CreatorContent() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Sparkles size={15} className="text-fuchsia-700" />
+                <Sparkles size={15} className="text-sky-700" />
                 需求描述
               </CardTitle>
             </CardHeader>
@@ -118,7 +118,7 @@ function CreatorContent() {
                 value={goal}
                 onChange={(event) => setGoal(event.target.value)}
                 placeholder={`描述你想创建的 ${active.label}，包括用途、输入输出、是否需要外部服务。`}
-                className="min-h-48 w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm leading-6 outline-none focus:border-fuchsia-300 focus:ring-2 focus:ring-fuchsia-100"
+                className="min-h-48 w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm leading-6 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
               />
               <button
                 type="button"
@@ -143,7 +143,7 @@ function CreatorContent() {
               type="button"
               disabled={busy || !draftText.trim()}
               onClick={() => void save()}
-              className="inline-flex h-9 items-center gap-2 rounded-lg border border-fuchsia-200 bg-fuchsia-50 px-3 text-xs font-semibold text-fuchsia-700 hover:bg-fuchsia-100 disabled:opacity-50"
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:opacity-50"
             >
               {busy ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
               确认保存
@@ -154,11 +154,11 @@ function CreatorContent() {
               value={draftText}
               onChange={(event) => setDraftText(event.target.value)}
               spellCheck={false}
-              className="min-h-[560px] w-full resize-none rounded-xl border border-slate-800 bg-slate-950 px-4 py-3 font-mono text-xs leading-5 text-slate-100 outline-none focus:border-fuchsia-400"
+              className="min-h-[560px] w-full resize-none rounded-xl border border-slate-800 bg-slate-950 px-4 py-3 font-mono text-xs leading-5 text-slate-100 outline-none focus:border-sky-400"
               placeholder="{ }"
             />
             {savedMessage ? (
-              <p className="mt-3 flex items-center gap-2 rounded-lg bg-fuchsia-50 px-3 py-2 text-xs text-fuchsia-700">
+              <p className="mt-3 flex items-center gap-2 rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-700">
                 <CheckCircle size={14} />
                 {savedMessage}
               </p>

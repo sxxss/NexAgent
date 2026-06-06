@@ -27,6 +27,9 @@ models:
   #   api_key: $OPENAI_API_KEY
 
 knowledge:
+  # Production knowledge backend: PostgreSQL metadata + Milvus vectors + Neo4j graph.
+  # Set to "legacy" for the file-based deterministic store (offline/tests only).
+  storage_backend: postgres
   milvus_host: localhost
   milvus_port: 19530
   neo4j_uri: bolt://localhost:7687
@@ -37,6 +40,12 @@ knowledge:
     base_url: https://api.siliconflow.cn/v1
     api_key: $SILICONFLOW_API_KEY
     dimension: 1024
+  vector_store:
+    enabled: true
+    provider: milvus
+  graph_store:
+    enabled: true
+    provider: neo4j
 
 web_search:
   provider: auto

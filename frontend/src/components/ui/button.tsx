@@ -17,14 +17,14 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           "disabled:pointer-events-none disabled:opacity-50",
           "active:scale-[0.97]",
           // focus ring color
-          (variant === "primary") && "focus-visible:ring-fuchsia-400",
+          (variant === "primary") && "focus-visible:ring-sky-400",
           (variant !== "primary") && "focus-visible:ring-slate-400",
 
           // Variants
           variant === "default" &&
             "border border-white/80 bg-white/86 text-slate-800 shadow-[0_8px_18px_rgba(83,101,132,0.10)] hover:bg-white",
           variant === "primary" &&
-            "brand-gradient text-white shadow-[0_10px_24px_rgba(109,92,240,0.32)] hover:brightness-[1.06] hover:shadow-[0_12px_28px_rgba(109,92,240,0.4)]",
+            "brand-gradient text-white shadow-[0_10px_24px_rgba(79,70,229,0.32)] hover:brightness-[1.06] hover:shadow-[0_12px_28px_rgba(79,70,229,0.4)]",
           variant === "outline" &&
             "border border-slate-200/80 bg-white/40 text-slate-700 hover:bg-white/80 hover:border-slate-300",
           variant === "ghost" &&

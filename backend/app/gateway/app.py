@@ -28,6 +28,8 @@ from app.gateway.routers import (
     settings,
     skills,
     tasks,
+    voice,
+    wiki,
 )
 
 APP_VERSION = os.environ.get("NEXAGENT_VERSION", "0.1.0")
@@ -197,6 +199,8 @@ app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"]
 app.include_router(mcp.router, prefix="/api/mcp", tags=["MCP"])
 app.include_router(skills.router, prefix="/api/skills", tags=["Skills"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
+app.include_router(voice.router, prefix="/api/voice", tags=["Voice"])
+app.include_router(wiki.router, prefix="/api/wiki", tags=["Wiki"])
 
 
 @app.get("/")

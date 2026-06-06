@@ -1,8 +1,9 @@
 "use client";
 
-import { CornerDownLeft, Send, Square } from "lucide-react";
+import { CornerDownLeft, Loader2, Mic, Send, Square } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
+import { useVoiceRecorder } from "@/lib/useVoice";
 
 interface ChatInputProps {
   value: string;
@@ -15,6 +16,10 @@ interface ChatInputProps {
 
 export function ChatInput({ value, onChange, onSend, onStop, isStreaming, disabled }: ChatInputProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const voice = useVoiceRecorder((text) => {
+    const prefix = value.trim();
+    onChange(prefix ? `${prefix} ${text}` : text);
+  });
 
   useEffect(() => {
     const el = ref.current;
@@ -48,10 +53,31 @@ export function ChatInput({ value, onChange, onSend, onStop, isStreaming, disabl
         )}
       />
       <div className="flex items-center justify-between gap-3 px-3 pb-3">
-        <ChatInputHint />
-        <button
-          type="button"
-          disabled={!isStreaming && !canSend}
+        <div className="flex items-center gap-2">
+          <ChatInputHint />
+          {voice.error ? <span className="max-w-[180px] truncate text-[11px] text-rose-500">{voice.error}</span> : null}
+        </div>
+        <div className="flex items-center gap-2">
+          {voice.supported ? (
+            <button
+              type="button"
+              disabled={disabled || isStreaming || voice.busy}
+              onClick={voice.toggle}
+              title={voice.recording ? "停止录音并识别" : "按一下开始语音输入"}
+              className={cn(
+                "inline-flex h-9 w-9 items-center justify-center rounded-xl border transition active:scale-[0.97]",
+                "disabled:cursor-not-allowed disabled:opacity-40",
+                voice.recording
+                  ? "animate-pulse border-rose-300 bg-rose-50 text-rose-500"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+              )}
+            >
+              {voice.busy ? <Loader2 size={14} className="animate-spin" /> : <Mic size={14} />}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            disabled={!isStreaming && !canSend}
           onClick={() => {
             if (isStreaming) onStop?.();
             else onSend();
@@ -59,7 +85,7 @@ export function ChatInput({ value, onChange, onSend, onStop, isStreaming, disabl
           className={cn(
             "inline-flex h-9 items-center gap-2 rounded-xl px-3.5 text-xs font-semibold transition active:scale-[0.97]",
             "disabled:cursor-not-allowed disabled:opacity-40",
-            isStreaming ? "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" : "bg-[#6d5cf0] text-white",
+            isStreaming ? "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" : "bg-[#4f46e5] text-white",
           )}
         >
           {isStreaming ? (
@@ -73,7 +99,8 @@ export function ChatInput({ value, onChange, onSend, onStop, isStreaming, disabl
               发送
             </>
           )}
-        </button>
+          </button>
+        </div>
       </div>
     </div>
   );

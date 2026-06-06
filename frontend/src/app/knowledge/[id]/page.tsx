@@ -275,7 +275,7 @@ export default function KBDetailPage() {
     return (
       <div className="flex h-full items-center justify-center bg-slate-100">
         <div className="flex items-center gap-3 rounded-xl bg-white px-4 py-3 text-sm text-slate-500 shadow-sm">
-          <Loader2 size={16} className="animate-spin text-fuchsia-600" />
+          <Loader2 size={16} className="animate-spin text-sky-600" />
           加载知识库...
         </div>
       </div>
@@ -300,7 +300,7 @@ export default function KBDetailPage() {
         </div>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3">
-            <div className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl", isMilvus ? "bg-fuchsia-50 text-fuchsia-700" : "bg-violet-50 text-violet-700")}>
+            <div className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl", isMilvus ? "bg-sky-50 text-sky-700" : "bg-indigo-50 text-indigo-700")}>
               {isMilvus ? <Layers size={19} /> : <Network size={19} />}
             </div>
             <div>
@@ -316,12 +316,12 @@ export default function KBDetailPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={handleProcessAll} disabled={!pendingCount || uploading} className={cn(outlineButton, pendingCount && "border-fuchsia-200 text-fuchsia-700")}>
+            <button type="button" onClick={handleProcessAll} disabled={!pendingCount || uploading} className={cn(outlineButton, pendingCount && "border-sky-200 text-sky-700")}>
               <ListChecks size={14} />
               处理待入库 {pendingCount || ""}
             </button>
             {!isMilvus ? (
-              <button type="button" onClick={() => router.push(`/knowledge/${id}/graph`)} className={cn(outlineButton, "border-violet-200 text-violet-700")}>
+              <button type="button" onClick={() => router.push(`/knowledge/${id}/graph`)} className={cn(outlineButton, "border-indigo-200 text-indigo-700")}>
                 <Network size={14} />
                 图谱浏览
               </button>
@@ -381,10 +381,10 @@ function FileUploadCard({ uploading, inputRef, onUpload }: { uploading: boolean;
       onDragLeave={() => setDragging(false)}
       onDrop={(event) => { event.preventDefault(); setDragging(false); if (!uploading) onUpload(event.dataTransfer.files); }}
       onClick={() => { if (!uploading) inputRef.current?.click(); }}
-      className={cn("flex flex-col items-center justify-center rounded-2xl border-2 border-dashed bg-white py-12 text-center transition", uploading ? "cursor-wait opacity-80" : "cursor-pointer", dragging ? "border-fuchsia-300 bg-fuchsia-50" : "border-slate-200 hover:border-fuchsia-200 hover:bg-fuchsia-50/30")}
+      className={cn("flex flex-col items-center justify-center rounded-2xl border-2 border-dashed bg-white py-12 text-center transition", uploading ? "cursor-wait opacity-80" : "cursor-pointer", dragging ? "border-sky-300 bg-sky-50" : "border-slate-200 hover:border-sky-200 hover:bg-sky-50/30")}
     >
       <input ref={inputRef} type="file" multiple disabled={uploading} className="hidden" accept=".pdf,.docx,.doc,.pptx,.ppt,.txt,.md,.markdown,.html,.htm,.csv,.json" onChange={(event) => onUpload(event.target.files)} />
-      {uploading ? <Loader2 size={24} className="animate-spin text-fuchsia-600" /> : <Upload size={24} className="text-slate-300" />}
+      {uploading ? <Loader2 size={24} className="animate-spin text-sky-600" /> : <Upload size={24} className="text-slate-300" />}
       <p className="mt-3 text-sm font-semibold text-slate-700">{uploading ? "上传中..." : "点击上传或拖拽文件到此处"}</p>
       <p className="mt-1 text-xs text-slate-400">支持 PDF、DOCX、PPTX、TXT、Markdown、HTML、CSV、JSON</p>
     </div>
@@ -605,7 +605,7 @@ function SearchPanel({ query, setQuery, indexedCount, searching, searched, searc
       <p className="mt-1 text-xs text-slate-500">{indexedCount ? `已入库 ${indexedCount} 个文件，可测试当前检索配置。` : "需要至少 1 个已入库文件才能测试检索。"}</p>
       <div className="mt-3 flex gap-2">
         <Input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && onSearch()} placeholder="输入检索问题" disabled={indexedCount === 0} className="flex-1" />
-        <button type="button" onClick={onSearch} disabled={!query.trim() || searching || indexedCount === 0} className={cn("flex h-10 w-10 items-center justify-center rounded-xl text-white", !query.trim() || indexedCount === 0 ? "bg-slate-200" : "bg-fuchsia-600 hover:bg-fuchsia-700")}>
+        <button type="button" onClick={onSearch} disabled={!query.trim() || searching || indexedCount === 0} className={cn("flex h-10 w-10 items-center justify-center rounded-xl text-white", !query.trim() || indexedCount === 0 ? "bg-slate-200" : "bg-sky-600 hover:bg-sky-700")}>
           {searching ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
         </button>
       </div>
@@ -685,7 +685,7 @@ function GraphOverviewCard({ kbId, summary, indexedCount }: { kbId: string; summ
   const edges = summary?.stats?.edges ?? 0;
   const files = summary?.stats?.files?.length ?? indexedCount;
   return (
-    <div className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900"><Network size={15} />图谱概览</h2>
@@ -699,7 +699,7 @@ function GraphOverviewCard({ kbId, summary, indexedCount }: { kbId: string; summ
         <GraphStat label="来源" value={files} />
       </div>
       {summary?.updated_at ? <p className="mt-3 text-xs text-slate-400">更新于 {formatDate(summary.updated_at)}</p> : null}
-      <button type="button" onClick={() => router.push(`/knowledge/${kbId}/graph`)} className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-3 text-sm font-semibold text-white transition hover:bg-violet-700">
+      <button type="button" onClick={() => router.push(`/knowledge/${kbId}/graph`)} className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 text-sm font-semibold text-white transition hover:bg-indigo-700">
         <Network size={15} />
         打开图谱工作台
         <ChevronRight size={14} />
@@ -785,7 +785,7 @@ function ModelessSelect({ value, options, onChange }: { value: string; options: 
       {open ? (
         <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
           {options.map((option) => (
-            <button key={option.value} type="button" onClick={() => { onChange(option.value); setOpen(false); }} className={cn("block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-50", value === option.value && "bg-fuchsia-50 text-fuchsia-700")}>{option.label}</button>
+            <button key={option.value} type="button" onClick={() => { onChange(option.value); setOpen(false); }} className={cn("block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-50", value === option.value && "bg-sky-50 text-sky-700")}>{option.label}</button>
           ))}
         </div>
       ) : null}
@@ -809,7 +809,7 @@ function ModelPicker({ value, options, placeholder, onChange }: { value: string;
           <div className="border-b border-slate-100 p-2"><input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="搜索模型或供应商" className="h-9 w-full rounded-lg bg-slate-50 px-3 text-sm outline-none" /></div>
           <div className="max-h-64 overflow-auto p-1">
             {visible.length ? visible.map((option) => (
-              <button key={option.value} type="button" onClick={() => { onChange(option); setOpen(false); setFilter(""); }} className={cn("flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left hover:bg-slate-50", value === option.value && "bg-fuchsia-50")}>
+              <button key={option.value} type="button" onClick={() => { onChange(option); setOpen(false); setFilter(""); }} className={cn("flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left hover:bg-slate-50", value === option.value && "bg-sky-50")}>
                 <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[10px] font-bold text-slate-500">{option.providerName.slice(0, 1)}</span>
                 <span className="min-w-0"><span className="block truncate text-sm font-semibold text-slate-800">{option.label}</span><span className="block truncate text-xs text-slate-400">{option.detail}</span></span>
               </button>
@@ -873,7 +873,7 @@ function jobLabel(status: string) {
   return { queued: "排队中", running: "运行中", completed: "完成", failed: "失败", cancelled: "已取消" }[status] ?? status;
 }
 
-const inputClass = "h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-fuchsia-300 focus:ring-2 focus:ring-fuchsia-100 disabled:bg-slate-50 disabled:text-slate-400";
+const inputClass = "h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100 disabled:bg-slate-50 disabled:text-slate-400";
 const outlineButton = "inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50";
 const primaryButton = "inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-3 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50";
 const iconButton = "inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 disabled:opacity-40";

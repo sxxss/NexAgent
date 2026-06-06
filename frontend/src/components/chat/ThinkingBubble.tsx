@@ -130,7 +130,7 @@ export function ThinkingBubble({
 function CurrentWorkHint({ runningSubagents }: { runningSubagents: number }) {
   if (runningSubagents > 0) {
     return (
-      <div className="flex items-center gap-2 rounded-lg bg-[#efeafe] px-2.5 py-1.5 text-xs font-semibold text-[#4733c9]">
+      <div className="flex items-center gap-2 rounded-lg bg-[#eef2ff] px-2.5 py-1.5 text-xs font-semibold text-[#3730a3]">
         <Loader2 size={12} className="animate-spin" />
         <span>正在等待 {runningSubagents} 个子 Agent 返回结果</span>
       </div>
@@ -193,7 +193,7 @@ function ToolCallBlock({ call }: { call: ProcessToolCall }) {
         onClick={() => setExpanded((value) => !value)}
         className={cn(
           "flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left transition hover:bg-slate-50",
-          !completed && !failed && "bg-[#efeafe] text-[#4733c9] ring-1 ring-[#e4ddfc]",
+          !completed && !failed && "bg-[#eef2ff] text-[#3730a3] ring-1 ring-[#e0e7ff]",
         )}
       >
         <span className="flex min-w-0 items-center gap-3">
@@ -216,9 +216,9 @@ function ToolCallBlock({ call }: { call: ProcessToolCall }) {
           {failed ? (
             <XCircle size={13} className="shrink-0 text-rose-600" />
           ) : completed ? (
-            <CheckCircle size={13} className="shrink-0 text-fuchsia-600" />
+            <CheckCircle size={13} className="shrink-0 text-sky-600" />
           ) : (
-            <Loader2 size={13} className="shrink-0 animate-spin text-[#6d5cf0]" />
+            <Loader2 size={13} className="shrink-0 animate-spin text-[#4f46e5]" />
           )}
           {typeof elapsedMs === "number" ? formatDuration(elapsedMs) : statusText}
         </span>
@@ -258,7 +258,7 @@ function ToolExecutionPlan({
         <span
           className={cn(
             "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold",
-            failed ? "bg-rose-50 text-rose-600" : completed ? "bg-fuchsia-50 text-fuchsia-700" : "bg-[#efeafe] text-[#4733c9]",
+            failed ? "bg-rose-50 text-rose-600" : completed ? "bg-sky-50 text-sky-700" : "bg-[#eef2ff] text-[#3730a3]",
           )}
         >
           {failed ? "执行失败" : completed ? "执行完成" : call.status === "preparing" ? "准备参数" : "正在执行"}

@@ -1,12 +1,13 @@
 "use client";
 
-import { Bot, CheckCircle, ChevronDown, ChevronRight, Clock3, Database, FileText, Loader2, User, Wrench, XCircle } from "lucide-react";
+import { Bot, CheckCircle, ChevronDown, ChevronRight, Clock3, Database, FileText, Loader2, User, Volume2, VolumeX, Wrench, XCircle } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ThinkingBubble } from "@/components/chat/ThinkingBubble";
 import { artifactDownloadUrl, fetchArtifactPreview } from "@/lib/api";
 import type { EvidenceRef, SubAgentRuntimeItem } from "@/lib/api";
+import { useTtsPlayer } from "@/lib/useVoice";
 import { cn } from "@/lib/utils";
 
 export type MessageRole = "user" | "assistant" | "tool";
@@ -88,10 +89,10 @@ function UserBubble({ message }: { message: Message }) {
   return (
     <div className="flex justify-end py-2 animate-fade-up">
       <div className="flex max-w-[78%] min-w-0 items-end gap-2.5">
-        <div className="min-w-0 rounded-2xl rounded-br-md bg-[#6d5cf0] px-4 py-3 text-sm leading-[1.75] text-white shadow-[0_10px_22px_rgba(109,92,240,0.22)]">
+        <div className="min-w-0 rounded-2xl rounded-br-md bg-[#4f46e5] px-4 py-3 text-sm leading-[1.75] text-white shadow-[0_10px_22px_rgba(79,70,229,0.22)]">
           <p className="whitespace-pre-wrap break-words">{cleanDisplayText(message.content)}</p>
         </div>
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#efeafe] text-[#6d5cf0] shadow-sm">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#eef2ff] text-[#4f46e5] shadow-sm">
           <User size={13} />
         </div>
       </div>
@@ -100,6 +101,7 @@ function UserBubble({ message }: { message: Message }) {
 }
 
 function AssistantBubble({ message }: { message: Message }) {
+  const tts = useTtsPlayer();
   const evidence = extractEvidenceBlock(message.content);
   const displayContent = cleanDisplayText(stripInternalBlocks(stripEvidenceBlocks(message.content)));
   const citations = extractCitationIds(displayContent);
@@ -115,10 +117,10 @@ function AssistantBubble({ message }: { message: Message }) {
 
   return (
     <div className="flex items-start gap-3 py-2 animate-fade-up">
-      <div className="relative mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#6d5cf0] text-white shadow-[0_10px_22px_rgba(109,92,240,0.22)]">
+      <div className="relative mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#4f46e5] text-white shadow-[0_10px_22px_rgba(79,70,229,0.22)]">
         <Bot size={14} />
         {message.isStreaming ? (
-          <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-[#6d5cf0]" />
+          <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-[#4f46e5]" />
         ) : null}
       </div>
 
@@ -145,18 +147,43 @@ function AssistantBubble({ message }: { message: Message }) {
           </div>
           {message.isStreaming && !displayContent ? (
             <div className="flex items-center gap-1 py-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#6d5cf0]" />
-              <span className="h-1.5 w-1.5 rounded-full bg-[#6d5cf0]" />
-              <span className="h-1.5 w-1.5 rounded-full bg-[#6d5cf0]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-[#4f46e5]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-[#4f46e5]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-[#4f46e5]" />
             </div>
           ) : null}
           {message.isStreaming && displayContent ? (
-            <span className="ml-0.5 inline-block h-3.5 w-0.5 rounded-full bg-[#6d5cf0] animate-cursor-blink" />
+            <span className="ml-0.5 inline-block h-3.5 w-0.5 rounded-full bg-[#4f46e5] animate-cursor-blink" />
           ) : null}
           {message.artifacts?.length ? (
             <ArtifactList artifacts={message.artifacts} threadId={message.artifactThreadId} />
           ) : null}
           {citations.length ? <CitationChips citations={citations} evidence={evidence} /> : null}
+          {!message.isStreaming && displayContent ? (
+            <div className="mt-2 flex items-center gap-2 border-t border-slate-100 pt-2">
+              <button
+                type="button"
+                onClick={() => void tts.play(message.id, displayContent)}
+                title={tts.playingId === message.id ? "停止播放" : "朗读这条回复"}
+                className={cn(
+                  "inline-flex h-7 items-center gap-1.5 rounded-lg px-2 text-[11px] font-semibold transition",
+                  tts.playingId === message.id
+                    ? "bg-indigo-50 text-indigo-600"
+                    : "text-slate-400 hover:bg-slate-50 hover:text-slate-600",
+                )}
+              >
+                {tts.loadingId === message.id ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : tts.playingId === message.id ? (
+                  <VolumeX size={12} />
+                ) : (
+                  <Volume2 size={12} />
+                )}
+                {tts.playingId === message.id ? "停止" : "朗读"}
+              </button>
+              {tts.error ? <span className="truncate text-[11px] text-rose-500">{tts.error}</span> : null}
+            </div>
+          ) : null}
         </div>
         ) : null}
       </div>
@@ -219,7 +246,7 @@ function ToolCallRow({ call }: { call: ToolCallRuntime }) {
           {failed ? (
             <XCircle size={12} className="shrink-0 text-rose-600" />
           ) : done ? (
-            <CheckCircle size={12} className="shrink-0 text-fuchsia-600" />
+            <CheckCircle size={12} className="shrink-0 text-sky-600" />
           ) : (
             <Loader2 size={12} className="shrink-0 animate-spin text-amber-600" />
           )}
@@ -332,7 +359,7 @@ function RuntimeTimeline({ events, streaming }: { events: RuntimeEvent[]; stream
   return (
     <div className="mb-2 rounded-xl border border-slate-200 bg-white/70 px-3 py-2 text-xs text-slate-600 shadow-sm">
       <div className="flex items-center gap-2 font-semibold text-slate-700">
-        <Clock3 size={12} className={streaming ? "text-[#6d5cf0]" : "text-slate-400"} />
+        <Clock3 size={12} className={streaming ? "text-[#4f46e5]" : "text-slate-400"} />
         运行状态
       </div>
       <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -369,7 +396,7 @@ function SubAgentPanel({ items }: { items: SubAgentRuntimeItem[] }) {
       >
         <span className="inline-flex min-w-0 items-center gap-2">
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          <Bot size={12} className="text-[#6d5cf0]" />
+          <Bot size={12} className="text-[#4f46e5]" />
           <span>Sub-Agent 进度</span>
         </span>
         <span className="shrink-0 font-mono text-[10px] text-slate-400">
@@ -405,8 +432,8 @@ function SubAgentPanel({ items }: { items: SubAgentRuntimeItem[] }) {
 }
 
 function SubAgentStatusIcon({ status }: { status: string }) {
-  if (status === "completed") return <CheckCircle size={12} className="shrink-0 text-fuchsia-600" />;
-  if (status === "queued" || status === "running") return <Loader2 size={12} className="shrink-0 animate-spin text-[#6d5cf0]" />;
+  if (status === "completed") return <CheckCircle size={12} className="shrink-0 text-sky-600" />;
+  if (status === "queued" || status === "running") return <Loader2 size={12} className="shrink-0 animate-spin text-[#4f46e5]" />;
   return <XCircle size={12} className="shrink-0 text-rose-600" />;
 }
 
@@ -449,7 +476,7 @@ function ArtifactList({ artifacts, threadId }: { artifacts: string[]; threadId?:
               type="button"
               onClick={() => openPreview(artifact)}
               disabled={!threadId}
-              className="min-w-0 flex-1 truncate text-left font-mono text-[11px] text-slate-600 hover:text-[#6d5cf0] disabled:hover:text-slate-600"
+              className="min-w-0 flex-1 truncate text-left font-mono text-[11px] text-slate-600 hover:text-[#4f46e5] disabled:hover:text-slate-600"
               title={artifact}
             >
               {artifact}
@@ -457,7 +484,7 @@ function ArtifactList({ artifacts, threadId }: { artifacts: string[]; threadId?:
             {threadId ? (
               <a
                 href={artifactDownloadUrl(threadId, artifact)}
-                className="shrink-0 rounded-md bg-white px-1.5 py-0.5 text-[11px] font-semibold text-slate-600 hover:text-[#6d5cf0]"
+                className="shrink-0 rounded-md bg-white px-1.5 py-0.5 text-[11px] font-semibold text-slate-600 hover:text-[#4f46e5]"
               >
                 下载
               </a>
@@ -544,7 +571,7 @@ function CitationChips({ citations, evidence }: { citations: string[]; evidence:
             onClick={() => setSelected((value) => (value === id ? null : id))}
             className={cn(
               "rounded-md px-1.5 py-0.5 font-mono text-[11px] font-semibold",
-              selected === id ? "bg-violet-600 text-white" : "bg-violet-50 text-violet-700 hover:bg-violet-100",
+              selected === id ? "bg-indigo-600 text-white" : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100",
             )}
             title={evidenceById.has(id) ? "查看引用来源" : "当前回答没有附带该引用的结构化详情"}
           >
@@ -554,14 +581,14 @@ function CitationChips({ citations, evidence }: { citations: string[]; evidence:
       </div>
       {selected ? (
         selectedEvidence ? (
-          <div className="mt-2 rounded-lg border border-violet-100 bg-violet-50/70 px-2.5 py-2 text-[11px] text-violet-950">
+          <div className="mt-2 rounded-lg border border-indigo-100 bg-indigo-50/70 px-2.5 py-2 text-[11px] text-indigo-950">
             <div className="flex items-center justify-between gap-2">
               <span className="font-mono font-semibold">{selectedEvidence.id}</span>
-              <span className="font-mono text-[10px] text-violet-700">
+              <span className="font-mono text-[10px] text-indigo-700">
                 {Math.round((selectedEvidence.score || 0) * 100)}%
               </span>
             </div>
-            <div className="mt-0.5 truncate font-mono text-[10px] text-violet-700">{selectedEvidence.source || "unknown"}</div>
+            <div className="mt-0.5 truncate font-mono text-[10px] text-indigo-700">{selectedEvidence.source || "unknown"}</div>
             {selectedEvidence.preview ? <p className="mt-1 line-clamp-3 leading-4">{selectedEvidence.preview}</p> : null}
           </div>
         ) : (
