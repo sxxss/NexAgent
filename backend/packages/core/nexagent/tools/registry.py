@@ -96,6 +96,20 @@ _BUILTIN_SPECS: dict[str, ToolSpec] = {
         module="nexagent.sandbox.tools",
         factory="get_read_file_tool",
     ),
+    "glob": ToolSpec(
+        name="glob",
+        description="Find files or directories inside the sandbox workspace using a glob pattern.",
+        category="sandbox",
+        module="nexagent.sandbox.tools",
+        factory="get_glob_tool",
+    ),
+    "grep": ToolSpec(
+        name="grep",
+        description="Search UTF-8 text files inside the sandbox workspace with a regex pattern.",
+        category="sandbox",
+        module="nexagent.sandbox.tools",
+        factory="get_grep_tool",
+    ),
     "write_file": ToolSpec(
         name="write_file",
         description="Write a text file inside the sandbox workspace.",

@@ -23,12 +23,11 @@ def prepare_skill_runtime(thread_id: str, skills: list[Skill]) -> None:
 
     translator = VirtualPathTranslator(get_config().sandbox.base_dir)
     thread_root = translator.thread_root(thread_id)
-    selected = {skill.id: skill.path.parent.resolve() for skill in skills}
-    _sync_root(thread_root / "skills", selected)
+    _sync_root(thread_root / "skills", skills)
     _remove_legacy_workspace_mirror(thread_root / "workspace" / "skills")
 
 
-def _sync_root(target_root: Path, selected: dict[str, Path]) -> None:
+def _sync_root(target_root: Path, skills: list[Skill]) -> None:
     if target_root.exists():
         _make_writable(target_root)
     target_root.mkdir(parents=True, exist_ok=True)
@@ -36,12 +35,18 @@ def _sync_root(target_root: Path, selected: dict[str, Path]) -> None:
     for child in list(target_root.iterdir()):
         _remove_path(child)
 
-    for skill_id, source in sorted(selected.items()):
+    for skill in sorted(skills, key=lambda item: item.id):
+        skill_id = skill.id
+        source = skill.path.parent.resolve()
         if not source.is_dir():
             continue
-        destination = target_root / skill_id
-        shutil.copytree(source, destination, ignore=_ignore_runtime_files(source), symlinks=False)
-        _make_read_only(destination)
+        destinations = [target_root / skill_id]
+        if skill.category in {"public", "custom"}:
+            destinations.append(target_root / skill.category / skill_id)
+        for destination in destinations:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(source, destination, ignore=_ignore_runtime_files(source), symlinks=False)
+            _make_read_only(destination)
 
     _make_read_only(target_root)
 

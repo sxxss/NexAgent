@@ -281,7 +281,8 @@ async def _manage_skill_impl(
     lock = _get_skill_lock(skill_id)
     async with lock:
         loader = SkillLoader()
-        target = loader.public_dir / skill_id
+        existing = loader.load(skill_id)
+        target = _skill_target(loader, skill_id, existing)
         normalized_action = action.strip().lower()
 
         if normalized_action == "history":
@@ -298,6 +299,7 @@ async def _manage_skill_impl(
                 return f"Error: Skill '{skill_id}' does not exist. Use action=create or pass force=true to create it."
             result = _write_skill_package(
                 loader=loader,
+                target=target,
                 skill_id=skill_id,
                 name=name.strip() or skill_id,
                 description=description.strip(),
@@ -466,6 +468,7 @@ def _format_skill_md(
 def _write_skill_package(
     *,
     loader,
+    target: Path,
     skill_id: str,
     name: str,
     description: str,
@@ -494,7 +497,6 @@ def _write_skill_package(
         if file_scan["decision"] == "block":
             return f"Error: Security scan blocked {relative}: {file_scan['reason']}"
 
-    target = loader.public_dir / skill_id
     preserved_files: dict[str, str] = {}
     if target.exists() and force and preserve_existing_files:
         preserved_files = _read_existing_resource_files(target)
@@ -625,6 +627,12 @@ def _get_skill_lock(skill_id: str) -> asyncio.Lock:
     return lock
 
 
+def _skill_target(loader, skill_id: str, existing=None) -> Path:
+    if existing is not None:
+        return existing.path.parent
+    return loader.custom_dir / skill_id
+
+
 def _atomic_write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=str(path.parent)) as tmp:
@@ -636,7 +644,7 @@ def _atomic_write(path: Path, content: str) -> None:
 def _history_file(skill_id: str) -> Path:
     from nexagent.skills.loader import SkillLoader
 
-    history_dir = SkillLoader().public_dir / HISTORY_DIR_NAME
+    history_dir = SkillLoader().custom_dir / HISTORY_DIR_NAME
     history_dir.mkdir(parents=True, exist_ok=True)
     return history_dir / f"{skill_id}.jsonl"
 

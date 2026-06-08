@@ -47,8 +47,8 @@ async def test_skill_manage_create_writes_to_managed_skill_dir(monkeypatch):
         payload = json.loads(result)
         assert payload["ok"] is True
         assert payload["id"] == "web-extractor"
-        assert (workspace / "skills" / "public" / "web-extractor" / "SKILL.md").exists()
-        assert (workspace / "skills" / "public" / "web-extractor" / "references" / "template.md").exists()
+        assert (workspace / "skills" / "custom" / "web-extractor" / "SKILL.md").exists()
+        assert (workspace / "skills" / "custom" / "web-extractor" / "references" / "template.md").exists()
         loaded = loader_cls().load("web-extractor")
         assert loaded is not None
         assert loaded.description == "Extract structured data from web pages."
@@ -80,7 +80,7 @@ async def test_skill_manage_create_writes_script_resource(monkeypatch):
         assert "path" not in payload
         assert "executable" not in payload
         assert any(item["path"] == "scripts/echo.py" and item["kind"] == "script" for item in payload["files"])
-        assert (workspace / "skills" / "public" / "echo-skill" / "scripts" / "echo.py").exists()
+        assert (workspace / "skills" / "custom" / "echo-skill" / "scripts" / "echo.py").exists()
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
 
@@ -157,7 +157,7 @@ async def test_skill_manage_edit_preserves_existing_support_files(monkeypatch):
 
         payload = json.loads(result)
         assert payload["ok"] is True
-        assert (workspace / "skills" / "public" / "preserve-skill" / "references" / "example.md").read_text(
+        assert (workspace / "skills" / "custom" / "preserve-skill" / "references" / "example.md").read_text(
             encoding="utf-8"
         ) == "keep me"
     finally:
@@ -282,7 +282,7 @@ async def test_skill_manage_patch_and_history(monkeypatch):
 
         assert payload["ok"] is True
         assert "title and author" in (
-            workspace / "skills" / "public" / "patchable-skill" / "SKILL.md"
+            workspace / "skills" / "custom" / "patchable-skill" / "SKILL.md"
         ).read_text(encoding="utf-8")
 
         history = json.loads(await manage_tool.ainvoke({"action": "history", "id": "patchable-skill"}))
@@ -315,7 +315,7 @@ async def test_skill_manage_write_and_remove_resource(monkeypatch):
             "content": "hello",
         })
         assert json.loads(result)["ok"] is True
-        resource = workspace / "skills" / "public" / "resource-skill" / "references" / "example.md"
+        resource = workspace / "skills" / "custom" / "resource-skill" / "references" / "example.md"
         assert resource.read_text(encoding="utf-8") == "hello"
 
         result = await manage_tool.ainvoke({

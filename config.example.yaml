@@ -4,6 +4,11 @@
 debug: false
 default_model: qwen2.5-7b
 
+# Empty skills_dir means NexAgent uses ./skills with public/ and custom/ subdirectories.
+# Add external SKILL.md roots here to reuse community Claude/Copilot/Codex-style skills.
+skills_dir: ""
+skills_extra_dirs: []
+
 models:
   - name: qwen2.5-7b
     display_name: Qwen2.5 7B

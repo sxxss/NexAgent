@@ -56,6 +56,31 @@ def get_read_file_tool():
     return read_file
 
 
+def get_glob_tool():
+    @tool
+    async def glob(pattern: str, path: str = ".", config: RunnableConfig | None = None) -> str:
+        """Find files or directories in the sandbox using a glob pattern."""
+        sb = await _sandbox(config)
+        return await sb.glob(pattern, path=path)
+
+    return glob
+
+
+def get_grep_tool():
+    @tool
+    async def grep(
+        pattern: str,
+        path: str = ".",
+        glob: str = "",
+        config: RunnableConfig | None = None,
+    ) -> str:
+        """Search UTF-8 text files in the sandbox with a regex pattern."""
+        sb = await _sandbox(config)
+        return await sb.grep(pattern, path=path, glob=glob)
+
+    return grep
+
+
 def get_write_file_tool():
     @tool
     async def write_file(path: str, content: str, append: bool = False, config: RunnableConfig | None = None) -> str:
@@ -94,6 +119,8 @@ def get_sandbox_tools():
         get_bash_tool(),
         get_ls_tool(),
         get_read_file_tool(),
+        get_glob_tool(),
+        get_grep_tool(),
         get_write_file_tool(),
         get_str_replace_tool(),
         get_present_artifacts_tool(),

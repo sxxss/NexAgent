@@ -173,10 +173,10 @@ async def install_remote(body: SkillRemoteInstallRequest):
             if _looks_like_zip(filename, payload):
                 candidate = _extract_skill_zip_candidate(payload, tmp_path, body.subdir, body.id)
                 skill_id = _target_skill_id(candidate, body.id)
-                target = _install_skill_dir(candidate, loader.public_dir, skill_id, force=body.force)
+                target = _install_skill_dir(candidate, loader.custom_dir, skill_id, force=body.force)
             else:
                 skill_id = _slugify(body.id or Path(urlparse(body.source).path).stem or "remote-skill")
-                target = _install_skill_md(payload.decode("utf-8"), loader.public_dir, skill_id, force=body.force)
+                target = _install_skill_md(payload.decode("utf-8"), loader.custom_dir, skill_id, force=body.force)
     except HTTPException:
         raise
     except UnicodeDecodeError as exc:
@@ -232,12 +232,12 @@ async def upload_skill(
                 source_dir = _extract_skill_zip(payload, tmp_path)
                 candidate = _select_skill_candidate(source_dir, "", id)
                 skill_id = _target_skill_id(candidate, id)
-                target = _install_skill_dir(candidate, loader.public_dir, skill_id, force=force)
+                target = _install_skill_dir(candidate, loader.custom_dir, skill_id, force=force)
             else:
                 if not filename.lower().endswith((".md", ".markdown")):
                     raise HTTPException(status_code=400, detail="Upload a .zip, .skill, .md, or .markdown file")
                 skill_id = _slugify(id or Path(filename).stem or "uploaded-skill")
-                target = _install_skill_md(payload.decode("utf-8"), loader.public_dir, skill_id, force=force)
+                target = _install_skill_md(payload.decode("utf-8"), loader.custom_dir, skill_id, force=force)
     except HTTPException:
         raise
     except UnicodeDecodeError as exc:
@@ -261,7 +261,7 @@ async def custom(body: SkillCustomRequest):
         raise HTTPException(status_code=400, detail="Skill id may only contain letters, numbers, '-' and '_'")
 
     loader = SkillLoader()
-    target = loader.public_dir / body.id
+    target = loader.custom_dir / body.id
     if target.exists() and not body.force:
         existing = loader.load(body.id)
         raise HTTPException(
@@ -301,14 +301,16 @@ async def update(skill_id: str, body: SkillUpdateRequest):
     from nexagent.skills.loader import SkillLoader
 
     loader = SkillLoader()
-    target = loader.public_dir / skill_id / "SKILL.md"
-    if not target.exists():
+    skill = loader.load(skill_id)
+    if not skill:
         raise HTTPException(status_code=404, detail=f"Skill '{skill_id}' not found")
+    root = _writable_skill_root(loader, skill)
+    target = root / "SKILL.md"
 
-    current = loader.load(skill_id)
-    name = body.name or (current.name if current else skill_id)
-    description = body.description if body.description is not None else (current.description if current else "")
-    content = body.content if body.content is not None else (current.content if current else "")
+    current = skill
+    name = body.name or current.name
+    description = body.description if body.description is not None else current.description
+    content = body.content if body.content is not None else current.content
     _write_skill_md(
         target,
         skill_id=skill_id,
@@ -371,9 +373,10 @@ async def uninstall(skill_id: str):
     from nexagent.skills.loader import SkillLoader
 
     loader = SkillLoader()
-    target = loader.public_dir / skill_id
-    if not target.exists():
+    skill = loader.load(skill_id)
+    if not skill:
         raise HTTPException(status_code=404, detail=f"Skill '{skill_id}' not found")
+    target = _writable_skill_root(loader, skill)
     shutil.rmtree(target)
 
 
@@ -387,7 +390,7 @@ async def skill_file_content(skill_id: str, path: str):
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill '{skill_id}' not found")
 
-    root = (loader.public_dir / skill_id).resolve()
+    root = skill.path.parent.resolve()
     target = (root / path).resolve()
     if not _is_relative_to(target, root) or not target.is_file():
         raise HTTPException(status_code=404, detail=f"Skill file '{path}' not found")
@@ -429,7 +432,7 @@ async def update_skill_file_content(skill_id: str, path: str, body: SkillFileUpd
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill '{skill_id}' not found")
     rel_path = _safe_skill_resource_path(path)
-    root = (loader.public_dir / skill_id).resolve()
+    root = _writable_skill_root(loader, skill)
     target = (root / rel_path).resolve()
     if not _is_relative_to(target, root):
         raise HTTPException(status_code=400, detail="Skill file path escapes the skill directory")
@@ -460,12 +463,13 @@ async def delete_skill_file_content(skill_id: str, path: str):
     from nexagent.tools.builtin.skill_manager import _append_history, _text_hash
 
     loader = SkillLoader()
-    if not loader.load(skill_id):
+    skill = loader.load(skill_id)
+    if not skill:
         raise HTTPException(status_code=404, detail=f"Skill '{skill_id}' not found")
     rel_path = _safe_skill_resource_path(path)
     if rel_path == "SKILL.md":
         raise HTTPException(status_code=400, detail="SKILL.md cannot be deleted from this endpoint")
-    root = (loader.public_dir / skill_id).resolve()
+    root = _writable_skill_root(loader, skill)
     target = (root / rel_path).resolve()
     if not _is_relative_to(target, root) or not target.is_file():
         raise HTTPException(status_code=404, detail=f"Skill file '{path}' not found")
@@ -622,6 +626,10 @@ def _list_skill_candidates_from_zip(payload: bytes) -> list[dict]:
                 "required_tools": _metadata_combined_string_list(
                     metadata.get("required_tools", []),
                     metadata.get("tool_dependencies", []),
+                ),
+                "allowed_tools": _metadata_combined_string_list(
+                    metadata.get("allowed_tools", []),
+                    metadata.get("allowed-tools", []),
                 ),
                 "skill_dependencies": _metadata_string_list(metadata.get("skill_dependencies", [])),
                 "subdir": skill_dir,
@@ -796,6 +804,10 @@ def _list_skill_candidates(root: Path) -> list[dict]:
                 metadata.get("required_tools", []),
                 metadata.get("tool_dependencies", []),
             ),
+            "allowed_tools": _metadata_combined_string_list(
+                metadata.get("allowed_tools", []),
+                metadata.get("allowed-tools", []),
+            ),
             "skill_dependencies": _metadata_string_list(metadata.get("skill_dependencies", [])),
             "subdir": skill_dir.relative_to(root).as_posix(),
             "file_count": len(files),
@@ -823,6 +835,10 @@ def _preview_markdown_skill(content: str, skill_id: str) -> dict:
             metadata.get("required_tools", []),
             metadata.get("tool_dependencies", []),
         ),
+        "allowed_tools": _metadata_combined_string_list(
+            metadata.get("allowed_tools", []),
+            metadata.get("allowed-tools", []),
+        ),
         "skill_dependencies": _metadata_string_list(metadata.get("skill_dependencies", [])),
         "subdir": "",
         "file_count": 1,
@@ -832,18 +848,18 @@ def _preview_markdown_skill(content: str, skill_id: str) -> dict:
     }
 
 
-def _install_skill_dir(source: Path, public_dir: Path, skill_id: str, *, force: bool) -> Path:
-    target = public_dir / _slugify(skill_id)
+def _install_skill_dir(source: Path, target_root: Path, skill_id: str, *, force: bool) -> Path:
+    target = target_root / _slugify(skill_id)
     _ensure_install_target(target, force=force)
-    public_dir.mkdir(parents=True, exist_ok=True)
+    target_root.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source, target)
     (target / "skill.py").unlink(missing_ok=True)
     _normalize_installed_skill_md(target / "SKILL.md", target.name)
     return target
 
 
-def _install_skill_md(content: str, public_dir: Path, skill_id: str, *, force: bool) -> Path:
-    target = public_dir / _slugify(skill_id)
+def _install_skill_md(content: str, target_root: Path, skill_id: str, *, force: bool) -> Path:
+    target = target_root / _slugify(skill_id)
     _ensure_install_target(target, force=force)
     target.mkdir(parents=True, exist_ok=False)
     skill_md = target / "SKILL.md"
@@ -938,9 +954,14 @@ def _metadata_string_list(value) -> list[str]:
     if value is None:
         return []
     if isinstance(value, str):
+        if "," in value:
+            return [item.strip() for item in value.split(",") if item.strip()]
         return [value] if value else []
     if isinstance(value, list):
-        return [str(item) for item in value if str(item)]
+        result: list[str] = []
+        for item in value:
+            result.extend(_metadata_string_list(item))
+        return result
     return [str(value)]
 
 
@@ -1076,6 +1097,17 @@ def _is_relative_to(path: Path, root: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _writable_skill_root(loader, skill) -> Path:
+    root = skill.path.parent.resolve()
+    skills_root = loader.skills_dir.resolve()
+    if not _is_relative_to(root, skills_root):
+        raise HTTPException(
+            status_code=400,
+            detail="External skills are read-only through the Skills API. Copy or install the skill into custom first.",
+        )
+    return root
 
 
 def _skill_response(skill) -> dict:

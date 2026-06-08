@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import json
 import os
 import re
@@ -14,6 +15,8 @@ from pathlib import Path
 from nexagent.sandbox.sandbox import Sandbox, SandboxProvider, VirtualPathTranslator
 
 _SKILLS_PATH_PATTERN = re.compile(r"(?<![\w.-])/mnt/skills(?=/|$)")
+MAX_GLOB_RESULTS = 200
+MAX_GREP_RESULTS = 100
 
 
 class LocalSandbox(Sandbox):
@@ -51,6 +54,97 @@ class LocalSandbox(Sandbox):
         _audit(self.thread_id, "ls", {"path": path, "max_depth": max_depth}, "ok", "")
         return result
 
+    async def glob(self, pattern: str, path: str = ".") -> str:
+        pattern = str(pattern or "").strip()
+        if not pattern:
+            return "Pattern is required."
+        try:
+            root = self.translator.to_real(path or ".", self.thread_id)
+        except ValueError as exc:
+            return f"Invalid path: {exc}"
+        if not root.exists():
+            return f"Path not found: {path}"
+
+        matches: list[Path] = []
+        if root.is_file():
+            if fnmatch.fnmatch(root.name, pattern):
+                matches.append(root)
+        else:
+            safe_pattern = pattern.lstrip("/")
+            try:
+                candidates = sorted(root.glob(safe_pattern), key=lambda item: item.as_posix())
+            except ValueError as exc:
+                return f"Invalid glob pattern: {exc}"
+            for candidate in candidates:
+                matches.append(candidate)
+                if len(matches) >= MAX_GLOB_RESULTS:
+                    break
+
+        if not matches:
+            result = "No matches found."
+        else:
+            lines = [self._virtual_listing_path(match) for match in matches]
+            if len(matches) >= MAX_GLOB_RESULTS:
+                lines.append(f"... truncated at {MAX_GLOB_RESULTS} matches")
+            result = "\n".join(lines)
+        _audit(self.thread_id, "glob", {"path": path, "pattern": pattern}, "ok", result[:1000])
+        return result
+
+    async def grep(self, pattern: str, path: str = ".", glob: str = "") -> str:
+        pattern = str(pattern or "")
+        if not pattern:
+            return "Pattern is required."
+        try:
+            regex = re.compile(pattern)
+        except re.error as exc:
+            return f"Invalid regex pattern: {exc}"
+        try:
+            root = self.translator.to_real(path or ".", self.thread_id)
+        except ValueError as exc:
+            return f"Invalid path: {exc}"
+        if not root.exists():
+            return f"Path not found: {path}"
+
+        matches: list[str] = []
+        files = (
+            [root]
+            if root.is_file()
+            else sorted((item for item in root.rglob("*") if item.is_file()), key=lambda p: p.as_posix())
+        )
+        for file_path in files:
+            if _is_probably_binary(file_path):
+                continue
+            if glob and not _matches_glob_filter(file_path, root, glob):
+                continue
+            try:
+                with file_path.open(encoding="utf-8", errors="replace") as handle:
+                    for line_no, line in enumerate(handle, start=1):
+                        if not regex.search(line):
+                            continue
+                        location = self.translator.to_virtual(file_path, self.thread_id)
+                        matches.append(f"{location}:{line_no}: {line.rstrip()}")
+                        if len(matches) >= MAX_GREP_RESULTS:
+                            break
+            except OSError:
+                continue
+            if len(matches) >= MAX_GREP_RESULTS:
+                break
+
+        if not matches:
+            result = "No matches found."
+        else:
+            if len(matches) >= MAX_GREP_RESULTS:
+                matches.append(f"... truncated at {MAX_GREP_RESULTS} matches")
+            result = "\n".join(matches)
+        _audit(
+            self.thread_id,
+            "grep",
+            {"path": path, "pattern": pattern, "glob": glob},
+            "ok",
+            result[:1000],
+        )
+        return result
+
     def _walk(self, root: Path, current: Path, lines: list[str], max_depth: int, depth: int) -> None:
         if depth > max_depth:
             return
@@ -60,6 +154,10 @@ class LocalSandbox(Sandbox):
             lines.append(f"{prefix}{rel}{'/' if child.is_dir() else ''}")
             if child.is_dir() and depth < max_depth:
                 self._walk(root, child, lines, max_depth=max_depth, depth=depth + 1)
+
+    def _virtual_listing_path(self, path: Path) -> str:
+        suffix = "/" if path.is_dir() else ""
+        return f"{self.translator.to_virtual(path, self.thread_id)}{suffix}"
 
     async def read_file(self, path: str, start_line: int | None = None, end_line: int | None = None) -> str:
         real = self.translator.to_real(path, self.thread_id)
@@ -255,6 +353,24 @@ def _is_runtime_skill_path(path: str) -> bool:
         value == "/mnt/skills"
         or value.startswith("/mnt/skills/")
     )
+
+
+def _matches_glob_filter(path: Path, root: Path, pattern: str) -> bool:
+    clean = pattern.strip().lstrip("/")
+    if not clean:
+        return True
+    try:
+        rel = path.relative_to(root).as_posix() if root.is_dir() else path.name
+    except ValueError:
+        rel = path.name
+    return fnmatch.fnmatch(rel, clean) or fnmatch.fnmatch(path.name, clean)
+
+
+def _is_probably_binary(path: Path) -> bool:
+    try:
+        return b"\0" in path.read_bytes()[:4096]
+    except OSError:
+        return True
 
 
 def _audit(thread_id: str, action: str, input_data: dict, status: str, message: str) -> None:

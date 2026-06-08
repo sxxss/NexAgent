@@ -238,6 +238,8 @@ class AppConfig:
 
     # Skills directory — empty string means auto-resolve from project root
     skills_dir: str = ""
+    # Additional directories to scan for SKILL.md packages.
+    skills_extra_dirs: list[str] = field(default_factory=list)
 
     # Derived
     default_model: str = ""
@@ -739,6 +741,11 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
         debug=raw.get("debug", False),
         config_version=int(raw.get("config_version", CONFIG_VERSION)),
         skills_dir=raw.get("skills_dir", ""),
+        skills_extra_dirs=[
+            str(item)
+            for item in raw.get("skills_extra_dirs", [])
+            if str(item or "").strip()
+        ] if isinstance(raw.get("skills_extra_dirs", []), list) else [],
         default_model=raw.get("default_model", models[0].name if models else ""),
     )
     _config_path = config_path

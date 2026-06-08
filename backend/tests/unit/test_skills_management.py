@@ -139,6 +139,92 @@ skill_dependencies: [research]
 
 
 @pytest.mark.unit
+def test_skill_loader_scans_custom_external_roots_and_category_aliases(monkeypatch):
+    from nexagent.skills.loader import SkillLoader
+
+    work_dir = _skills_dir("skills-standard-roots")
+    external_dir = work_dir / "external-packages"
+    custom_dir = work_dir / "skills" / "custom" / "community" / "reporting-plus"
+    custom_dir.mkdir(parents=True, exist_ok=True)
+    (custom_dir / "SKILL.md").write_text(
+        """---
+id: reporting-plus
+name: Reporting Plus
+description: Build recurring business reports.
+version: 0.1.0
+---
+
+# Reporting Plus
+""",
+        encoding="utf-8",
+    )
+    external_skill = external_dir / "open-skill"
+    external_skill.mkdir(parents=True, exist_ok=True)
+    (external_skill / "SKILL.md").write_text(
+        """---
+id: open-skill
+name: Open Skill
+description: Imported community skill.
+version: 0.1.0
+---
+
+# Open Skill
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NEXAGENT_SKILLS_DIR", str(work_dir / "skills"))
+    monkeypatch.setenv("NEXAGENT_SKILLS_EXTRA_DIRS", str(external_dir))
+
+    try:
+        loader = SkillLoader()
+        custom = loader.load("custom/community/reporting-plus")
+        external = loader.load("open-skill")
+
+        assert custom is not None
+        assert custom.id == "reporting-plus"
+        assert custom.category == "custom"
+        assert custom.runtime_path == "/mnt/skills/reporting-plus"
+        assert "/mnt/skills/custom/reporting-plus" in custom.runtime_paths
+        assert loader.load("Reporting Plus") is custom
+        assert external is not None
+        assert external.category == "external"
+        assert external.runtime_paths == ["/mnt/skills/open-skill"]
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+def test_skill_loader_parses_claude_allowed_tools(monkeypatch):
+    from nexagent.skills.loader import SkillLoader
+
+    work_dir = _skills_dir("skills-allowed-tools")
+    skill_dir = work_dir / "custom" / "claude-style"
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: claude-style
+description: Uses Claude-style allowed tools.
+allowed-tools: "Read, Grep, Glob, Bash(git diff:*), WebFetch"
+---
+
+# Claude Style
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NEXAGENT_SKILLS_DIR", str(work_dir))
+
+    try:
+        skill = SkillLoader().load("claude-style")
+
+        assert skill is not None
+        assert skill.allowed_tools == ["read_file", "grep", "glob", "bash", "web_fetch"]
+        assert skill.required_tools == []
+        assert {issue.code for issue in skill.validation_issues} == set()
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
 def test_skill_loader_reports_invalid_metadata(monkeypatch):
     from nexagent.skills.loader import SkillLoader
 

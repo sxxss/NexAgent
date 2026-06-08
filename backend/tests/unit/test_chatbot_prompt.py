@@ -52,7 +52,7 @@ def test_chatbot_prompt_enforces_managed_skill_lifecycle_tools():
     assert "running bash/execute_python" in prompt
     assert "MCP filesystem tools such as ls, list_directory" in prompt
     assert "Generic file tools are only for user workspace/repository files unrelated to managed Skills" in prompt
-    assert "selected Skills are listed later in this prompt with `/mnt/skills`" in prompt
+    assert "enabled or selected Skills are listed later in this prompt with `/mnt/skills`" in prompt
     assert "/mnt/skills/<skill-id>/scripts/..." in prompt
     assert "workspace mirror" not in prompt
     assert "Skill evolution policy" in prompt

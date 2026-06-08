@@ -126,6 +126,10 @@ sandbox:
 
         skill_md = await sandbox.read_file("/mnt/skills/script-skill/SKILL.md")
         output = await sandbox.execute_command("python3 /mnt/skills/script-skill/scripts/run.py")
+        alias_skill_md = await sandbox.read_file("/mnt/skills/public/script-skill/SKILL.md")
+        alias_output = await sandbox.execute_command("python3 /mnt/skills/public/script-skill/scripts/run.py")
+        glob_result = await sandbox.glob("**/*.py", "/mnt/skills/public/script-skill")
+        grep_result = await sandbox.grep("skill-script-ok", "/mnt/skills/public/script-skill")
         write_result = await sandbox.write_file("/mnt/skills/script-skill/SKILL.md", "changed")
     finally:
         reset_config_cache()
@@ -133,4 +137,8 @@ sandbox:
 
     assert "# Script Skill" in skill_md
     assert "skill-script-ok" in output
+    assert "# Script Skill" in alias_skill_md
+    assert "skill-script-ok" in alias_output
+    assert "/mnt/skills/public/script-skill/scripts/run.py" in glob_result
+    assert "/mnt/skills/public/script-skill/scripts/run.py:1: print('skill-script-ok')" in grep_result
     assert "read-only" in write_result
