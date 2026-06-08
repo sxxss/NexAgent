@@ -38,3 +38,51 @@ async def test_wiki_kb_can_be_created_and_discovered_by_manager():
     finally:
         reset_manager()
         shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_pages_are_frontmatter_markdown_and_manual_pages_get_candidates():
+    from nexagent.knowledge.manager import reset_manager
+
+    work_dir = _work_dir("pages")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", description="Useful knowledge", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+
+        first = await backend.create_or_update_wiki_page(
+            kb_meta.kb_id,
+            page_type="topic",
+            title="Transformer Architecture",
+            content="# Transformer Architecture\n\nLinks to [[Attention]].",
+            sources=["file-1"],
+            confidence="EXTRACTED",
+        )
+        manual = await backend.update_wiki_page(
+            kb_meta.kb_id,
+            first["id"],
+            "# Transformer Architecture\n\nManual version.",
+        )
+        generated = await backend.create_or_update_wiki_page(
+            kb_meta.kb_id,
+            page_type="topic",
+            title="Transformer Architecture",
+            content="# Transformer Architecture\n\nGenerated version.",
+            sources=["file-2"],
+            confidence="INFERRED",
+        )
+
+        pages = backend.list_wiki_pages(kb_meta.kb_id)["pages"]
+        detail = backend.get_wiki_page(kb_meta.kb_id, first["id"])
+
+        assert first["id"] == "topic:transformer-architecture"
+        assert manual["manual_edited"] is True
+        assert generated["candidate"] is not None
+        assert detail["content"] == "# Transformer Architecture\n\nManual version."
+        assert detail["candidate"]["content"] == "# Transformer Architecture\n\nGenerated version."
+        assert pages[0]["has_candidate"] is True
+        assert "wiki/topics/transformer-architecture.md" in detail["path"]
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
