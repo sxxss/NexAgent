@@ -237,18 +237,21 @@ class KnowledgeBaseManager:
             raise KeyError(f"Knowledge base not found: {kb_id}")
 
         current_embed = kb_meta.embed_info
-        next_embed = replace(
-            current_embed,
-            model=str(patch.get("embed_model", current_embed.model) or current_embed.model),
-            base_url=str(patch.get("embed_base_url", current_embed.base_url) or ""),
-            api_key=str(patch.get("embed_api_key", current_embed.api_key) or ""),
-            dimension=_bounded_int(
-                patch.get("embed_dimension", current_embed.dimension),
-                current_embed.dimension,
-                1,
-                8192,
-            ),
-        )
+        if kb_meta.kb_type == KBType.WIKI:
+            next_embed = EmbedInfo(model="", base_url="", api_key="", dimension=0)
+        else:
+            next_embed = replace(
+                current_embed,
+                model=str(patch.get("embed_model", current_embed.model) or current_embed.model),
+                base_url=str(patch.get("embed_base_url", current_embed.base_url) or ""),
+                api_key=str(patch.get("embed_api_key", current_embed.api_key) or ""),
+                dimension=_bounded_int(
+                    patch.get("embed_dimension", current_embed.dimension),
+                    current_embed.dimension,
+                    1,
+                    8192,
+                ),
+            )
         embedding_changed = next_embed.to_dict() != current_embed.to_dict()
         if embedding_changed:
             kb_meta.embed_info = next_embed
@@ -280,8 +283,9 @@ class KnowledgeBaseManager:
             self.update_query_config(kb_id, query_patch)
 
         indexed_files = [file for file in self.list_files(kb_id) if file.status.value == "indexed"]
+        embedding_requires_reindex = embedding_changed and kb_meta.kb_type != KBType.WIKI
         requires_reindex = bool(
-            ((embedding_changed or llm_changed) and indexed_files)
+            ((embedding_requires_reindex or llm_changed) and indexed_files)
             or kb_meta.extra.get("requires_reindex")
         )
         kb_meta.extra["model_config"] = {

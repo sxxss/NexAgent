@@ -97,8 +97,16 @@ class ProductionKnowledgeService:
             chunk_overlap=max(0, int(chunk_overlap)),
             chunk_preset_id=normalize_chunk_preset_id(chunk_preset_id),
         )
+        kb_type_enum = KBType(kb_type)
+        effective_embed_info = (
+            embed_info
+            if embed_info is not None
+            else EmbedInfo(model="", base_url="", api_key="", dimension=0)
+            if kb_type_enum == KBType.WIKI
+            else _default_embed_info()
+        )
         record.chunk_parser_config = chunk_parser_config or {}
-        record.embed_info = (embed_info or _default_embed_info()).to_dict()
+        record.embed_info = effective_embed_info.to_dict()
         record.llm_info = (llm_info or _default_llm_info()).to_dict()
         record.extra = {"storage": "postgres_minio", "legacy": False}
         async with AsyncSessionLocal() as session:
@@ -121,14 +129,17 @@ class ProductionKnowledgeService:
     async def update_model_config(self, kb_id: str, patch: dict) -> dict:
         async with AsyncSessionLocal() as session:
             kb = await _require_kb_record(session, kb_id)
-            embed = dict(kb.embed_info or {})
+            if kb.kb_type == KBType.WIKI.value:
+                embed = {"model": "", "base_url": "", "api_key": "", "dimension": 0}
+            else:
+                embed = dict(kb.embed_info or {})
             for src, dst in {
                 "embed_model": "model",
                 "embed_base_url": "base_url",
                 "embed_api_key": "api_key",
                 "embed_dimension": "dimension",
             }.items():
-                if src in patch and patch[src] is not None:
+                if kb.kb_type != KBType.WIKI.value and src in patch and patch[src] is not None:
                     embed[dst] = patch[src]
             kb.embed_info = embed
             llm = dict(kb.llm_info or {})

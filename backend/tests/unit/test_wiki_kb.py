@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import shutil
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -134,6 +136,123 @@ async def test_wiki_kb_indexes_markdown_into_pages_and_searches(monkeypatch):
         assert results[0].metadata["page_id"] == "topic:transformer-architecture"
         assert results[0].metadata["page_type"] == "topic"
         assert "Attention" in results[0].content
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_llm_compile_invocation_times_out(monkeypatch):
+    from nexagent.knowledge.manager import reset_manager
+
+    class SlowLLM:
+        async def ainvoke(self, messages):
+            await asyncio.sleep(1)
+
+    work_dir = _work_dir("compile-timeout")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+        monkeypatch.setenv("NEXAGENT_WIKI_LLM_TIMEOUT_S", "0.01")
+
+        with pytest.raises(TimeoutError, match="LLM Wiki compile timed out after"):
+            await backend._invoke_wiki_llm(SlowLLM(), [])
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_llm_json_parser_accepts_wrapped_json():
+    from nexagent.knowledge.manager import reset_manager
+
+    work_dir = _work_dir("compile-json")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+
+        parsed = backend._parse_llm_json(
+            """
+            下面是结果：
+            {"source": {"title": "Alpha"}, "topics": [], "entities": []}
+            已完成。
+            """
+        )
+
+        assert parsed["source"]["title"] == "Alpha"
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_compile_normalizes_missing_source_payload():
+    from nexagent.knowledge.manager import reset_manager
+
+    work_dir = _work_dir("compile-normalize")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+
+        normalized = backend._normalize_compiled_payload(
+            {
+                "title": "Alpha",
+                "summary": "Alpha summary",
+                "pages": [{"title": "Topic A", "summary": "Topic summary", "content": "Topic body"}],
+            },
+            SimpleNamespace(filename="alpha.md"),
+            "# Alpha",
+        )
+
+        assert normalized["source"]["title"] == "Alpha"
+        assert normalized["source"]["summary"] == "Alpha summary"
+        assert normalized["topics"][0]["title"] == "Topic A"
+        assert normalized["entities"] == []
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_compile_loads_llm_without_streaming(monkeypatch):
+    from nexagent.knowledge.manager import reset_manager
+
+    calls = []
+
+    class FakeResponse:
+        content = '{"source": {"title": "Alpha"}, "topics": [], "entities": []}'
+
+    class FakeLLM:
+        async def ainvoke(self, messages):
+            return FakeResponse()
+
+    async def fake_load_chat_model_async(model_name=None, **kwargs):
+        calls.append((model_name, kwargs))
+        return FakeLLM()
+
+    work_dir = _work_dir("compile-non-streaming")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+        monkeypatch.setattr("nexagent.models.factory.load_chat_model_async", fake_load_chat_model_async)
+
+        parsed = await backend._compile_markdown_with_llm(
+            kb_meta.kb_id,
+            "file-1",
+            SimpleNamespace(filename="alpha.md"),
+            "# Alpha",
+        )
+
+        assert parsed["source"]["title"] == "Alpha"
+        assert calls[0][1]["streaming"] is False
     finally:
         reset_manager()
         shutil.rmtree(work_dir, ignore_errors=True)

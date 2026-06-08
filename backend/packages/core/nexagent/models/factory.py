@@ -188,6 +188,7 @@ def load_chat_model(
     thinking_budget: int = 8000,
     reasoning_mode: str | None = None,
     reasoning_effort: str | None = None,
+    streaming: bool = True,
 ) -> BaseChatModel:
     """Return a ready-to-use LangChain chat model.
 
@@ -218,6 +219,7 @@ def load_chat_model(
             thinking_budget=thinking_budget,
             reasoning_mode=reasoning_mode,
             reasoning_effort=reasoning_effort,
+            streaming=streaming,
         )
 
     # 2. Config.yaml is kept only as a compatibility fallback.
@@ -230,6 +232,7 @@ def load_chat_model(
             thinking_budget=thinking_budget,
             reasoning_mode=reasoning_mode,
             reasoning_effort=reasoning_effort,
+            streaming=streaming,
         )
 
     # 3. Fallback
@@ -243,6 +246,7 @@ async def load_chat_model_async(
     thinking_budget: int = 8000,
     reasoning_mode: str | None = None,
     reasoning_effort: str | None = None,
+    streaming: bool = True,
 ) -> BaseChatModel:
     """Async variant -refreshes DB provider cache properly."""
     if not model_name:
@@ -265,6 +269,7 @@ async def load_chat_model_async(
             thinking_budget=thinking_budget,
             reasoning_mode=reasoning_mode,
             reasoning_effort=reasoning_effort,
+            streaming=streaming,
         )
 
     # DB providers managed from Settings.
@@ -278,6 +283,7 @@ async def load_chat_model_async(
             thinking_budget=thinking_budget,
             reasoning_mode=reasoning_mode,
             reasoning_effort=reasoning_effort,
+            streaming=streaming,
         )
 
     # Config.yaml is kept only as a compatibility fallback.
@@ -289,6 +295,7 @@ async def load_chat_model_async(
             thinking_budget=thinking_budget,
             reasoning_mode=reasoning_mode,
             reasoning_effort=reasoning_effort,
+            streaming=streaming,
         )
 
     return _init_model_fallback(model_name)
@@ -587,6 +594,7 @@ def _build_from_config(
     thinking_budget: int = 8000,
     reasoning_mode: str = "balanced",
     reasoning_effort: str | None = None,
+    streaming: bool = True,
 ) -> BaseChatModel:
     provider = m.provider.lower()
     if provider not in SUPPORTED_PROVIDERS:
@@ -596,7 +604,11 @@ def _build_from_config(
     if provider == "openai":
         from langchain_openai import ChatOpenAI
         from pydantic import SecretStr
-        kwargs: dict = {"model": m.model, "streaming": True, "stream_chunk_timeout": _stream_chunk_timeout()}
+        kwargs: dict = {
+            "model": m.model,
+            "streaming": streaming,
+            "stream_chunk_timeout": _stream_chunk_timeout(),
+        }
         if callbacks:
             kwargs["callbacks"] = callbacks
         if m.api_key:
@@ -648,6 +660,7 @@ def _build_from_db_provider(
     thinking_budget: int = 8000,
     reasoning_mode: str = "balanced",
     reasoning_effort: str | None = None,
+    streaming: bool = True,
 ) -> BaseChatModel:
     ptype = provider["provider_type"].lower()
     api_key = provider["api_key"]
@@ -657,7 +670,11 @@ def _build_from_db_provider(
     if ptype == "openai":
         from langchain_openai import ChatOpenAI
         from pydantic import SecretStr
-        kwargs: dict = {"model": model_id, "streaming": True, "stream_chunk_timeout": _stream_chunk_timeout()}
+        kwargs: dict = {
+            "model": model_id,
+            "streaming": streaming,
+            "stream_chunk_timeout": _stream_chunk_timeout(),
+        }
         if callbacks:
             kwargs["callbacks"] = callbacks
         if api_key:

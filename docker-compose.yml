@@ -43,6 +43,7 @@ services:
       - NEXAGENT_DATA_DIR=/app/.nexagent
       - NEXAGENT_SANDBOX_HOST_ROOT=${PWD}/.nexagent
       - NEXAGENT_SANDBOX_CONTAINER_ROOT=/app/.nexagent
+      - NEXAGENT_WIKI_LLM_TIMEOUT_S=${NEXAGENT_WIKI_LLM_TIMEOUT_S:-30}
       - DATABASE_URL=postgresql+asyncpg://nexagent:nexagent@postgres:5432/nexagent
       - REDIS_URL=redis://redis:6379/0
       - NEXAGENT_KB_STORAGE=${NEXAGENT_KB_STORAGE:-postgres}
@@ -222,6 +223,7 @@ services:
       - PYTHONPATH=/app/backend/packages/core:/app/backend
       - NEXAGENT_CONFIG_PATH=/app/config.yaml
       - NEXAGENT_DATA_DIR=/app/.nexagent
+      - NEXAGENT_WIKI_LLM_TIMEOUT_S=${NEXAGENT_WIKI_LLM_TIMEOUT_S:-30}
       - DATABASE_URL=postgresql+asyncpg://nexagent:nexagent@postgres:5432/nexagent
       - REDIS_URL=redis://redis:6379/0
       - NEXAGENT_KB_STORAGE=postgres

@@ -25,6 +25,26 @@ async def test_wiki_kb_does_not_inherit_default_embedding():
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_wiki_model_update_clears_legacy_embedding():
+    from nexagent.knowledge.manager import KnowledgeBaseManager
+    from nexagent.knowledge.models import EmbedInfo, KBType
+
+    work_dir = _fresh_dir("wiki-clear-embedding")
+    manager = KnowledgeBaseManager(str(work_dir))
+    wiki = await manager.create_kb(name="wiki", kb_type=KBType.WIKI.value)
+    wiki.embed_info = EmbedInfo(model="legacy-embed", base_url="https://example.test", dimension=1024)
+
+    result = manager.update_model_config(wiki.kb_id, {"llm_model": "deepseek-ai/DeepSeek-V3"})
+
+    updated = result["kb"]
+    assert updated["embed_info"]["model"] == ""
+    assert updated["embed_info"]["dimension"] == 0
+    assert result["requires_reindex"] is False
+    shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_query_config_modes_are_scoped_by_kb_type():
     from nexagent.knowledge.manager import KnowledgeBaseManager
     from nexagent.knowledge.models import KBType

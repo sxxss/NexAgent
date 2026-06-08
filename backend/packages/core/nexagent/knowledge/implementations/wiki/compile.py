@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import re
 import textwrap
 from hashlib import sha256
@@ -8,6 +10,8 @@ from pathlib import Path
 from typing import Any
 
 from nexagent.knowledge.implementations.wiki.constants import CONFIDENCE_VALUES, WIKI_PROMPT_VERSION
+
+DEFAULT_WIKI_LLM_TIMEOUT_S = 90.0
 
 
 class WikiCompileMixin:
@@ -85,28 +89,31 @@ class WikiCompileMixin:
         if llm_info.provider and "::" not in model_ref:
             model_ref = f"{llm_info.provider}::{llm_info.model}"
         try:
-            llm = await load_chat_model_async(model_ref)
+            llm = await load_chat_model_async(model_ref, streaming=False)
         except Exception:
-            llm = await load_chat_model_async(llm_info.model)
+            llm = await load_chat_model_async(llm_info.model, streaming=False)
         messages = self._build_compile_prompt(file_meta.filename, self._read_purpose(kb_id), markdown)
-        response = await llm.ainvoke(
+        response = await self._invoke_wiki_llm(
+            llm,
             [
                 SystemMessage(content=messages[0]["content"]),
                 HumanMessage(content=messages[1]["content"]),
-            ]
+            ],
         )
         content = response.content if isinstance(response.content, str) else str(response.content)
         try:
             parsed = self._parse_llm_json(content)
-            self._validate_compiled_payload(parsed)
-            return parsed
+            normalized = self._normalize_compiled_payload(parsed, file_meta, markdown)
+            self._validate_compiled_payload(normalized)
+            return normalized
         except ValueError as exc:
             repair_prompt = self._build_repair_prompt(content, str(exc))
-            repaired_response = await llm.ainvoke(
+            repaired_response = await self._invoke_wiki_llm(
+                llm,
                 [
                     SystemMessage(content=repair_prompt[0]["content"]),
                     HumanMessage(content=repair_prompt[1]["content"]),
-                ]
+                ],
             )
             repaired_content = (
                 repaired_response.content
@@ -114,8 +121,26 @@ class WikiCompileMixin:
                 else str(repaired_response.content)
             )
             repaired = self._parse_llm_json(repaired_content)
-            self._validate_compiled_payload(repaired)
-            return repaired
+            normalized = self._normalize_compiled_payload(repaired, file_meta, markdown)
+            self._validate_compiled_payload(normalized)
+            return normalized
+
+    async def _invoke_wiki_llm(self, llm, messages: list) -> Any:
+        timeout_s = self._wiki_llm_timeout_s()
+        try:
+            return await asyncio.wait_for(llm.ainvoke(messages), timeout=timeout_s)
+        except TimeoutError as exc:
+            raise TimeoutError(f"LLM Wiki compile timed out after {timeout_s:g}s") from exc
+
+    def _wiki_llm_timeout_s(self) -> float:
+        raw = os.getenv("NEXAGENT_WIKI_LLM_TIMEOUT_S", "").strip()
+        if not raw:
+            return DEFAULT_WIKI_LLM_TIMEOUT_S
+        try:
+            value = float(raw)
+        except ValueError:
+            return DEFAULT_WIKI_LLM_TIMEOUT_S
+        return value if value > 0 else DEFAULT_WIKI_LLM_TIMEOUT_S
 
     def _read_purpose(self, kb_id: str) -> str:
         path = self._db_root(kb_id) / "purpose.md"
@@ -130,7 +155,19 @@ class WikiCompileMixin:
             {purpose or "未设置"}
             Source filename:
             {filename}
-            请返回 JSON 对象，结构为 source/topics/entities/synthesis。topics 和 entities 可以为空数组。
+            必须只返回一个 JSON 对象，顶层字段固定为 source、topics、entities。
+            schema:
+            {{
+              "source": {{
+                "title": "源文档标题",
+                "summary": "源文档摘要",
+                "key_points": ["要点"],
+                "confidence": "EXTRACTED"
+              }},
+              "topics": [{{"title": "主题", "summary": "摘要", "content": "Markdown 正文", "confidence": "INFERRED"}}],
+              "entities": [{{"title": "实体", "summary": "摘要", "content": "Markdown 正文", "confidence": "INFERRED"}}]
+            }}
+            topics 和 entities 可以为空数组。不要使用 pages/document/result 等替代字段。
             confidence 只能是 EXTRACTED、INFERRED、AMBIGUOUS、UNVERIFIED。
             页面正文必须使用 Markdown，可用 [[页面标题]] 表达重要关联。
             Markdown source:
@@ -144,20 +181,87 @@ class WikiCompileMixin:
             {"role": "system", "content": "你是 NexAgent Wiki JSON 修复器。只输出合法 JSON。"},
             {
                 "role": "user",
-                "content": f"错误：{error}\n请修复为 source/topics/entities/synthesis JSON：\n{bad_output}",
+                "content": (
+                    f"错误：{error}\n"
+                    "请修复为严格 JSON："
+                    '{"source":{"title":"","summary":"","key_points":[],"confidence":"EXTRACTED"},'
+                    '"topics":[],"entities":[]}\n'
+                    f"{bad_output}"
+                ),
             },
         ]
 
     def _parse_llm_json(self, content: str) -> dict:
         raw = (content or "").strip()
-        if raw.startswith("```"):
-            match = re.search(r"```(?:json)?\s*(.*?)```", raw, flags=re.DOTALL | re.IGNORECASE)
-            if match:
-                raw = match.group(1).strip()
-        parsed = json.loads(raw)
+        match = re.search(r"```(?:json)?\s*(.*?)```", raw, flags=re.DOTALL | re.IGNORECASE)
+        if match:
+            raw = match.group(1).strip()
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            start = raw.find("{")
+            if start < 0:
+                raise
+            parsed, _ = json.JSONDecoder().raw_decode(raw[start:])
         if not isinstance(parsed, dict):
             raise ValueError("LLM Wiki compile result must be a JSON object")
         return parsed
+
+    def _normalize_compiled_payload(self, payload: dict, file_meta, markdown: str) -> dict:
+        source = payload.get("source")
+        if not isinstance(source, dict):
+            for key in ("document", "source_document", "metadata"):
+                candidate = payload.get(key)
+                if isinstance(candidate, dict):
+                    source = candidate
+                    break
+        if not isinstance(source, dict):
+            source = payload if any(payload.get(key) for key in ("title", "summary", "content")) else {}
+
+        title = self._clean_wiki_title(
+            source.get("title")
+            or payload.get("title")
+            or Path(file_meta.filename).stem
+        )
+        summary = str(
+            source.get("summary")
+            or payload.get("summary")
+            or source.get("content")
+            or payload.get("content")
+            or self._summarize(markdown)
+        ).strip()
+        key_points = source.get("key_points") or payload.get("key_points") or []
+        if not isinstance(key_points, list):
+            key_points = [str(key_points)]
+
+        return {
+            **payload,
+            "source": {
+                **source,
+                "title": title,
+                "summary": summary,
+                "key_points": key_points,
+                "confidence": source.get("confidence") or payload.get("confidence") or "EXTRACTED",
+            },
+            "topics": self._coerce_page_items(
+                payload.get("topics")
+                or payload.get("pages")
+                or payload.get("wiki_pages")
+                or payload.get("sections")
+            ),
+            "entities": self._coerce_page_items(payload.get("entities")),
+        }
+
+    def _coerce_page_items(self, value: Any) -> list[dict]:
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+        if isinstance(value, dict):
+            items = []
+            for key, item in value.items():
+                if isinstance(item, dict):
+                    items.append({"title": item.get("title") or key, **item})
+            return items
+        return []
 
     def _validate_compiled_payload(self, payload: dict) -> None:
         if not isinstance(payload.get("source"), dict):
