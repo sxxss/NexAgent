@@ -62,6 +62,10 @@ class KnowledgeBaseManager:
         elif kb_type == KBType.LIGHTRAG:
             from nexagent.knowledge.implementations.lightrag_kb import LightRagKB
             return LightRagKB(work_dir=str(Path(self._work_dir) / "lightrag"))
+        elif kb_type == KBType.WIKI:
+            from nexagent.knowledge.implementations.wiki import WikiKB
+
+            return WikiKB(work_dir=str(Path(self._work_dir) / "wiki"))
         else:
             raise ValueError(f"Unknown KB type: {kb_type}")
 
