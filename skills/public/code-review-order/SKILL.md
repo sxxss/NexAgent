@@ -1,16 +1,16 @@
 ---
 id: code-review-order
 name: 代码审查
-description: 当用户请求代码审查、审查代码、review code、帮我看看代码、代码有问题、检查代码、代码检查、review 代码、代码优化、代码建议、代码评审、code review时触发此skill
+description: 当用户请求代码审查、审查代码、review code、帮我看看代码、代码有问题、检查代码、代码检查、review 代码、代码优化、代码建议、代码评审、code
+  review时触发此skill
 version: 0.1.0
 tags:
 - 代码
 - 审查
 - 代码质量
 - 开发
-required_tools:
-- read_file
-- execute_python
+required_mcp_ids: []
+required_tools: []
 ---
 
 # 代码审查 Skill

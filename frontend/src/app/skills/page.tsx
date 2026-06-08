@@ -31,11 +31,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import {
   createCustomSkill,
+  fetchInstalledMCP,
   fetchSkillHistory,
   fetchRemoteSkillList,
   fetchSkillFileContent,
   fetchSkillRegistry,
   fetchSkills,
+  fetchTools,
   installRemoteSkill,
   installSkill,
   testSkill,
@@ -47,7 +49,10 @@ import {
   type SkillHistoryRecord,
   type SkillInfo,
   type SkillIssue,
+  type ToolInfo,
+  type MCPServer,
 } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 type SkillForm = {
   id: string;
@@ -133,13 +138,19 @@ export default function SkillsPage() {
 
   const skillsQuery = useQuery({ queryKey: ["skills"], queryFn: fetchSkills });
   const registryQuery = useQuery({ queryKey: ["skill-registry"], queryFn: fetchSkillRegistry });
+  const toolsQuery = useQuery({ queryKey: ["tools"], queryFn: fetchTools });
+  const mcpQuery = useQuery({ queryKey: ["mcp-installed"], queryFn: fetchInstalledMCP });
   const skills = useMemo(() => skillsQuery.data ?? [], [skillsQuery.data]);
   const registry = useMemo(() => registryQuery.data ?? [], [registryQuery.data]);
+  const toolOptions = useMemo(() => toolsQuery.data ?? [], [toolsQuery.data]);
+  const mcpOptions = useMemo(() => mcpQuery.data ?? [], [mcpQuery.data]);
   const installedIds = useMemo(() => new Set(skills.map((skill) => skill.id || skill.name)), [skills]);
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["skills"] });
     void queryClient.invalidateQueries({ queryKey: ["skill-registry"] });
+    void queryClient.invalidateQueries({ queryKey: ["tools"] });
+    void queryClient.invalidateQueries({ queryKey: ["mcp-installed"] });
   };
 
   const resetDialog = () => {
@@ -390,7 +401,15 @@ export default function SkillsPage() {
         </div>
 
         <div key={`${replaceTargetId || "create"}-${installMode}`} className="skill-panel-enter min-h-[430px] rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
-          {installMode === "manual" ? <ManualSkillForm form={skillForm} setForm={setSkillForm} lockedId={Boolean(replaceTarget)} /> : null}
+          {installMode === "manual" ? (
+            <ManualSkillForm
+              form={skillForm}
+              setForm={setSkillForm}
+              lockedId={Boolean(replaceTarget)}
+              toolOptions={toolOptions}
+              mcpOptions={mcpOptions}
+            />
+          ) : null}
           {installMode === "remote" ? (
             <RemoteSkillForm
               form={remoteForm}
@@ -428,6 +447,8 @@ export default function SkillsPage() {
       {selectedSkill ? (
         <SkillDetailOverlay
           skill={selectedSkill}
+          toolOptions={toolOptions}
+          mcpOptions={mcpOptions}
           onClose={() => setSelectedSkill(null)}
           onReplace={() => openReplaceDialog(selectedSkill)}
           onSaved={(skill) => {
@@ -440,7 +461,19 @@ export default function SkillsPage() {
   );
 }
 
-function ManualSkillForm({ form, setForm, lockedId }: { form: SkillForm; setForm: (form: SkillForm) => void; lockedId?: boolean }) {
+function ManualSkillForm({
+  form,
+  setForm,
+  lockedId,
+  toolOptions,
+  mcpOptions,
+}: {
+  form: SkillForm;
+  setForm: (form: SkillForm) => void;
+  lockedId?: boolean;
+  toolOptions: ToolInfo[];
+  mcpOptions: MCPServer[];
+}) {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2">
@@ -461,14 +494,34 @@ function ManualSkillForm({ form, setForm, lockedId }: { form: SkillForm; setForm
         <Field label="Tags" hint="多个标签用英文逗号分隔。">
           <input className={inputClass} placeholder="data,csv,analysis" value={form.tags} onChange={(event) => setForm({ ...form, tags: event.target.value })} />
         </Field>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="依赖 MCP" hint="用于运行前校验和自动绑定。">
-            <input className={inputClass} placeholder="filesystem,github" value={form.required_mcp_ids} onChange={(event) => setForm({ ...form, required_mcp_ids: event.target.value })} />
-          </Field>
-          <Field label="依赖工具" hint="多个工具名用英文逗号分隔。">
-            <input className={inputClass} placeholder="knowledge_search,web_search" value={form.required_tools} onChange={(event) => setForm({ ...form, required_tools: event.target.value })} />
-          </Field>
-        </div>
+        <DependencyPicker
+          label="依赖工具"
+          hint="只有没有这些工具就无法运行时才选择。普通提示型 Skill 保持为空。"
+          emptyLabel="不声明工具硬依赖"
+          selected={csv(form.required_tools)}
+          options={toolOptions.map((tool) => ({
+            id: tool.name,
+            label: tool.name,
+            description: tool.description,
+            meta: tool.category,
+            disabled: tool.available === false || tool.enabled === false,
+          }))}
+          onChange={(items) => setForm({ ...form, required_tools: items.join(", ") })}
+        />
+        <DependencyPicker
+          label="依赖 MCP"
+          hint="只有 Skill 必须绑定某个 MCP 服务时才选择；工具名不要写在这里。"
+          emptyLabel="不声明 MCP 硬依赖"
+          selected={csv(form.required_mcp_ids)}
+          options={mcpOptions.map((mcp) => ({
+            id: mcp.id,
+            label: mcp.name || mcp.id,
+            description: mcp.description,
+            meta: mcp.id,
+            disabled: !mcp.is_enabled,
+          }))}
+          onChange={(items) => setForm({ ...form, required_mcp_ids: items.join(", ") })}
+        />
       </AdvancedSection>
     </div>
   );
@@ -660,11 +713,15 @@ function SkillCard({
 
 function SkillDetailOverlay({
   skill,
+  toolOptions,
+  mcpOptions,
   onClose,
   onReplace,
   onSaved,
 }: {
   skill: SkillInfo;
+  toolOptions: ToolInfo[];
+  mcpOptions: MCPServer[];
   onClose: () => void;
   onReplace: () => void;
   onSaved: (skill: SkillInfo) => void;
@@ -789,7 +846,13 @@ function SkillDetailOverlay({
           </aside>
           {detailMode === "edit" ? (
             <section key="edit" className="skill-panel-enter min-h-0 overflow-y-auto p-5">
-              <ManualSkillForm form={editForm} setForm={setEditForm} lockedId />
+              <ManualSkillForm
+                form={editForm}
+                setForm={setEditForm}
+                lockedId
+                toolOptions={toolOptions}
+                mcpOptions={mcpOptions}
+              />
               {editError ? <div className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{editError}</div> : null}
               <div className="mt-5 flex justify-end gap-2">
                 <Button type="button" variant="outline" size="sm" onClick={() => setDetailMode("files")}>取消</Button>
@@ -1063,6 +1126,101 @@ function DependencyLine({ label, items, max }: { label: string; items: string[];
       {shown.map((item) => <Tag key={item}>{item}</Tag>)}
       {overflow > 0 ? <Tag>+{overflow}</Tag> : null}
     </div>
+  );
+}
+
+type DependencyOption = {
+  id: string;
+  label: string;
+  description?: string;
+  meta?: string;
+  disabled?: boolean;
+};
+
+function DependencyPicker({
+  label,
+  hint,
+  emptyLabel,
+  selected,
+  options,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  emptyLabel: string;
+  selected: string[];
+  options: DependencyOption[];
+  onChange: (items: string[]) => void;
+}) {
+  const known = new Set(options.map((option) => option.id));
+  const missing = selected
+    .filter((item) => item && !known.has(item))
+    .map((item) => ({
+      id: item,
+      label: item,
+      description: "这个依赖没有出现在当前已注册列表里。",
+      meta: "当前不可用",
+      disabled: true,
+    }));
+  const merged = [...options, ...missing];
+  const selectedSet = new Set(selected);
+
+  const toggle = (id: string) => {
+    const next = selectedSet.has(id)
+      ? selected.filter((item) => item !== id)
+      : [...selected, id];
+    onChange(next);
+  };
+
+  return (
+    <Field label={label} hint={hint}>
+      <div className="rounded-xl border border-slate-200 bg-white p-2">
+        {merged.length ? (
+          <div className="grid max-h-52 gap-2 overflow-y-auto sm:grid-cols-2">
+            {merged.map((option) => {
+              const checked = selectedSet.has(option.id);
+              const unavailable = option.disabled && !checked;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  disabled={unavailable}
+                  onClick={() => toggle(option.id)}
+                  className={cn(
+                    "min-w-0 rounded-lg border px-3 py-2 text-left transition-all duration-200",
+                    checked
+                      ? "border-sky-300 bg-sky-50 text-sky-900 shadow-sm"
+                      : "border-slate-200 bg-white text-slate-700 hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-sm",
+                    unavailable && "cursor-not-allowed opacity-45 hover:translate-y-0 hover:bg-white hover:shadow-none",
+                  )}
+                >
+                  <span className="flex min-w-0 items-center justify-between gap-2">
+                    <span className="truncate text-xs font-semibold">{option.label}</span>
+                    <span
+                      className={cn(
+                        "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                        checked ? "border-sky-500 bg-sky-500 text-white" : "border-slate-300 bg-white",
+                      )}
+                    >
+                      {checked ? <CheckCircle size={11} /> : null}
+                    </span>
+                  </span>
+                  {option.description ? <span className="mt-1 block truncate text-[11px] text-slate-500">{option.description}</span> : null}
+                  {option.meta ? <span className="mt-1 inline-flex rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">{option.meta}</span> : null}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
+            暂无可选项。
+          </div>
+        )}
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-2">
+          {selected.length ? selected.map((item) => <Tag key={item}>{item}</Tag>) : <span className="text-[11px] text-slate-400">{emptyLabel}</span>}
+        </div>
+      </div>
+    </Field>
   );
 }
 
