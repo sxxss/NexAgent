@@ -57,7 +57,11 @@ async def test_milvus_keyword_uses_degraded_local_fallback():
     assert results
     assert results[0].metadata["engine"] == "local_keyword_fallback"
     assert results[0].metadata["degraded"] is True
-    assert results[0].metadata["degraded_reason"] in {"native_bm25_unavailable", "milvus_collection_missing"}
+    assert results[0].metadata["degraded_reason"] in {
+        "native_bm25_unavailable",
+        "milvus_collection_missing",
+        "milvus_service_unavailable",
+    }
     assert results[0].metadata["action"] in {"reindex_recommended", "check_milvus"}
     shutil.rmtree(work_dir, ignore_errors=True)
 
@@ -304,6 +308,7 @@ async def test_router_search_collection_missing_returns_structured_error(monkeyp
     mgr = _RouterFakeManager(
         [{"file_id": "f1", "filename": "doc.md", "chunk_index": 0, "content": "alpha beta retrieval"}]
     )
+    monkeypatch.setattr(knowledge, "_prod_enabled", lambda: False)
     monkeypatch.setattr(knowledge, "_kb_or_404", lambda kb_id: (mgr, kb))
 
     async def fake_retrieve(*args, **kwargs):
@@ -328,6 +333,7 @@ async def test_router_search_collection_missing_without_chunks_returns_409(monke
 
     kb = SimpleNamespace(kb_type=SimpleNamespace(value="milvus"))
     mgr = _RouterFakeManager([])
+    monkeypatch.setattr(knowledge, "_prod_enabled", lambda: False)
     monkeypatch.setattr(knowledge, "_kb_or_404", lambda kb_id: (mgr, kb))
 
     async def fake_retrieve(*args, **kwargs):
