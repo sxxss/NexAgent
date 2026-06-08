@@ -85,6 +85,7 @@ class SkillManageInput(BaseModel):
     tags: list[str] = Field(default_factory=list)
     required_tools: list[str] = Field(default_factory=list)
     required_mcp_ids: list[str] = Field(default_factory=list)
+    skill_dependencies: list[str] = Field(default_factory=list)
     files: list[SkillResourceFile] = Field(default_factory=list)
     force: bool = Field(
         default=False,
@@ -123,6 +124,7 @@ def get_list_skills_tool() -> BaseTool:
                 "tags": skill.tags,
                 "required_tools": skill.required_tools,
                 "required_mcp_ids": skill.required_mcp_ids,
+                "skill_dependencies": skill.skill_dependencies,
                 "content_hash": skill.content_hash,
             }
             if include_files:
@@ -191,8 +193,8 @@ def get_read_skill_tool() -> BaseTool:
             "contents": contents,
             "note": (
                 "Default read returns SKILL.md only. Call read_skill with path to inspect supporting resource files. "
-                "At runtime, selected Skills are mirrored read-only to /mnt/skills/<id> for file tools and "
-                "skills/<id>/ for bash script execution."
+                "At runtime, selected Skills are exposed read-only under /mnt/skills/<id>. Read supporting files "
+                "and execute bundled scripts from that same Skill directory."
             ),
         })
 
@@ -216,6 +218,7 @@ def get_skill_manage_tool() -> BaseTool:
         tags: list[str] | None = None,
         required_tools: list[str] | None = None,
         required_mcp_ids: list[str] | None = None,
+        skill_dependencies: list[str] | None = None,
         files: list[SkillResourceFile] | None = None,
         force: bool = False,
         preserve_existing_files: bool = True,
@@ -239,6 +242,7 @@ def get_skill_manage_tool() -> BaseTool:
             tags=tags or [],
             required_tools=required_tools or [],
             required_mcp_ids=required_mcp_ids or [],
+            skill_dependencies=skill_dependencies or [],
             files=files or [],
             force=force,
             preserve_existing_files=preserve_existing_files,
@@ -262,6 +266,7 @@ async def _manage_skill_impl(
     tags: list[str] | None = None,
     required_tools: list[str] | None = None,
     required_mcp_ids: list[str] | None = None,
+    skill_dependencies: list[str] | None = None,
     files: list[SkillResourceFile] | None = None,
     force: bool = False,
     preserve_existing_files: bool = True,
@@ -300,6 +305,7 @@ async def _manage_skill_impl(
                 tags=tags or [],
                 required_tools=required_tools or [],
                 required_mcp_ids=required_mcp_ids or [],
+                skill_dependencies=skill_dependencies or [],
                 files=files or [],
                 force=True,
                 preserve_existing_files=preserve_existing_files,
@@ -436,6 +442,7 @@ def _format_skill_md(
     tags: list[str],
     required_tools: list[str],
     required_mcp_ids: list[str],
+    skill_dependencies: list[str],
     content: str,
 ) -> str:
     frontmatter: dict[str, Any] = {
@@ -450,6 +457,8 @@ def _format_skill_md(
         frontmatter["required_tools"] = required_tools
     if required_mcp_ids:
         frontmatter["required_mcp_ids"] = required_mcp_ids
+    if skill_dependencies:
+        frontmatter["skill_dependencies"] = skill_dependencies
     body = content.strip() or f"# {name}\n\n{description}".strip()
     return "---\n" + yaml.safe_dump(frontmatter, allow_unicode=True, sort_keys=False) + "---\n\n" + body + "\n"
 
@@ -464,6 +473,7 @@ def _write_skill_package(
     tags: list[str],
     required_tools: list[str],
     required_mcp_ids: list[str],
+    skill_dependencies: list[str],
     files: list[SkillResourceFile],
     force: bool,
     preserve_existing_files: bool,
@@ -502,6 +512,7 @@ def _write_skill_package(
             tags=tags,
             required_tools=required_tools,
             required_mcp_ids=required_mcp_ids,
+            skill_dependencies=skill_dependencies,
             content=content,
         ),
     )
@@ -572,7 +583,7 @@ def _read_existing_resource_files(root) -> dict[str, str]:
         if not path.is_file():
             continue
         relative = path.relative_to(root).as_posix()
-        if relative == "SKILL.md":
+        if relative in {"SKILL.md", "skill.py"}:
             continue
         if path.suffix.lower() not in TEXT_RESOURCE_EXTENSIONS:
             continue
@@ -590,6 +601,8 @@ def _safe_resource_path(value: str) -> str:
         raise ValueError(f"Invalid resource path: {value}")
     if path.name == "SKILL.md":
         raise ValueError("Resource files may not overwrite SKILL.md.")
+    if path.as_posix() == "skill.py":
+        raise ValueError("Root skill.py is not supported. Put executable helpers under scripts/ instead.")
     if any(part.startswith(".") or part == "__pycache__" for part in path.parts):
         raise ValueError(f"Hidden or cache paths are not allowed: {value}")
     return path.as_posix()

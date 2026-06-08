@@ -51,8 +51,8 @@ Use this skill for tabular data profiling.
         assert len(skill.content_hash) == 64
         assert skill.validation_issues == []
         prompt = loader.to_system_prompt_blocks([skill])
-        assert "<id>csv-profiler</id>" in prompt
-        assert "<location>/mnt/skills/csv-profiler/SKILL.md</location>" in prompt
+        assert "**CSV Profiler** (`csv-profiler`): Profile CSV files" in prompt
+        assert "Read `/mnt/skills/csv-profiler/SKILL.md`" in prompt
         assert "Use this skill for tabular data profiling." not in prompt
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
@@ -91,9 +91,49 @@ Use the packaged rubric before answering.
         assert {item["path"] for item in skill.files} == {"SKILL.md", "assets.bin", "rubric.md"}
         assert skill.resources == [{"path": "rubric.md", "content": "# Rubric\n\nCheck sources and assumptions."}]
         prompt = loader.to_system_prompt_blocks([skill])
-        assert "<location>/mnt/skills/analyst/SKILL.md</location>" in prompt
+        assert "Read `/mnt/skills/analyst/SKILL.md`" in prompt
         assert "rubric.md" not in prompt
         assert "Check sources and assumptions." not in prompt
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+def test_skill_loader_supports_standard_dependency_aliases_and_ignores_root_skill_py(monkeypatch):
+    from nexagent.skills.loader import SkillLoader
+
+    work_dir = _skills_dir("skills-standard-aliases")
+    skill_dir = work_dir / "public" / "writer"
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / "SKILL.md").write_text(
+        """---
+id: writer
+name: Writer
+description: Write with standard dependency aliases
+version: 0.1.0
+tool_dependencies: [web_fetch]
+mcp_dependencies: [filesystem]
+skill_dependencies: [research]
+---
+
+# Writer
+""",
+        encoding="utf-8",
+    )
+    (skill_dir / "skill.py").write_text("def get_tools(): return []\n", encoding="utf-8")
+    (skill_dir / "scripts").mkdir()
+    (skill_dir / "scripts" / "helper.py").write_text("print('ok')\n", encoding="utf-8")
+    monkeypatch.setenv("NEXAGENT_SKILLS_DIR", str(work_dir))
+
+    try:
+        skill = SkillLoader().load("writer")
+
+        assert skill is not None
+        assert skill.required_tools == ["web_fetch"]
+        assert skill.required_mcp_ids == ["filesystem"]
+        assert skill.skill_dependencies == ["research"]
+        assert {item["path"] for item in skill.files} == {"SKILL.md", "scripts/helper.py"}
+        assert "skill.py" not in {item["path"] for item in skill.resources}
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
@@ -319,6 +359,58 @@ required_tools: [web_fetch]
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_runtime_plan_expands_skill_dependency_closure(monkeypatch):
+    from nexagent.skills.loader import SkillLoader
+    from nexagent.skills.validation import resolve_runtime_plan
+
+    work_dir = _skills_dir("skills-runtime-closure")
+    writer_dir = work_dir / "public" / "writer"
+    research_dir = work_dir / "public" / "research"
+    writer_dir.mkdir(parents=True, exist_ok=True)
+    research_dir.mkdir(parents=True, exist_ok=True)
+    (writer_dir / "SKILL.md").write_text(
+        """---
+id: writer
+name: Writer
+description: Write with research context
+version: 0.1.0
+skill_dependencies: [research]
+---
+
+# Writer
+""",
+        encoding="utf-8",
+    )
+    (research_dir / "SKILL.md").write_text(
+        """---
+id: research
+name: Research
+description: Gather sources
+version: 0.1.0
+tool_dependencies: [web_fetch]
+---
+
+# Research
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NEXAGENT_SKILLS_DIR", str(work_dir))
+
+    try:
+        loader = SkillLoader()
+        writer = loader.load("writer")
+        assert writer is not None
+        plan = await resolve_runtime_plan([writer], loader=loader, selected_tool_names=["knowledge_search"])
+
+        assert [skill.id for skill in plan.skills] == ["writer", "research"]
+        assert plan.required_tools == ["knowledge_search", "web_fetch"]
+        assert not plan.has_errors
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_runtime_plan_blocks_disabled_subagent_dependency(monkeypatch):
     from nexagent.skills.loader import SkillLoader
     from nexagent.skills.validation import resolve_runtime_plan
@@ -374,8 +466,8 @@ def test_skill_prompt_injection_has_stable_order_and_budget(monkeypatch):
         loader = SkillLoader()
         skills = loader.load_selected(["b-skill", "a-skill"])
         prompt = loader.to_system_prompt_blocks(skills, max_chars_per_skill=20, max_total_chars=80)
-        assert prompt.index("<id>a-skill</id>") < prompt.index("<id>b-skill</id>")
+        assert prompt.index("`a-skill`") < prompt.index("`b-skill`")
         assert "x" * 20 not in prompt
-        assert "skills/<skill-id>/scripts/example.py" in prompt
+        assert "/mnt/skills/<skill-id>/scripts/example.py" in prompt
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)

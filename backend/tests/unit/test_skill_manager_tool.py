@@ -166,7 +166,7 @@ async def test_skill_manage_edit_preserves_existing_support_files(monkeypatch):
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_skill_manage_edit_preserves_existing_plain_python_file(monkeypatch):
+async def test_skill_manage_edit_discards_legacy_root_skill_py(monkeypatch):
     from nexagent.tools.builtin.skill_manager import get_skill_manage_tool
 
     workspace = _workspace()
@@ -193,7 +193,31 @@ async def test_skill_manage_edit_preserves_existing_plain_python_file(monkeypatc
         payload = json.loads(result)
         assert payload["ok"] is True
         assert "warning" not in payload
-        assert (root / "skill.py").read_text(encoding="utf-8") == "print('legacy')\n"
+        assert not (root / "skill.py").exists()
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_skill_manage_rejects_root_skill_py_resource(monkeypatch):
+    from nexagent.tools.builtin.skill_manager import get_skill_manage_tool
+
+    workspace = _workspace()
+    _patch_loader(monkeypatch, workspace)
+
+    try:
+        tool = get_skill_manage_tool()
+        result = await tool.ainvoke({
+            "action": "create",
+            "id": "legacy-entry",
+            "name": "Legacy Entry",
+            "content": "# Legacy Entry",
+            "files": [{"path": "skill.py", "content": "def get_tools(): return []\n"}],
+        })
+
+        assert result.startswith("Error:")
+        assert "Root skill.py is not supported" in result
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
 

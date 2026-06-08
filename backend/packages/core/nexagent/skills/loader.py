@@ -52,6 +52,7 @@ TEXT_RESOURCE_EXTENSIONS = {
     ".yaml",
     ".yml",
 }
+STANDARD_SKILLS_ROOT = "/mnt/skills"
 
 
 # ── Data model ────────────────────────────────────────────────────────────────
@@ -94,6 +95,8 @@ class Skill:
     required_mcp_ids: list[str] = field(default_factory=list)
     #: Tool names this skill expects at runtime.
     required_tools: list[str] = field(default_factory=list)
+    #: Other Skills that should be made visible when this Skill is selected.
+    skill_dependencies: list[str] = field(default_factory=list)
     #: SHA-256 over SKILL.md and bundled resource content.
     content_hash: str = ""
     #: Files packaged with this skill, relative to the skill directory.
@@ -116,6 +119,7 @@ class Skill:
             "tags": self.tags,
             "required_mcp_ids": self.required_mcp_ids,
             "required_tools": self.required_tools,
+            "skill_dependencies": self.skill_dependencies,
             "content_hash": self.content_hash,
             "files": self.files,
             "resources": self.resources,
@@ -233,37 +237,36 @@ class SkillLoader:
             return ""
 
         sections: list[str] = [
-            "\n\n<skill_system>",
-            "You have access to selected Skills that provide optimized workflows for specific tasks.",
+            "\n\n## Skills System",
+            "You have access to selected Skills that provide specialized workflows and supporting files.",
             "",
-            "Progressive loading pattern:",
-            "1. When the user's request matches a Skill description, immediately read that Skill's "
-            "SKILL.md from the location below.",
-            "2. Follow the workflow in SKILL.md precisely.",
-            "3. Load referenced files under the same Skill folder only when needed.",
-            "4. To execute bundled scripts, use bash from the sandbox workspace with the mirrored "
-            "relative path `skills/<skill-id>/...`, for example "
-            "`python skills/<skill-id>/scripts/example.py`.",
-            "",
-            "Skills are read-only during a run. Do not modify files under `/mnt/skills` or the "
-            "workspace `skills/` mirror.",
-            "",
-            "<available_skills>",
+            "**Available Skills:**",
         ]
         for skill in sorted(skills, key=lambda item: item.id):
             skill_id = html.escape(skill.id)
             name = html.escape(skill.name)
             description = html.escape(skill.description)
             sections.append(
-                "  <skill>\n"
-                f"    <id>{skill_id}</id>\n"
-                f"    <name>{name}</name>\n"
-                f"    <description>{description}</description>\n"
-                f"    <location>/mnt/skills/{skill_id}/SKILL.md</location>\n"
-                f"    <bash_path>skills/{skill_id}/</bash_path>\n"
-                "  </skill>"
+                f"- **{name}** (`{skill_id}`): {description}\n"
+                f"  -> Read `{STANDARD_SKILLS_ROOT}/{skill_id}/SKILL.md`"
             )
-        sections.extend(["</available_skills>", "</skill_system>"])
+        sections.extend([
+            "",
+            "**How to Use Skills:**",
+            "1. Identify whether the user's request matches a Skill description.",
+            "2. If a Skill applies, read its full `SKILL.md` from the path shown above. There is no "
+            "separate activation mechanism.",
+            "3. Follow the instructions in `SKILL.md` exactly.",
+            "4. Access supporting files only when the Skill instructions call for them. Use absolute paths "
+            f"under `{STANDARD_SKILLS_ROOT}/<skill-id>/`, such as "
+            f"`{STANDARD_SKILLS_ROOT}/<skill-id>/references/example.md`.",
+            "5. Execute bundled scripts as ordinary files with bash, using absolute paths such as "
+            f"`python {STANDARD_SKILLS_ROOT}/<skill-id>/scripts/example.py`.",
+            f"6. Treat everything under `{STANDARD_SKILLS_ROOT}` as read-only runtime material.",
+            "",
+            "Skill bodies and supporting resources are loaded progressively; do not load files that are not "
+            "needed for the current task.",
+        ])
 
         return "\n".join(sections)
 
@@ -326,8 +329,15 @@ class SkillLoader:
             version=str(frontmatter.get("version", "0.1.0")),
             content=body,
             tags=_string_list(frontmatter.get("tags", [])),
-            required_mcp_ids=_string_list(frontmatter.get("required_mcp_ids", [])),
-            required_tools=_string_list(frontmatter.get("required_tools", [])),
+            required_mcp_ids=_combined_string_list(
+                frontmatter.get("required_mcp_ids", []),
+                frontmatter.get("mcp_dependencies", []),
+            ),
+            required_tools=_combined_string_list(
+                frontmatter.get("required_tools", []),
+                frontmatter.get("tool_dependencies", []),
+            ),
+            skill_dependencies=_combined_string_list(frontmatter.get("skill_dependencies", [])),
             content_hash=_content_hash(path),
             files=_scan_skill_files(path.parent),
             resources=_load_text_resources(path.parent),
@@ -345,6 +355,18 @@ def _string_list(value: Any) -> list[str]:
     if isinstance(value, list):
         return [str(item) for item in value if str(item)]
     return [str(value)]
+
+
+def _combined_string_list(*values: Any) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        for item in _string_list(value):
+            if item in seen:
+                continue
+            seen.add(item)
+            result.append(item)
+    return result
 
 
 def _content_hash(skill_path: Path) -> str:
@@ -368,6 +390,8 @@ def _iter_skill_files(root: Path) -> list[Path]:
         if not path.is_file():
             continue
         rel_parts = path.relative_to(root).parts
+        if rel_parts == ("skill.py",):
+            continue
         if any(part.startswith(".") or part == "__pycache__" for part in rel_parts):
             continue
         files.append(path)
@@ -491,7 +515,15 @@ def _validate_skill_metadata(
                 "Add instructions below the frontmatter.",
             )
         )
-    for key in ("tags", "required_mcp_ids", "required_tools"):
+    metadata_list_keys = (
+        "tags",
+        "required_mcp_ids",
+        "required_tools",
+        "mcp_dependencies",
+        "tool_dependencies",
+        "skill_dependencies",
+    )
+    for key in metadata_list_keys:
         value = frontmatter.get(key, [])
         if value is not None and not isinstance(value, (list, str)):
             issues.append(

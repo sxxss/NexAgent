@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import stat
+from collections.abc import Callable
 from pathlib import Path
 
 from nexagent.skills.loader import Skill
@@ -12,9 +13,10 @@ from nexagent.skills.loader import Skill
 def prepare_skill_runtime(thread_id: str, skills: list[Skill]) -> None:
     """Expose selected Skills in the per-thread sandbox namespace.
 
-    Two mirrors are prepared:
-    - ``/mnt/skills/<id>`` via ``VirtualPathTranslator.SKILLS`` for file tools.
-    - ``skills/<id>`` under the workspace so bash can execute bundled scripts.
+    Skills are exposed under ``/mnt/skills/<id>`` via
+    ``VirtualPathTranslator.SKILLS``. File tools read that virtual path, and
+    sandbox command providers make the same path executable for bundled
+    scripts.
     """
     from nexagent.config import get_config
     from nexagent.sandbox.sandbox import VirtualPathTranslator
@@ -23,7 +25,7 @@ def prepare_skill_runtime(thread_id: str, skills: list[Skill]) -> None:
     thread_root = translator.thread_root(thread_id)
     selected = {skill.id: skill.path.parent.resolve() for skill in skills}
     _sync_root(thread_root / "skills", selected)
-    _sync_root(thread_root / "workspace" / "skills", selected)
+    _remove_legacy_workspace_mirror(thread_root / "workspace" / "skills")
 
 
 def _sync_root(target_root: Path, selected: dict[str, Path]) -> None:
@@ -38,20 +40,37 @@ def _sync_root(target_root: Path, selected: dict[str, Path]) -> None:
         if not source.is_dir():
             continue
         destination = target_root / skill_id
-        shutil.copytree(source, destination, ignore=_ignore_runtime_files, symlinks=False)
+        shutil.copytree(source, destination, ignore=_ignore_runtime_files(source), symlinks=False)
         _make_read_only(destination)
 
     _make_read_only(target_root)
 
 
-def _ignore_runtime_files(directory: str, names: list[str]) -> set[str]:
-    root = Path(directory)
-    ignored: set[str] = set()
-    for name in names:
-        path = root / name
-        if name.startswith(".") or name == "__pycache__" or path.is_symlink():
-            ignored.add(name)
-    return ignored
+def _ignore_runtime_files(source_root: Path) -> Callable[[str, list[str]], set[str]]:
+    def ignore(directory: str, names: list[str]) -> set[str]:
+        root = Path(directory)
+        ignored: set[str] = set()
+        for name in names:
+            path = root / name
+            try:
+                relative = path.relative_to(source_root)
+            except ValueError:
+                relative = Path(name)
+            if relative.as_posix() == "skill.py":
+                ignored.add(name)
+                continue
+            if name.startswith(".") or name == "__pycache__" or path.is_symlink():
+                ignored.add(name)
+        return ignored
+
+    return ignore
+
+
+def _remove_legacy_workspace_mirror(path: Path) -> None:
+    if not path.exists():
+        return
+    _make_writable(path)
+    _remove_path(path)
 
 
 def _remove_path(path: Path) -> None:

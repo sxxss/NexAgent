@@ -5,12 +5,15 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import shutil
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
 from nexagent.sandbox.sandbox import Sandbox, SandboxProvider, VirtualPathTranslator
+
+_SKILLS_PATH_PATTERN = re.compile(r"(?<![\w.-])/mnt/skills(?=/|$)")
 
 
 class LocalSandbox(Sandbox):
@@ -23,8 +26,9 @@ class LocalSandbox(Sandbox):
             return safety_error
         cwd = self.translator.to_real(".", self.thread_id)
         cwd.mkdir(parents=True, exist_ok=True)
+        runtime_command = _map_command_virtual_paths(command, self.translator, self.thread_id)
         try:
-            completed = await asyncio.to_thread(_run_command, command, cwd, timeout)
+            completed = await asyncio.to_thread(_run_command, runtime_command, cwd, timeout)
         except subprocess.TimeoutExpired:
             result = f"Command timed out after {timeout} seconds."
             _audit(self.thread_id, "bash", {"command": command, "timeout": timeout}, "timeout", result)
@@ -141,6 +145,20 @@ def _run_command(command: str, cwd: Path, timeout: int) -> subprocess.CompletedP
     )
 
 
+def _map_command_virtual_paths(command: str, translator: VirtualPathTranslator, thread_id: str) -> str:
+    """Map agent-visible absolute paths for local host subprocesses.
+
+    Local bash is not namespaced, so it cannot see ``/mnt/skills`` directly.
+    The model still uses the standard sandbox path; the provider translates it
+    immediately before handing the command to the host shell.
+    """
+    if VirtualPathTranslator.SKILLS not in command:
+        return command
+    real_skills = translator.to_real(VirtualPathTranslator.SKILLS, thread_id)
+    real_skills.mkdir(parents=True, exist_ok=True)
+    return _SKILLS_PATH_PATTERN.sub(real_skills.as_posix(), command)
+
+
 def _shell_args(command: str) -> list[str]:
     if os.name == "nt":
         shell = _first_available_shell(
@@ -234,12 +252,8 @@ def _is_runtime_skill_path(path: str) -> bool:
     while value.startswith("./"):
         value = value[2:]
     return (
-        value == "skills"
-        or value.startswith("skills/")
-        or value == "/mnt/skills"
+        value == "/mnt/skills"
         or value.startswith("/mnt/skills/")
-        or value == "/mnt/user-data/workspace/skills"
-        or value.startswith("/mnt/user-data/workspace/skills/")
     )
 
 

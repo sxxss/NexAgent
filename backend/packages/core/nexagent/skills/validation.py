@@ -55,6 +55,53 @@ async def dependency_issues(skill: Skill, *, loader: SkillLoader | None = None) 
     ]
 
 
+def expand_skill_dependencies(
+    skills: list[Skill],
+    *,
+    loader: SkillLoader | None = None,
+) -> tuple[list[Skill], list[SkillIssue]]:
+    """Return selected Skills plus their declared Skill dependency closure."""
+    loader = loader or SkillLoader()
+    ordered: list[Skill] = []
+    seen: set[str] = set()
+    issues: list[SkillIssue] = []
+
+    def add(skill: Skill, stack: tuple[str, ...] = ()) -> None:
+        if skill.id in stack:
+            cycle = " -> ".join([*stack, skill.id])
+            issues.append(
+                SkillIssue(
+                    "error",
+                    "skill_dependency_cycle",
+                    f"Skill dependency cycle detected: {cycle}.",
+                    "Remove the cyclic skill_dependencies entries.",
+                )
+            )
+            return
+        if skill.id in seen:
+            return
+        seen.add(skill.id)
+        ordered.append(skill)
+        next_stack = (*stack, skill.id)
+        for dep_id in skill.skill_dependencies:
+            dep = loader.load(dep_id)
+            if dep is None:
+                issues.append(
+                    SkillIssue(
+                        "error",
+                        "missing_skill_dependency",
+                        f"Required Skill '{dep_id}' was not found.",
+                        "Install the missing Skill or remove it from skill_dependencies.",
+                    )
+                )
+                continue
+            add(dep, next_stack)
+
+    for skill in skills:
+        add(skill)
+    return ordered, issues
+
+
 async def missing_mcp_issues(required_mcp_ids: list[str]) -> list[SkillIssue]:
     if not required_mcp_ids:
         return []
@@ -122,12 +169,13 @@ async def resolve_runtime_plan(
 ) -> SkillRuntimePlan:
     """Validate selected skills and compute additional runtime dependencies."""
     loader = loader or SkillLoader()
+    skills, dependency_graph_issues = expand_skill_dependencies(skills, loader=loader)
     selected_tools = set(selected_tool_names or [])
     selected_mcp = set(selected_mcp_ids or [])
     required_tools = sorted({name for skill in skills for name in skill.required_tools})
     required_mcp_ids = sorted({mcp_id for skill in skills for mcp_id in skill.required_mcp_ids})
 
-    issues: list[SkillIssue] = []
+    issues: list[SkillIssue] = list(dependency_graph_issues)
     for skill in skills:
         issues.extend(skill.validation_issues)
         issues.extend(await dependency_issues(skill, loader=loader))

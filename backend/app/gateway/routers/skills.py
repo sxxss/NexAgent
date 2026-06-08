@@ -79,6 +79,7 @@ class SkillCustomRequest(BaseModel):
     tags: list[str] = Field(default_factory=list)
     required_mcp_ids: list[str] = Field(default_factory=list)
     required_tools: list[str] = Field(default_factory=list)
+    skill_dependencies: list[str] = Field(default_factory=list)
     force: bool = False
 
 
@@ -90,6 +91,7 @@ class SkillUpdateRequest(BaseModel):
     tags: list[str] | None = None
     required_mcp_ids: list[str] | None = None
     required_tools: list[str] | None = None
+    skill_dependencies: list[str] | None = None
 
 
 class SkillFileUpdateRequest(BaseModel):
@@ -283,6 +285,7 @@ async def custom(body: SkillCustomRequest):
         tags=body.tags,
         required_mcp_ids=body.required_mcp_ids,
         required_tools=body.required_tools,
+        skill_dependencies=body.skill_dependencies,
         content=body.content or f"# {body.name}\n\n{body.description}",
     )
     loader.reload()
@@ -317,6 +320,8 @@ async def update(skill_id: str, body: SkillUpdateRequest):
         if body.required_mcp_ids is not None else (current.required_mcp_ids if current else []),
         required_tools=body.required_tools
         if body.required_tools is not None else (current.required_tools if current else []),
+        skill_dependencies=body.skill_dependencies
+        if body.skill_dependencies is not None else (current.skill_dependencies if current else []),
         content=content,
     )
     try:
@@ -493,6 +498,7 @@ def _write_skill_md(
     tags: list[str],
     required_mcp_ids: list[str],
     required_tools: list[str],
+    skill_dependencies: list[str],
     content: str,
 ) -> None:
     metadata = {
@@ -504,6 +510,8 @@ def _write_skill_md(
         "required_mcp_ids": required_mcp_ids,
         "required_tools": required_tools,
     }
+    if skill_dependencies:
+        metadata["skill_dependencies"] = skill_dependencies
     import yaml
 
     path.write_text(
@@ -607,8 +615,15 @@ def _list_skill_candidates_from_zip(payload: bytes) -> list[dict]:
                 "description": str(metadata.get("description") or _first_content_line(body) or ""),
                 "version": str(metadata.get("version") or "0.1.0"),
                 "tags": _metadata_string_list(metadata.get("tags", [])),
-                "required_mcp_ids": _metadata_string_list(metadata.get("required_mcp_ids", [])),
-                "required_tools": _metadata_string_list(metadata.get("required_tools", [])),
+                "required_mcp_ids": _metadata_combined_string_list(
+                    metadata.get("required_mcp_ids", []),
+                    metadata.get("mcp_dependencies", []),
+                ),
+                "required_tools": _metadata_combined_string_list(
+                    metadata.get("required_tools", []),
+                    metadata.get("tool_dependencies", []),
+                ),
+                "skill_dependencies": _metadata_string_list(metadata.get("skill_dependencies", [])),
                 "subdir": skill_dir,
                 "file_count": len(files),
                 "files": files,
@@ -639,6 +654,8 @@ def _extract_skill_zip_candidate(
         _validate_zip_members(selected_members)
         for member in selected_members:
             relative = posix_relpath(member.filename, selected_subdir) if selected_subdir else member.filename
+            if _is_legacy_root_skill_py(relative):
+                continue
             target = target_root / Path(relative)
             target.parent.mkdir(parents=True, exist_ok=True)
             with zf.open(member) as src, target.open("wb") as dst:
@@ -704,6 +721,8 @@ def _preview_zip_skill_files(zf: zipfile.ZipFile, skill_dir: str) -> list[dict]:
     files = []
     for member in _zip_members_for_skill(zf, skill_dir):
         rel = posix_relpath(member.filename, skill_dir) if skill_dir else member.filename
+        if _is_legacy_root_skill_py(rel):
+            continue
         files.append({
             "path": rel,
             "size": member.file_size,
@@ -719,6 +738,8 @@ def _zip_skill_hash(zf: zipfile.ZipFile, skill_dir: str) -> str:
     sha = hashlib.sha256()
     for member in sorted(_zip_members_for_skill(zf, skill_dir), key=lambda item: item.filename):
         rel = posix_relpath(member.filename, skill_dir) if skill_dir else member.filename
+        if _is_legacy_root_skill_py(rel):
+            continue
         sha.update(rel.encode("utf-8"))
         sha.update(b"\0")
         sha.update(zf.read(member))
@@ -767,8 +788,15 @@ def _list_skill_candidates(root: Path) -> list[dict]:
             "description": str(metadata.get("description") or _first_content_line(body) or ""),
             "version": str(metadata.get("version") or "0.1.0"),
             "tags": _metadata_string_list(metadata.get("tags", [])),
-            "required_mcp_ids": _metadata_string_list(metadata.get("required_mcp_ids", [])),
-            "required_tools": _metadata_string_list(metadata.get("required_tools", [])),
+            "required_mcp_ids": _metadata_combined_string_list(
+                metadata.get("required_mcp_ids", []),
+                metadata.get("mcp_dependencies", []),
+            ),
+            "required_tools": _metadata_combined_string_list(
+                metadata.get("required_tools", []),
+                metadata.get("tool_dependencies", []),
+            ),
+            "skill_dependencies": _metadata_string_list(metadata.get("skill_dependencies", [])),
             "subdir": skill_dir.relative_to(root).as_posix(),
             "file_count": len(files),
             "files": files,
@@ -787,8 +815,15 @@ def _preview_markdown_skill(content: str, skill_id: str) -> dict:
         "description": str(metadata.get("description") or _first_content_line(body) or ""),
         "version": str(metadata.get("version") or "0.1.0"),
         "tags": _metadata_string_list(metadata.get("tags", [])),
-        "required_mcp_ids": _metadata_string_list(metadata.get("required_mcp_ids", [])),
-        "required_tools": _metadata_string_list(metadata.get("required_tools", [])),
+        "required_mcp_ids": _metadata_combined_string_list(
+            metadata.get("required_mcp_ids", []),
+            metadata.get("mcp_dependencies", []),
+        ),
+        "required_tools": _metadata_combined_string_list(
+            metadata.get("required_tools", []),
+            metadata.get("tool_dependencies", []),
+        ),
+        "skill_dependencies": _metadata_string_list(metadata.get("skill_dependencies", [])),
         "subdir": "",
         "file_count": 1,
         "files": [{"path": "SKILL.md", "size": len(content.encode("utf-8")), "kind": "entry", "text": True}],
@@ -802,6 +837,7 @@ def _install_skill_dir(source: Path, public_dir: Path, skill_id: str, *, force: 
     _ensure_install_target(target, force=force)
     public_dir.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source, target)
+    (target / "skill.py").unlink(missing_ok=True)
     _normalize_installed_skill_md(target / "SKILL.md", target.name)
     return target
 
@@ -824,6 +860,7 @@ def _install_skill_md(content: str, public_dir: Path, skill_id: str, *, force: b
             tags=[],
             required_mcp_ids=[],
             required_tools=[],
+            skill_dependencies=[],
             content=content,
         )
     return target
@@ -907,6 +944,18 @@ def _metadata_string_list(value) -> list[str]:
     return [str(value)]
 
 
+def _metadata_combined_string_list(*values) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        for item in _metadata_string_list(value):
+            if item in seen:
+                continue
+            seen.add(item)
+            result.append(item)
+    return result
+
+
 def _preview_files(root: Path) -> list[dict]:
     files = []
     paths = sorted(
@@ -915,6 +964,8 @@ def _preview_files(root: Path) -> list[dict]:
     )
     for path in paths:
         rel = path.relative_to(root).as_posix()
+        if _is_legacy_root_skill_py(rel):
+            continue
         files.append({
             "path": rel,
             "size": path.stat().st_size,
@@ -922,6 +973,10 @@ def _preview_files(root: Path) -> list[dict]:
             "text": _is_text_file_path(rel),
         })
     return files[:80]
+
+
+def _is_legacy_root_skill_py(rel: str) -> bool:
+    return rel.replace("\\", "/").strip("/") == "skill.py"
 
 
 def _is_text_file_path(path: str) -> bool:

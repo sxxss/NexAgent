@@ -85,7 +85,7 @@ sandbox:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_selected_skill_scripts_are_mirrored_for_bash(monkeypatch):
+async def test_selected_skill_scripts_execute_from_standard_runtime_path(monkeypatch):
     from nexagent.config import reset_config_cache
     from nexagent.sandbox.providers.local import LocalSandboxProvider
     from nexagent.skills.loader import SkillLoader
@@ -125,8 +125,8 @@ sandbox:
         sandbox = await LocalSandboxProvider(base / "root").acquire("thread")
 
         skill_md = await sandbox.read_file("/mnt/skills/script-skill/SKILL.md")
-        output = await sandbox.execute_command("python3 skills/script-skill/scripts/run.py")
-        write_result = await sandbox.write_file("skills/script-skill/SKILL.md", "changed")
+        output = await sandbox.execute_command("python3 /mnt/skills/script-skill/scripts/run.py")
+        write_result = await sandbox.write_file("/mnt/skills/script-skill/SKILL.md", "changed")
     finally:
         reset_config_cache()
         shutil.rmtree(base, ignore_errors=True)

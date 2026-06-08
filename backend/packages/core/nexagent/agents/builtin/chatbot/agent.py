@@ -145,10 +145,14 @@ async def _prepare_context_skills(context: BaseContext) -> None:
     try:
         from nexagent.skills.loader import SkillLoader
         from nexagent.skills.runtime import prepare_skill_runtime
+        from nexagent.skills.validation import expand_skill_dependencies
 
         loader = SkillLoader()
         selected_skills = loader.load_selected(context.skills) if context.skills else []
-        prepare_skill_runtime(context.thread_id, selected_skills)
+        runtime_skills, issues = expand_skill_dependencies(selected_skills, loader=loader)
+        for issue in issues:
+            logger.warning("Skill runtime dependency issue for thread=%s: %s", context.thread_id, issue.message)
+        prepare_skill_runtime(context.thread_id, runtime_skills)
     except Exception as exc:
         logger.warning("Failed to prepare skill runtime for thread=%s: %s", context.thread_id, exc)
 
@@ -202,7 +206,7 @@ def _build_system_prompt(context: BaseContext) -> str:
         "locations. Read the matching SKILL.md only when the user's request matches its description, then read "
         "referenced files on demand."
         "\n8. Bundled scripts are ordinary files under scripts/. When SKILL.md instructs script execution, run them "
-        "from bash using the workspace mirror `skills/<skill-id>/...`."
+        "from bash using absolute paths under `/mnt/skills/<skill-id>/scripts/...`."
         "\n\nSkill evolution policy: After completing a task, consider creating or updating a Skill when the task "
         "required many tool calls, overcame non-obvious pitfalls, the user corrected the approach, or you found a "
         "recurring workflow. If you used a Skill and found a gap in it, patch that Skill when the user asked for "
@@ -213,7 +217,7 @@ def _build_system_prompt(context: BaseContext) -> str:
         "realistic test prompts for objectively verifiable Skills, preferably in test-cases/ or evals/evals.json. "
         "Use files[] with folders such as references/, scripts/, test-cases/, evals/, examples/, templates/, and "
         "assets/ instead of putting everything in SKILL.md. Put reusable automation in scripts/ as ordinary files "
-        "that can be run from the sandbox workspace mirror."
+        "that can be run from the standard `/mnt/skills/<skill-id>/scripts/...` runtime path."
     )
     if context.user_id:
         try:
@@ -259,8 +263,10 @@ def _build_system_prompt(context: BaseContext) -> str:
 
     try:
         from nexagent.skills.loader import SkillLoader
+        from nexagent.skills.validation import expand_skill_dependencies
+
         loader = SkillLoader()
-        loaded = loader.load_selected(context.skills)
+        loaded, _issues = expand_skill_dependencies(loader.load_selected(context.skills), loader=loader)
         if not loaded:
             return base
         skill_section = loader.to_system_prompt_blocks(loaded)

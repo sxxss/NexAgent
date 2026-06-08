@@ -340,6 +340,7 @@ export interface SkillInfo {
   tags?: string[];
   required_mcp_ids?: string[];
   required_tools?: string[];
+  skill_dependencies?: string[];
   content_hash?: string;
   files?: Array<{ path: string; size: number; kind: string; text: boolean }>;
   resources?: Array<{ path: string; content: string }>;
@@ -431,6 +432,7 @@ export interface SkillCustomBody {
   tags?: string[];
   required_mcp_ids?: string[];
   required_tools?: string[];
+  skill_dependencies?: string[];
   force?: boolean;
 }
 export interface SkillRemoteInstallBody {
@@ -448,6 +450,7 @@ export interface RemoteSkillCandidate {
   tags: string[];
   required_mcp_ids: string[];
   required_tools: string[];
+  skill_dependencies: string[];
   subdir: string;
   file_count: number;
   files: Array<{ path: string; size: number; kind: string; text: boolean }>;
