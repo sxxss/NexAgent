@@ -174,6 +174,7 @@ export interface KBMeta {
   created_at: string;
   updated_at: string;
   embed_info: { model: string; dimension: number; base_url?: string };
+  llm_info?: { provider?: string; model: string; base_url?: string };
   extra?: Record<string, unknown>;
 }
 
@@ -963,6 +964,12 @@ export async function createKB(body: {
   embed_base_url?: string;
   embed_api_key?: string;
   embed_dimension?: number | null;
+  llm_model?: string;
+  llm_provider?: string;
+  llm_base_url?: string;
+  llm_api_key?: string;
+  language?: string;
+  purpose?: string;
 }): Promise<KBMeta> {
   const res = await fetch(`${BASE}/knowledge/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`);
@@ -974,6 +981,10 @@ export async function updateKBModelConfig(kbId: string, body: {
   embed_base_url?: string;
   embed_api_key?: string;
   embed_dimension?: number | null;
+  llm_model?: string;
+  llm_provider?: string;
+  llm_base_url?: string;
+  llm_api_key?: string;
   use_reranker?: boolean;
   reranker_model?: string;
 }): Promise<{ kb: KBMeta; requires_reindex: boolean; indexed_files: number; query_config: RetrievalConfig }> {
@@ -1592,7 +1603,7 @@ export interface WikiPage {
   content?: string;
 }
 
-export async function crystallizeWiki(body: { thread_id: string; kb_id?: string; model?: string }): Promise<WikiPage> {
+export async function crystallizeWiki(body: { thread_id: string; kb_id: string; model?: string }): Promise<WikiPage> {
   const res = await fetch(`${BASE}/wiki/crystallize`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

@@ -27,7 +27,7 @@ from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from nexagent.knowledge.base import KnowledgeFileError, max_upload_bytes
-from nexagent.knowledge.models import EmbedInfo, KBType
+from nexagent.knowledge.models import EmbedInfo, KBType, LLMInfo
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -51,6 +51,12 @@ class KBCreateRequest(BaseModel):
     embed_base_url: str = ""
     embed_api_key: str = ""
     embed_dimension: int | None = Field(default=None, ge=1, le=8192)
+    llm_model: str = ""
+    llm_provider: str = ""
+    llm_base_url: str = ""
+    llm_api_key: str = ""
+    language: str = "Chinese"
+    purpose: str = ""
 
 
 class SearchRequest(BaseModel):
@@ -107,6 +113,10 @@ class ModelConfigUpdate(BaseModel):
     embed_base_url: str | None = None
     embed_api_key: str | None = None
     embed_dimension: int | None = Field(default=None, ge=1, le=8192)
+    llm_model: str | None = None
+    llm_provider: str | None = None
+    llm_base_url: str | None = None
+    llm_api_key: str | None = None
     use_reranker: bool | None = None
     reranker_model: str | None = None
 
@@ -291,11 +301,87 @@ async def _resolve_provider_model(model_ref: str, capability: str) -> dict | Non
         return {
             "model_ref": model_ref,
             "provider_id": provider_id,
+            "provider_type": provider.provider_type,
             "model_id": model_id,
             "base_url": (config or {}).get("base_url_override") or provider.base_url or "",
             "api_key": api_key,
             "dimension": (config or {}).get("dimension"),
         }
+
+
+async def _build_embed_info(
+    *,
+    embed_model: str,
+    embed_base_url: str = "",
+    embed_api_key: str = "",
+    embed_dimension: int | None = None,
+) -> EmbedInfo | None:
+    if not (embed_model or embed_base_url or embed_api_key or embed_dimension):
+        return None
+    provider_model = await _resolve_provider_model(embed_model, "embedding") if embed_model else None
+    return EmbedInfo(
+        model=embed_model or "BAAI/bge-large-zh-v1.5",
+        base_url=embed_base_url or (provider_model or {}).get("base_url", ""),
+        api_key=embed_api_key or (provider_model or {}).get("api_key", ""),
+        dimension=embed_dimension or (provider_model or {}).get("dimension") or 1024,
+    )
+
+
+async def _build_llm_info(
+    *,
+    llm_model: str,
+    llm_provider: str = "",
+    llm_base_url: str = "",
+    llm_api_key: str = "",
+) -> LLMInfo | None:
+    if not (llm_model or llm_provider or llm_base_url or llm_api_key):
+        return None
+    provider_model = await _resolve_provider_model(llm_model, "chat") if llm_model else None
+    if provider_model:
+        return LLMInfo(
+            provider=str(provider_model.get("provider_id") or ""),
+            model=str(provider_model.get("model_id") or llm_model),
+            base_url=llm_base_url or str(provider_model.get("base_url") or ""),
+            api_key=llm_api_key or str(provider_model.get("api_key") or ""),
+        )
+    return LLMInfo(
+        provider=llm_provider or "",
+        model=llm_model,
+        base_url=llm_base_url,
+        api_key=llm_api_key,
+    )
+
+
+def _create_chunk_parser_config(req: KBCreateRequest) -> dict[str, Any]:
+    config = dict(req.chunk_parser_config or {})
+    if req.language:
+        config.setdefault("language", req.language)
+    if req.purpose:
+        config.setdefault("purpose", req.purpose)
+    return config
+
+
+async def _resolve_model_config_patch(patch: dict[str, Any]) -> dict[str, Any]:
+    patch = dict(patch)
+    provider_model = (
+        await _resolve_provider_model(str(patch.get("embed_model") or ""), "embedding")
+        if patch.get("embed_model")
+        else None
+    )
+    if provider_model:
+        patch.setdefault("embed_base_url", provider_model.get("base_url", ""))
+        patch.setdefault("embed_api_key", provider_model.get("api_key", ""))
+        if provider_model.get("dimension") and "embed_dimension" not in patch:
+            patch["embed_dimension"] = provider_model["dimension"]
+
+    llm_model = str(patch.get("llm_model") or "")
+    llm_provider_model = await _resolve_provider_model(llm_model, "chat") if llm_model else None
+    if llm_provider_model:
+        patch["llm_model"] = str(llm_provider_model.get("model_id") or llm_model)
+        patch["llm_provider"] = str(llm_provider_model.get("provider_id") or "")
+        patch.setdefault("llm_base_url", llm_provider_model.get("base_url", ""))
+        patch.setdefault("llm_api_key", llm_provider_model.get("api_key", ""))
+    return patch
 
 
 def _search_result_payload(result, index: int) -> dict:
@@ -807,6 +893,13 @@ async def list_kbs():
 
 @router.post("/", summary="Create a knowledge base", status_code=201)
 async def create_kb(req: KBCreateRequest):
+    llm_info = await _build_llm_info(
+        llm_model=req.llm_model,
+        llm_provider=req.llm_provider,
+        llm_base_url=req.llm_base_url,
+        llm_api_key=req.llm_api_key,
+    )
+    chunk_parser_config = _create_chunk_parser_config(req)
     if req.kb_type == "wiki":
         mgr = _mgr()
         try:
@@ -815,10 +908,11 @@ async def create_kb(req: KBCreateRequest):
                 description=req.description,
                 kb_type="wiki",
                 embed_info=None,
+                llm_info=llm_info,
                 chunk_size=req.chunk_size,
                 chunk_overlap=req.chunk_overlap,
                 chunk_preset_id=req.chunk_preset_id,
-                chunk_parser_config=req.chunk_parser_config,
+                chunk_parser_config=chunk_parser_config,
             )
             return _kb_public_dict(kb)
         except Exception as exc:
@@ -826,24 +920,22 @@ async def create_kb(req: KBCreateRequest):
             raise HTTPException(status_code=500, detail=str(exc)) from exc
     if _prod_enabled():
         try:
-            embed_info = None
-            if req.embed_model or req.embed_base_url or req.embed_api_key or req.embed_dimension:
-                provider_model = await _resolve_provider_model(req.embed_model, "embedding") if req.embed_model else None
-                embed_info = EmbedInfo(
-                    model=req.embed_model or "BAAI/bge-large-zh-v1.5",
-                    base_url=req.embed_base_url or (provider_model or {}).get("base_url", ""),
-                    api_key=req.embed_api_key or (provider_model or {}).get("api_key", ""),
-                    dimension=req.embed_dimension or (provider_model or {}).get("dimension") or 1024,
-                )
+            embed_info = await _build_embed_info(
+                embed_model=req.embed_model,
+                embed_base_url=req.embed_base_url,
+                embed_api_key=req.embed_api_key,
+                embed_dimension=req.embed_dimension,
+            )
             kb = await _prod_service().create_kb(
                 name=req.name,
                 description=req.description,
                 kb_type=req.kb_type,
                 embed_info=embed_info,
+                llm_info=llm_info,
                 chunk_size=req.chunk_size,
                 chunk_overlap=req.chunk_overlap,
                 chunk_preset_id=req.chunk_preset_id,
-                chunk_parser_config=req.chunk_parser_config,
+                chunk_parser_config=chunk_parser_config,
             )
             return _kb_public_dict(kb)
         except Exception as exc:
@@ -851,24 +943,22 @@ async def create_kb(req: KBCreateRequest):
             raise HTTPException(status_code=500, detail=str(exc)) from exc
     mgr = _mgr()
     try:
-        embed_info = None
-        if req.embed_model or req.embed_base_url or req.embed_api_key or req.embed_dimension:
-            provider_model = await _resolve_provider_model(req.embed_model, "embedding") if req.embed_model else None
-            embed_info = EmbedInfo(
-                model=req.embed_model or "BAAI/bge-large-zh-v1.5",
-                base_url=req.embed_base_url or (provider_model or {}).get("base_url", ""),
-                api_key=req.embed_api_key or (provider_model or {}).get("api_key", ""),
-                dimension=req.embed_dimension or (provider_model or {}).get("dimension") or 1024,
-            )
+        embed_info = await _build_embed_info(
+            embed_model=req.embed_model,
+            embed_base_url=req.embed_base_url,
+            embed_api_key=req.embed_api_key,
+            embed_dimension=req.embed_dimension,
+        )
         kb = await mgr.create_kb(
             name=req.name,
             description=req.description,
             kb_type=req.kb_type,
             embed_info=embed_info,
+            llm_info=llm_info,
             chunk_size=req.chunk_size,
             chunk_overlap=req.chunk_overlap,
             chunk_preset_id=req.chunk_preset_id,
-            chunk_parser_config=req.chunk_parser_config,
+            chunk_parser_config=chunk_parser_config,
         )
     except Exception as exc:
         logger.exception("Failed to create KB")
@@ -1151,41 +1241,22 @@ async def update_query_config(kb_id: str, req: QueryConfigUpdate):
 async def update_model_config(kb_id: str, req: ModelConfigUpdate):
     if await _prod_kb(kb_id):
         try:
-            patch = req.model_dump(exclude_none=True)
-            provider_model = (
-                await _resolve_provider_model(str(patch.get("embed_model") or ""), "embedding")
-                if patch.get("embed_model")
-                else None
-            )
-            if provider_model:
-                patch.setdefault("embed_base_url", provider_model.get("base_url", ""))
-                patch.setdefault("embed_api_key", provider_model.get("api_key", ""))
-                if provider_model.get("dimension") and "embed_dimension" not in patch:
-                    patch["embed_dimension"] = provider_model["dimension"]
+            patch = await _resolve_model_config_patch(req.model_dump(exclude_none=True))
             return _redact_kb_secrets(await _prod_service().update_model_config(kb_id, patch))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     if await _is_local_wiki_kb(kb_id):
         mgr, _ = _kb_or_404(kb_id)
         try:
-            return _redact_kb_secrets(mgr.update_model_config(kb_id, req.model_dump(exclude_none=True)))
+            patch = await _resolve_model_config_patch(req.model_dump(exclude_none=True))
+            return _redact_kb_secrets(mgr.update_model_config(kb_id, patch))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     if _prod_enabled():
         raise _legacy_read_only_error(kb_id)
     mgr, _ = _kb_or_404(kb_id)
     try:
-        patch = req.model_dump(exclude_none=True)
-        provider_model = (
-            await _resolve_provider_model(str(patch.get("embed_model") or ""), "embedding")
-            if patch.get("embed_model")
-            else None
-        )
-        if provider_model:
-            patch.setdefault("embed_base_url", provider_model.get("base_url", ""))
-            patch.setdefault("embed_api_key", provider_model.get("api_key", ""))
-            if provider_model.get("dimension") and "embed_dimension" not in patch:
-                patch["embed_dimension"] = provider_model["dimension"]
+        patch = await _resolve_model_config_patch(req.model_dump(exclude_none=True))
         return _redact_kb_secrets(mgr.update_model_config(kb_id, patch))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

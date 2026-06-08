@@ -105,6 +105,11 @@ class LightRagKB(KnowledgeBase):
                 base_url=embed.base_url or None,
             )
 
+        language = str(
+            (kb_meta.chunk_parser_config or {}).get("language")
+            or os.environ.get("SUMMARY_LANGUAGE")
+            or "Chinese"
+        )
         kwargs = {
             "working_dir": self._rag_dir(kb_meta),
             "workspace": kb_meta.kb_id,
@@ -117,7 +122,7 @@ class LightRagKB(KnowledgeBase):
             "kv_storage": "JsonKVStorage",
             "doc_status_storage": "JsonDocStatusStorage",
             "log_file_path": str(Path(self._rag_dir(kb_meta)) / "lightrag.log"),
-            "addon_params": {"language": os.environ.get("SUMMARY_LANGUAGE") or "Chinese"},
+            "addon_params": {"language": language},
         }
         try:
             from nexagent.config import get_config

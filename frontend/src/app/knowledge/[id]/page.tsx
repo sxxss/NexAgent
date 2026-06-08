@@ -132,6 +132,7 @@ export default function KBDetailPage() {
   }, []);
 
   const embeddingModels = useMemo(() => providerModelOptions(providers, "embedding"), [providers]);
+  const chatModels = useMemo(() => providerModelOptions(providers, "chat"), [providers]);
   const rerankModels = useMemo(() => providerModelOptions(providers, "rerank"), [providers]);
 
   const loadData = useCallback(async () => {
@@ -338,6 +339,7 @@ export default function KBDetailPage() {
             <section className="space-y-4">
               <FileUploadCard uploading={uploading} inputRef={fileInputRef} onUpload={handleUpload} />
               <UploadResultList results={uploadResults} />
+              <WikiModelPanel kb={kb} chatModels={chatModels} onKbUpdated={(next) => setKb(next)} />
               <FileList files={files} processingIds={processingIds} onProcess={handleProcess} onPreview={handlePreview} onDelete={handleDelete} />
               {preview || previewLoading ? <PreviewPanel preview={preview} loading={previewLoading} onClose={() => setPreview(null)} /> : null}
               {jobs.length ? <JobHistory jobs={jobs.slice(0, 5)} onRetry={(jobId) => void retryIngestionJob(jobId).then(loadData)} onCancel={(taskId) => void cancelTask(taskId).then(loadData)} /> : null}
@@ -410,6 +412,7 @@ export default function KBDetailPage() {
               queryConfig={queryConfig}
               queryConfigMeta={queryConfigMeta}
               embeddingModels={embeddingModels}
+              chatModels={chatModels}
               rerankModels={rerankModels}
               onKbUpdated={(next) => setKb(next)}
               onQueryConfigChange={setQueryConfig}
@@ -520,11 +523,61 @@ function FileList({ files, processingIds, onProcess, onPreview, onDelete }: { fi
   );
 }
 
+function WikiModelPanel({ kb, chatModels, onKbUpdated }: { kb: KBMeta; chatModels: ProviderModelOption[]; onKbUpdated: (kb: KBMeta) => void }) {
+  const [llmModel, setLlmModel] = useState(kbLlmModelValue(kb));
+  const [saving, setSaving] = useState(false);
+  const selectedLLM = chatModels.find((item) => item.value === llmModel);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const result = await updateKBModelConfig(kb.kb_id, { llm_model: llmModel });
+      onKbUpdated(result.kb);
+      if (result.requires_reindex) {
+        alert(`LLM 配置已更新，${result.indexed_files} 个已编译文件需要重新处理。`);
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "保存 LLM 配置失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-900">Wiki LLM 配置</h2>
+          <p className="mt-1 text-xs text-slate-500">用于文件编译、页面抽取和对话沉淀。</p>
+        </div>
+        <button type="button" onClick={save} disabled={saving || !llmModel} className={outlineButton}>
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+          保存
+        </button>
+      </div>
+      <Field label="LLM 模型">
+        <ModelPicker
+          value={llmModel}
+          options={chatModels}
+          placeholder={selectedLLM?.label || kb.llm_info?.model || "选择 LLM 模型"}
+          onChange={(option) => setLlmModel(option.value)}
+        />
+      </Field>
+      {chatModels.length === 0 ? (
+        <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs leading-5 text-amber-700">
+          没有可用的 LLM 模型。请先到设置页给供应商添加 chat 类型模型并启用供应商。
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ModelAndRetrievalPanel({
   kb,
   queryConfig,
   queryConfigMeta,
   embeddingModels,
+  chatModels,
   rerankModels,
   onKbUpdated,
   onQueryConfigChange,
@@ -535,6 +588,7 @@ function ModelAndRetrievalPanel({
   queryConfig: RetrievalConfig;
   queryConfigMeta: KnowledgeQueryConfigResponse | null;
   embeddingModels: ProviderModelOption[];
+  chatModels: ProviderModelOption[];
   rerankModels: ProviderModelOption[];
   onKbUpdated: (kb: KBMeta) => void;
   onQueryConfigChange: (config: RetrievalConfig) => void;
@@ -543,11 +597,13 @@ function ModelAndRetrievalPanel({
 }) {
   const [embedModel, setEmbedModel] = useState(kb.embed_info?.model || "");
   const [embedDimension, setEmbedDimension] = useState(kb.embed_info?.dimension || 1024);
+  const [llmModel, setLlmModel] = useState(kbLlmModelValue(kb));
   const [probeResult, setProbeResult] = useState<ModelProbeResult | null>(null);
   const [probeError, setProbeError] = useState("");
   const [savingModel, setSavingModel] = useState(false);
   const [testing, setTesting] = useState(false);
   const selectedEmbedding = embeddingModels.find((item) => item.value === embedModel);
+  const selectedLLM = chatModels.find((item) => item.value === llmModel);
   const selectedReranker = rerankModels.find((item) => item.value === queryConfig.reranker_model);
   const availableModes = queryConfigMeta?.available_modes?.length
     ? queryConfigMeta.available_modes
@@ -560,12 +616,13 @@ function ModelAndRetrievalPanel({
       const result = await updateKBModelConfig(kb.kb_id, {
         embed_model: embedModel,
         embed_dimension: embedDimension,
+        llm_model: kb.kb_type === "lightrag" ? llmModel : undefined,
         use_reranker: Boolean(queryConfig.use_reranker),
         reranker_model: queryConfig.reranker_model || "",
       });
       onKbUpdated(result.kb);
       if (result.requires_reindex) {
-        alert(`Embedding 配置已更新，${result.indexed_files} 个已入库文件需要重新入库。`);
+        alert(`模型配置已更新，${result.indexed_files} 个已入库文件需要重新处理。`);
       }
     } catch (error) {
       alert(error instanceof Error ? error.message : "保存模型配置失败");
@@ -613,6 +670,16 @@ function ModelAndRetrievalPanel({
           </button>
         </div>
         <ProbeNotice result={probeResult} error={probeError} />
+        {kb.kb_type === "lightrag" ? (
+          <Field label="LLM 模型">
+            <ModelPicker
+              value={llmModel}
+              options={chatModels}
+              placeholder={selectedLLM?.label || kb.llm_info?.model || "选择 LLM 模型"}
+              onChange={(option) => setLlmModel(option.value)}
+            />
+          </Field>
+        ) : null}
         {notice ? (
           <div className={cn("rounded-xl border p-3 text-xs leading-5", notice.variant === "warning" ? "border-amber-100 bg-amber-50 text-amber-700" : "border-sky-100 bg-sky-50 text-sky-700")}>
             {notice.message}
@@ -718,6 +785,13 @@ function friendlySearchAction(action: string) {
   if (action === "check_embedding") return "检查 Embedding";
   if (action === "install_dependency") return "安装依赖";
   return action;
+}
+
+function kbLlmModelValue(kb: KBMeta): string {
+  const model = kb.llm_info?.model || "";
+  const provider = kb.llm_info?.provider || "";
+  if (provider && model && !model.includes("::")) return `${provider}::${model}`;
+  return model;
 }
 
 function indexNotice(kb: KBMeta): { variant: "info" | "warning"; message: string } | null {

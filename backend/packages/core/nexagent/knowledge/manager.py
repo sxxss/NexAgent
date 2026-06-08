@@ -101,13 +101,20 @@ class KnowledgeBaseManager:
         chunk_overlap: int = 64,
         chunk_preset_id: str = "general",
         chunk_parser_config: dict | None = None,
-    ) -> KBMeta:
+        ) -> KBMeta:
         kb_type_enum = KBType(kb_type)
         backend = self._get_backend(kb_type_enum)
+        effective_embed_info = (
+            embed_info
+            if embed_info is not None
+            else EmbedInfo(model="", base_url="", api_key="", dimension=0)
+            if kb_type_enum == KBType.WIKI
+            else _default_embed_info()
+        )
         return await backend.create_kb(
             name=name,
             description=description,
-            embed_info=embed_info or _default_embed_info(),
+            embed_info=effective_embed_info,
             llm_info=llm_info or _default_llm_info(),
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
@@ -223,7 +230,7 @@ class KnowledgeBaseManager:
         return cleaned
 
     def update_model_config(self, kb_id: str, patch: dict) -> dict:
-        """Update KB-level embedding/rerank metadata without rebuilding indexes."""
+        """Update KB-level embedding, LLM, and rerank metadata without rebuilding indexes."""
         backend = self._find_backend(kb_id)
         kb_meta = backend.get_kb(kb_id)
         if kb_meta is None:
@@ -246,6 +253,24 @@ class KnowledgeBaseManager:
         if embedding_changed:
             kb_meta.embed_info = next_embed
 
+        current_llm = kb_meta.llm_info
+        next_llm = replace(
+            current_llm,
+            provider=str(patch.get("llm_provider", current_llm.provider) or current_llm.provider),
+            model=str(patch.get("llm_model", current_llm.model) or current_llm.model),
+            base_url=str(patch.get("llm_base_url", current_llm.base_url) or ""),
+            api_key=str(patch.get("llm_api_key", current_llm.api_key) or ""),
+        )
+        llm_changed = next_llm.to_dict() != current_llm.to_dict()
+        if llm_changed:
+            kb_meta.llm_info = next_llm
+            rag_cache = getattr(backend, "_rag_cache", None)
+            if isinstance(rag_cache, dict):
+                rag_cache.pop(kb_id, None)
+            initialized = getattr(backend, "_rag_initialized", None)
+            if isinstance(initialized, set):
+                initialized.discard(kb_id)
+
         query_patch = {}
         if "use_reranker" in patch:
             query_patch["use_reranker"] = bool(patch.get("use_reranker"))
@@ -255,10 +280,15 @@ class KnowledgeBaseManager:
             self.update_query_config(kb_id, query_patch)
 
         indexed_files = [file for file in self.list_files(kb_id) if file.status.value == "indexed"]
-        requires_reindex = bool((embedding_changed and indexed_files) or kb_meta.extra.get("requires_reindex"))
+        requires_reindex = bool(
+            ((embedding_changed or llm_changed) and indexed_files)
+            or kb_meta.extra.get("requires_reindex")
+        )
         kb_meta.extra["model_config"] = {
             "embedding_model": kb_meta.embed_info.model,
             "embedding_dimension": kb_meta.embed_info.dimension,
+            "llm_provider": kb_meta.llm_info.provider,
+            "llm_model": kb_meta.llm_info.model,
             "reranker_model": self.get_query_config(kb_id).get("reranker_model", ""),
             "use_reranker": self.get_query_config(kb_id).get("use_reranker", False),
             "requires_reindex": requires_reindex,

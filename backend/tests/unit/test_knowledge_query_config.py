@@ -9,6 +9,22 @@ import pytest
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_wiki_kb_does_not_inherit_default_embedding():
+    from nexagent.knowledge.manager import KnowledgeBaseManager
+    from nexagent.knowledge.models import KBType
+
+    work_dir = _fresh_dir("wiki-no-embedding")
+    manager = KnowledgeBaseManager(str(work_dir))
+
+    wiki = await manager.create_kb(name="wiki", kb_type=KBType.WIKI.value)
+
+    assert wiki.embed_info.model == ""
+    assert wiki.embed_info.dimension == 0
+    shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_query_config_modes_are_scoped_by_kb_type():
     from nexagent.knowledge.manager import KnowledgeBaseManager
     from nexagent.knowledge.models import KBType

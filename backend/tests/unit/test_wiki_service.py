@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 
 
 @pytest.mark.unit
@@ -73,3 +74,25 @@ async def test_crystallize_thread_into_wiki_kb_registers_source_and_page(monkeyp
     assert calls["add_file"]["filename"] == "Decision Log.md"
     assert calls["crystallize"]["sources"] == ["file-1"]
     assert calls["crystallize"]["confidence"] == "UNVERIFIED"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_global_wiki_crystallize_requires_target_kb(monkeypatch):
+    from app.gateway.routers import wiki
+
+    called = False
+
+    async def fake_crystallize_thread(thread_id, kb_id=None, model=None):
+        nonlocal called
+        called = True
+        return {"id": "note:hidden"}
+
+    monkeypatch.setattr("nexagent.services.wiki_service.crystallize_thread", fake_crystallize_thread)
+
+    with pytest.raises(HTTPException) as exc:
+        await wiki.crystallize(wiki.CrystallizeRequest(thread_id="thread-1"))
+
+    assert exc.value.status_code == 400
+    assert "Wiki 知识库" in str(exc.value.detail)
+    assert called is False

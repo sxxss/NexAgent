@@ -131,15 +131,55 @@ class ProductionKnowledgeService:
                 if src in patch and patch[src] is not None:
                     embed[dst] = patch[src]
             kb.embed_info = embed
+            llm = dict(kb.llm_info or {})
+            for src, dst in {
+                "llm_provider": "provider",
+                "llm_model": "model",
+                "llm_base_url": "base_url",
+                "llm_api_key": "api_key",
+            }.items():
+                if src in patch and patch[src] is not None:
+                    llm[dst] = patch[src]
+            kb.llm_info = llm
             extra = dict(kb.extra or {})
-            extra["requires_reindex"] = True
+            indexed_result = await session.execute(
+                select(KnowledgeFileRecord).where(
+                    KnowledgeFileRecord.kb_id == kb_id,
+                    KnowledgeFileRecord.status.in_(
+                        [
+                            FileStatus.INDEXED.value,
+                            FileStatus.GRAPH_INDEXED.value,
+                            FileStatus.INDEXED_WITH_GRAPH_DEGRADED.value,
+                        ]
+                    ),
+                )
+            )
+            indexed_files = list(indexed_result.scalars().all())
+            extra["requires_reindex"] = bool(indexed_files) or bool(extra.get("requires_reindex"))
             if "use_reranker" in patch:
                 extra["use_reranker"] = patch["use_reranker"]
             if "reranker_model" in patch:
                 extra["reranker_model"] = patch["reranker_model"]
+            extra["model_config"] = {
+                "embedding_model": embed.get("model", ""),
+                "embedding_dimension": embed.get("dimension", 0),
+                "llm_provider": llm.get("provider", ""),
+                "llm_model": llm.get("model", ""),
+                "reranker_model": extra.get("reranker_model", ""),
+                "use_reranker": bool(extra.get("use_reranker")),
+                "requires_reindex": extra["requires_reindex"],
+            }
             kb.extra = extra
             await session.commit()
-            return _record_to_kb_meta(kb).to_dict()
+            return {
+                "kb": _record_to_kb_meta(kb).to_dict(),
+                "requires_reindex": extra["requires_reindex"],
+                "indexed_files": len(indexed_files),
+                "query_config": {
+                    "use_reranker": bool(extra.get("use_reranker")),
+                    "reranker_model": str(extra.get("reranker_model") or ""),
+                },
+            }
 
     async def update_chunk_config(self, kb_id: str, patch: dict) -> dict:
         from nexagent.knowledge.chunking import normalize_chunk_preset_id

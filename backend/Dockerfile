@@ -43,7 +43,14 @@ RUN python -m pip install --upgrade pip setuptools wheel \
     "tiktoken>=0.8.0" \
     "asyncpg>=0.30.0" \
     "sse-starlette>=2.1.0" \
-    "python-multipart>=0.0.26"
+    "python-multipart>=0.0.26" \
+    "pymilvus>=2.6,<2.7" \
+    "neo4j>=5.0.0" \
+    "lightrag-hku>=1.3.0" \
+    "pypdf>=4.0.0" \
+    "python-docx>=1.1.0" \
+    "python-pptx>=1.0.0" \
+    "markdownify>=0.13.0"
 
 # The gateway command (in docker-compose.yml) runs:
 #   pip install -e /app/backend/packages/core && uvicorn --reload
@@ -82,7 +89,7 @@ RUN python -m pip install --upgrade pip setuptools wheel \
     "asyncpg>=0.30.0" \
     "sse-starlette>=2.1.0" \
     "python-multipart>=0.0.26" \
-    && pip install -e backend/packages/core
+    && pip install -e 'backend/packages/core[knowledge]'
 
 EXPOSE 8001
 

@@ -8,8 +8,8 @@ from nexagent.knowledge.base import KnowledgeBase
 from nexagent.knowledge.implementations.wiki.compile import WikiCompileMixin
 from nexagent.knowledge.implementations.wiki.constants import CONFIDENCE_VALUES, WIKI_PAGE_TYPES
 from nexagent.knowledge.implementations.wiki.graph import WikiGraphMixin
-from nexagent.knowledge.implementations.wiki.lint import WikiLintMixin
 from nexagent.knowledge.implementations.wiki.links import WikiLinksMixin
+from nexagent.knowledge.implementations.wiki.lint import WikiLintMixin
 from nexagent.knowledge.implementations.wiki.repair import WikiRepairMixin
 from nexagent.knowledge.implementations.wiki.storage import WikiStorageMixin
 from nexagent.knowledge.models import FileMeta, FileStatus, KBMeta, KBType, SearchResult
@@ -37,7 +37,7 @@ class WikiKB(
     async def create_kb(self, *args, **kwargs) -> KBMeta:
         meta = await super().create_kb(*args, **kwargs)
         self._ensure_wiki_layout(meta)
-        purpose = str(meta.description or meta.name).strip()
+        purpose = str((meta.chunk_parser_config or {}).get("purpose") or meta.description or meta.name).strip()
         self._atomic_write_text(self._db_root(meta.kb_id) / "purpose.md", f"# {meta.name}\n\n{purpose}\n")
         self._atomic_write_text(self._db_root(meta.kb_id) / "index.md", "# Index\n\n")
         self._atomic_write_text(self._db_root(meta.kb_id) / "log.md", "# Log\n\n")

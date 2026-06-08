@@ -25,7 +25,7 @@ services:
       dockerfile: backend/Dockerfile
       target: dev
     container_name: nexagent-gateway
-    command: sh -c "pip install -e /app/backend/packages/core --quiet && cd /app/backend && python -m uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001 --reload --reload-dir /app/backend"
+    command: sh -c "pip install -e '/app/backend/packages/core[knowledge]' --quiet && cd /app/backend && python -m uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001 --reload --reload-dir /app/backend"
     volumes:
       # Mount source code so edits on host are reflected instantly (hot-reload)
       - ./backend:/app/backend
@@ -212,7 +212,7 @@ services:
       target: dev
     container_name: nexagent-worker
     command: >
-      sh -c "pip install -e /app/backend/packages/core --quiet &&
+      sh -c "pip install -e '/app/backend/packages/core[knowledge]' --quiet &&
              python -m nexagent.knowledge.worker"
     volumes:
       - ./backend:/app/backend
@@ -247,6 +247,8 @@ services:
         condition: service_started
       neo4j:
         condition: service_healthy
+    healthcheck:
+      disable: true
     networks:
       - nexagent
     restart: unless-stopped

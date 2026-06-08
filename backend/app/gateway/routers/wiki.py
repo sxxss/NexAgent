@@ -18,6 +18,8 @@ class CrystallizeRequest(BaseModel):
 async def crystallize(req: CrystallizeRequest):
     from nexagent.services.wiki_service import crystallize_thread
 
+    if not req.kb_id:
+        raise HTTPException(status_code=400, detail="请选择目标 Wiki 知识库后再沉淀。")
     try:
         return await crystallize_thread(req.thread_id, kb_id=req.kb_id, model=req.model)
     except ValueError as exc:

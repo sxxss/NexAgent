@@ -4,8 +4,8 @@ Pipeline:
   1. Load the conversation's messages.
   2. Ask an LLM to distill them into a clean, reusable Markdown knowledge page
      (title, summary, key points, decisions, open questions, tags).
-  3. Persist the page under the data dir (always available for browsing).
-  4. Optionally push it into a knowledge base so it joins vector + graph search.
+  3. Persist the page into the selected Wiki knowledge base so it joins the
+     user-managed knowledge workflow.
 
 This mirrors a-yuxi's "对话沉淀 → Wiki" flow while reusing NexAgent's own model
 factory and knowledge stack.
@@ -16,8 +16,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import time
-import uuid
 from inspect import isawaitable
 from pathlib import Path
 from typing import Any
@@ -154,12 +152,15 @@ async def crystallize_thread(
     from nexagent.models.factory import load_chat_model_async
     from nexagent.services.conversation_service import list_messages
 
+    if not kb_id:
+        raise ValueError("请选择目标 Wiki 知识库后再沉淀。")
+
     messages = await list_messages(thread_id)
     transcript = _format_transcript(messages)
     if not transcript.strip():
         raise ValueError("该对话没有可沉淀的内容。")
 
-    llm = await _maybe_await(load_chat_model_async(model))
+    llm = await _maybe_await(load_chat_model_async(model or _model_ref_for_wiki_kb(kb_id)))
     response = await llm.ainvoke(
         [
             SystemMessage(content=WIKI_SYSTEM_PROMPT),
@@ -172,36 +173,24 @@ async def crystallize_thread(
     title = _extract_title(markdown)
     tags = _extract_tags(markdown)
 
-    if kb_id:
-        return await _crystallize_into_wiki_kb(kb_id, title, markdown)
+    page = await _crystallize_into_wiki_kb(kb_id, title, markdown)
+    return {**page, "tags": tags, "thread_id": thread_id, "char_count": len(markdown)}
 
-    page_id = uuid.uuid4().hex[:12]
-    created_at = time.time()
 
-    # Persist the markdown file + index entry.
-    (_wiki_dir() / f"{page_id}.md").write_text(markdown, encoding="utf-8")
-    entry: dict[str, Any] = {
-        "id": page_id,
-        "title": title,
-        "tags": tags,
-        "thread_id": thread_id,
-        "kb_id": kb_id,
-        "created_at": created_at,
-        "char_count": len(markdown),
-    }
+def _model_ref_for_wiki_kb(kb_id: str) -> str | None:
+    from nexagent.knowledge.manager import get_manager
 
-    kb_result: dict[str, Any] | None = None
-    if kb_id:
-        kb_result = await _push_to_kb(kb_id, title, markdown)
-        entry["file_id"] = kb_result.get("file_id")
-        if kb_result.get("warning"):
-            entry["warning"] = kb_result["warning"]
-
-    index = _load_index()
-    index.insert(0, entry)
-    _save_index(index)
-
-    return {**entry, "content": markdown}
+    kb = get_manager().get_kb(kb_id)
+    if kb is None:
+        raise ValueError(f"知识库 {kb_id} 不存在。")
+    if getattr(kb.kb_type, "value", kb.kb_type) != "wiki":
+        raise ValueError(f"知识库 {kb_id} 不是 Wiki 类型。")
+    llm = kb.llm_info
+    if not llm.model:
+        return None
+    if llm.provider and "::" not in llm.model:
+        return f"{llm.provider}::{llm.model}"
+    return llm.model
 
 
 def list_pages() -> list[dict[str, Any]]:

@@ -76,9 +76,18 @@ class WikiCompileMixin:
 
     async def _compile_markdown_with_llm(self, kb_id: str, file_id: str, file_meta, markdown: str) -> dict:
         from langchain_core.messages import HumanMessage, SystemMessage
+
         from nexagent.models.factory import load_chat_model_async
 
-        llm = await load_chat_model_async()
+        kb_meta = self._require_kb(kb_id)
+        llm_info = kb_meta.llm_info
+        model_ref = llm_info.model
+        if llm_info.provider and "::" not in model_ref:
+            model_ref = f"{llm_info.provider}::{llm_info.model}"
+        try:
+            llm = await load_chat_model_async(model_ref)
+        except Exception:
+            llm = await load_chat_model_async(llm_info.model)
         messages = self._build_compile_prompt(file_meta.filename, self._read_purpose(kb_id), markdown)
         response = await llm.ainvoke(
             [

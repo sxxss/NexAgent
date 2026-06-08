@@ -29,7 +29,6 @@ import {
   deleteKB,
   fetchKBs,
   fetchProviders,
-  fetchWikiPages,
   testProviderModel,
   updateKBModelConfig,
   type KBMeta,
@@ -61,6 +60,9 @@ const initialForm = {
   chunk_preset_id: "general" as "general" | "qa" | "book" | "laws" | "paper",
   embed_model: "",
   embed_dimension: 1024,
+  llm_model: "",
+  language: "Chinese",
+  purpose: "",
   use_reranker: false,
   reranker_model: "",
 };
@@ -75,17 +77,18 @@ export default function KnowledgePage() {
 
   const kbsQuery = useQuery({ queryKey: ["kbs"], queryFn: fetchKBs });
   const providersQuery = useQuery({ queryKey: ["providers"], queryFn: fetchProviders });
-  const wikiQuery = useQuery({ queryKey: ["wiki-pages"], queryFn: fetchWikiPages });
-  const wikiCount = wikiQuery.data?.length ?? 0;
-  const showWiki = "llm wiki 知识沉淀".includes(search.trim().toLowerCase());
   const kbs = useMemo(() => kbsQuery.data ?? [], [kbsQuery.data]);
   const providers = useMemo(() => providersQuery.data ?? [], [providersQuery.data]);
+  const chatModels = useMemo(() => providerModelOptions(providers, "chat"), [providers]);
   const embeddingModels = useMemo(() => providerModelOptions(providers, "embedding"), [providers]);
   const rerankModels = useMemo(() => providerModelOptions(providers, "rerank"), [providers]);
   const filtered = kbs.filter((kb) => `${kb.name} ${kb.description ?? ""}`.toLowerCase().includes(search.toLowerCase()));
 
+  const selectedLLM = chatModels.find((item) => item.value === form.llm_model);
   const selectedEmbedding = embeddingModels.find((item) => item.value === form.embed_model);
   const selectedReranker = rerankModels.find((item) => item.value === form.reranker_model);
+  const requiresEmbedding = form.kb_type !== "wiki";
+  const requiresLLM = form.kb_type === "wiki" || form.kb_type === "lightrag";
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -96,8 +99,11 @@ export default function KnowledgePage() {
         chunk_size: form.chunk_size,
         chunk_overlap: form.chunk_overlap,
         chunk_preset_id: form.chunk_preset_id,
-        embed_model: form.kb_type === "wiki" ? undefined : form.embed_model || undefined,
-        embed_dimension: form.kb_type === "wiki" ? undefined : form.embed_dimension || undefined,
+        embed_model: requiresEmbedding ? form.embed_model || undefined : undefined,
+        embed_dimension: requiresEmbedding ? form.embed_dimension || undefined : undefined,
+        llm_model: requiresLLM ? form.llm_model || undefined : undefined,
+        language: requiresLLM ? form.language : undefined,
+        purpose: form.kb_type === "wiki" ? form.purpose.trim() || form.description.trim() : undefined,
       });
       if (form.kb_type !== "wiki" && (form.use_reranker || form.reranker_model)) {
         await updateKBModelConfig(kb.kb_id, {
@@ -143,7 +149,7 @@ export default function KnowledgePage() {
     setProbeError("");
   };
 
-  const submitDisabled = !form.name.trim() || (form.kb_type !== "wiki" && !form.embed_model) || createMutation.isPending;
+  const submitDisabled = !form.name.trim() || (requiresEmbedding && !form.embed_model) || (requiresLLM && !form.llm_model) || createMutation.isPending;
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-slate-100">
@@ -186,11 +192,10 @@ export default function KnowledgePage() {
         <div className="mt-5">
           {kbsQuery.isLoading ? (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{[1, 2, 3].map((item) => <div key={item} className="h-52 animate-pulse rounded-xl bg-white" />)}</div>
-          ) : filtered.length === 0 && !showWiki ? (
+          ) : filtered.length === 0 ? (
             <Empty onCreate={() => setShowCreate(true)} />
           ) : (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {showWiki ? <WikiCard count={wikiCount} /> : null}
               {filtered.map((kb) => (
                 <KBCard
                   key={kb.kb_id}
@@ -247,7 +252,7 @@ export default function KnowledgePage() {
               </Field>
             </FormSection>
 
-            {form.kb_type !== "wiki" ? (
+            {requiresEmbedding ? (
               <FormSection title="Embedding 配置" description="从设置页已添加的模型供应商中选择 embedding 模型。保存时使用 provider::model，避免同名模型串供应商。">
                 <Field label="Embedding 模型" required hint="只显示已启用供应商中标记为 embedding 的模型。">
                   <ModelPicker
@@ -279,7 +284,39 @@ export default function KnowledgePage() {
               </FormSection>
             ) : null}
 
-            <FormSection title="分块与检索增强" description="分块参数会影响后续入库结果。Rerank 可先关闭，之后在详情页随时开启。">
+            {requiresLLM ? (
+              <FormSection title="LLM 配置" description="Wiki 用 LLM 编译页面；LightRAG 用 LLM 抽取实体和关系。">
+                <Field label="LLM 模型" required hint="只显示已启用供应商中标记为 chat 的模型。">
+                  <ModelPicker
+                    value={form.llm_model}
+                    options={chatModels}
+                    placeholder={providersQuery.isLoading ? "加载模型中..." : "选择 LLM 模型"}
+                    onChange={(option) => setForm({ ...form, llm_model: option.value })}
+                  />
+                </Field>
+                <Field label="处理语言">
+                  <select className={inputClass} value={form.language} onChange={(event) => setForm({ ...form, language: event.target.value })}>
+                    <option value="Chinese">中文</option>
+                    <option value="English">English</option>
+                    <option value="Japanese">日本語</option>
+                    <option value="Korean">한국어</option>
+                  </select>
+                </Field>
+                {form.kb_type === "wiki" ? (
+                  <Field label="Wiki 用途">
+                    <textarea className={`${inputClass} min-h-16 resize-none`} value={form.purpose} onChange={(event) => setForm({ ...form, purpose: event.target.value })} placeholder="例如：沉淀项目长期决策、接口约定和业务概念" />
+                  </Field>
+                ) : null}
+                {chatModels.length === 0 ? (
+                  <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs leading-5 text-amber-700">
+                    没有可用的 LLM 模型。请先到设置页给供应商添加 chat 类型模型并启用供应商。
+                  </div>
+                ) : null}
+              </FormSection>
+            ) : null}
+
+            {form.kb_type !== "wiki" ? (
+              <FormSection title="分块与检索增强" description="分块参数会影响后续入库结果。Rerank 可先关闭，之后在详情页随时开启。">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Chunk preset">
                   <select className={inputClass} value={form.chunk_preset_id} onChange={(event) => setForm({ ...form, chunk_preset_id: event.target.value as typeof form.chunk_preset_id })}>
@@ -297,21 +334,20 @@ export default function KnowledgePage() {
                   <input className={inputClass} type="number" min={0} max={512} value={form.chunk_overlap} onChange={(event) => setForm({ ...form, chunk_overlap: Number(event.target.value) })} />
                 </Field>
               </div>
-              {form.kb_type !== "wiki" ? (
-                <label className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800">启用 Rerank</p>
-                    <p className="text-xs text-slate-500">适合需要更高引用准确性的 RAG 场景。</p>
-                  </div>
-                  <input type="checkbox" checked={form.use_reranker} onChange={(event) => setForm({ ...form, use_reranker: event.target.checked })} />
-                </label>
-              ) : null}
-              {form.kb_type !== "wiki" && form.use_reranker ? (
+              <label className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">启用 Rerank</p>
+                  <p className="text-xs text-slate-500">适合需要更高引用准确性的 RAG 场景。</p>
+                </div>
+                <input type="checkbox" checked={form.use_reranker} onChange={(event) => setForm({ ...form, use_reranker: event.target.checked })} />
+              </label>
+              {form.use_reranker ? (
                 <Field label="Rerank 模型">
                   <ModelPicker value={form.reranker_model} options={rerankModels} placeholder="选择 Rerank 模型" onChange={(option) => setForm({ ...form, reranker_model: option.value })} />
                 </Field>
               ) : null}
-            </FormSection>
+              </FormSection>
+            ) : null}
           </div>
 
           <aside className="space-y-4">
@@ -319,9 +355,10 @@ export default function KnowledgePage() {
               <p className="text-sm font-semibold text-slate-900">创建预览</p>
               <div className="mt-4 space-y-3 text-sm">
                 <PreviewRow label="类型" value={form.kb_type === "wiki" ? "Wiki" : form.kb_type === "milvus" ? "向量 RAG" : "LightRAG 图谱"} />
-                <PreviewRow label="Embedding" value={form.kb_type === "wiki" ? "不需要" : selectedEmbedding?.label || "未选择"} />
-                <PreviewRow label="维度" value={form.kb_type === "wiki" ? "Markdown" : String(form.embed_dimension || "-")} />
-                <PreviewRow label="分块" value={`${form.chunk_preset_id} · ${form.chunk_size} / ${form.chunk_overlap}`} />
+                <PreviewRow label="LLM" value={requiresLLM ? selectedLLM?.label || "未选择" : "不需要"} />
+                <PreviewRow label="Embedding" value={requiresEmbedding ? selectedEmbedding?.label || "未选择" : "不需要"} />
+                <PreviewRow label="维度" value={requiresEmbedding ? String(form.embed_dimension || "-") : "Markdown"} />
+                <PreviewRow label="分块" value={form.kb_type === "wiki" ? "Wiki 编译" : `${form.chunk_preset_id} · ${form.chunk_size} / ${form.chunk_overlap}`} />
                 <PreviewRow label="Rerank" value={form.use_reranker ? (selectedReranker?.label || "已开启，未选择模型") : "关闭"} />
               </div>
               {form.kb_type !== "wiki" && embeddingModels.length === 0 ? (
@@ -347,34 +384,6 @@ export default function KnowledgePage() {
   );
 }
 
-function WikiCard({ count }: { count: number }) {
-  return (
-    <Card className="group border-amber-200/70 transition hover:-translate-y-0.5 hover:border-amber-300">
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700"><BookOpen size={20} /></div>
-          <Badge variant="warning">内置</Badge>
-        </div>
-        <div className="mt-4 flex items-start justify-between gap-2">
-          <h2 className="truncate text-sm font-semibold text-slate-950">LLM Wiki</h2>
-        </div>
-        <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">把对话提炼成结构化 Wiki 知识页面，集中浏览与管理。</p>
-        <div className="mt-4 flex flex-wrap gap-1.5">
-          <Badge variant="warning">Wiki 知识库</Badge>
-          <Badge variant="secondary">{count} 篇</Badge>
-        </div>
-        <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-          <span className="truncate">对话沉淀生成</span>
-        </div>
-        <Link href="/knowledge/wiki" className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-          打开
-          <ChevronRight size={13} />
-        </Link>
-      </CardContent>
-    </Card>
-  );
-}
-
 function KBCard({ kb, onDelete }: { kb: KBMeta; onDelete: () => void }) {
   const isWiki = kb.kb_type === "wiki";
   const isRag = kb.kb_type === "milvus";
@@ -396,7 +405,7 @@ function KBCard({ kb, onDelete }: { kb: KBMeta; onDelete: () => void }) {
           {isWiki ? <Badge variant="secondary">Markdown</Badge> : <Badge variant="secondary">{kb.embed_info?.dimension || "-"} dim</Badge>}
         </div>
         <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-          <span className="truncate">{isWiki ? "页面知识库" : kb.embed_info?.model || "默认 Embedding"}</span>
+          <span className="truncate">{isWiki || !isRag ? kb.llm_info?.model || "未配置 LLM" : kb.embed_info?.model || "默认 Embedding"}</span>
           <span>{formatDate(kb.updated_at || kb.created_at)}</span>
         </div>
         <Link href={`/knowledge/${kb.kb_id}`} className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">
@@ -417,7 +426,7 @@ function Empty({ onCreate }: { onCreate: () => void }) {
     <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-white py-20 text-center">
       <Database size={32} className="text-slate-300" />
       <p className="mt-4 text-sm font-semibold text-slate-700">还没有知识库</p>
-      <p className="mt-1 text-xs text-slate-400">新建一个向量 RAG 或 LightRAG 图谱知识库。</p>
+      <p className="mt-1 text-xs text-slate-400">新建向量 RAG、LightRAG 或 Wiki 知识库。</p>
       <button type="button" onClick={onCreate} className={cn(primarySmallButton, "mt-5")}><Plus size={14} />新建知识库</button>
     </div>
   );
