@@ -1,6 +1,7 @@
 "use client";
 
-import Link from "next/link";
+/* eslint-disable @next/next/no-html-link-for-pages -- top-level navigation uses full reloads to avoid stale Docker chunk crashes. */
+
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
@@ -70,14 +71,14 @@ export function Sidebar() {
       <div className="flex h-full flex-col rounded-3xl border border-white/75 bg-white/78 px-2.5 py-3 shadow-[0_18px_44px_rgba(80,96,128,0.16)] backdrop-blur-xl">
         {/* 顶部品牌区 */}
         <div className={cn("flex items-center gap-2.5 px-1 pb-3", collapsed && "justify-center")}>
-          <Link
+          <a
             href="/"
             className="brand-gradient flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-white shadow-[0_10px_22px_rgba(79,70,229,0.4)] transition-transform duration-200 hover:scale-105 hover:rotate-3"
             title="NexAgent"
             aria-label="NexAgent"
           >
             <Zap size={17} className="drop-shadow" />
-          </Link>
+          </a>
           {!collapsed && (
             <div className="min-w-0 flex-1 overflow-hidden">
               <p className="truncate text-sm font-bold tracking-tight text-slate-800">NexAgent</p>
@@ -93,7 +94,7 @@ export function Sidebar() {
           {NAV_ITEMS.map(({ href, label, icon: Icon, exact }) => {
             const active = exact ? path === href : path.startsWith(href);
             return (
-              <Link
+              <a
                 key={href}
                 href={href}
                 title={collapsed ? label : undefined}
@@ -118,7 +119,7 @@ export function Sidebar() {
                     {label}
                   </span>
                 )}
-              </Link>
+              </a>
             );
           })}
         </nav>

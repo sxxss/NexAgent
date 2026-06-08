@@ -260,10 +260,11 @@ services:
     image: node:22-alpine
     container_name: nexagent-frontend
     working_dir: /app/frontend
-    command: sh -c "npm install --silent && npm run build && npm run start -- --hostname 0.0.0.0"
+    command: sh -c "mkdir -p .next && rm -rf .next/* .next/.[!.]* .next/..?* && npm install --silent && npm run build && npm run start -- --hostname 0.0.0.0"
     volumes:
       - ./frontend:/app/frontend
       - /app/frontend/node_modules
+      - frontend_next:/app/frontend/.next
     ports:
       - "3000:3000"
     environment:
@@ -299,6 +300,7 @@ volumes:
   milvus_data:
   neo4j_data:
   nexagent_data:
+  frontend_next:
 
 networks:
   nexagent:
