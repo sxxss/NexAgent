@@ -18,6 +18,7 @@ import os
 import re
 import time
 import uuid
+from inspect import isawaitable
 from pathlib import Path
 from typing import Any
 
@@ -106,6 +107,41 @@ async def _push_to_kb(kb_id: str, title: str, markdown: str) -> dict[str, Any]:
     return result
 
 
+async def _maybe_await(value):
+    if isawaitable(value):
+        return await value
+    return value
+
+
+async def _crystallize_into_wiki_kb(kb_id: str, title: str, markdown: str) -> dict[str, Any]:
+    from nexagent.knowledge.manager import get_manager
+
+    manager = get_manager()
+    kb = manager.get_kb(kb_id)
+    if kb is None:
+        raise ValueError(f"知识库 {kb_id} 不存在。")
+    if getattr(kb.kb_type, "value", kb.kb_type) != "wiki":
+        raise ValueError(f"知识库 {kb_id} 不是 Wiki 类型。")
+    backend = manager._find_backend(kb_id)
+    source = await backend.add_file(kb_id, f"{title}.md", markdown.encode("utf-8"))
+    file_id = source.file_id
+    warning = ""
+    try:
+        await backend.parse_file(kb_id, file_id)
+        await backend.index_file(kb_id, file_id)
+    except Exception as exc:  # noqa: BLE001
+        warning = f"页面已创建，但素材解析/编译未完成：{exc}"
+    page = await backend.crystallize_wiki_text(
+        kb_id,
+        title=title,
+        content=markdown,
+        page_type="note",
+        sources=[file_id],
+        confidence="UNVERIFIED",
+    )
+    return {**page, "kb_id": kb_id, "file_id": file_id, "warning": warning or None, "content": markdown}
+
+
 async def crystallize_thread(
     thread_id: str,
     *,
@@ -123,7 +159,7 @@ async def crystallize_thread(
     if not transcript.strip():
         raise ValueError("该对话没有可沉淀的内容。")
 
-    llm = await load_chat_model_async(model)
+    llm = await _maybe_await(load_chat_model_async(model))
     response = await llm.ainvoke(
         [
             SystemMessage(content=WIKI_SYSTEM_PROMPT),
@@ -135,6 +171,10 @@ async def crystallize_thread(
 
     title = _extract_title(markdown)
     tags = _extract_tags(markdown)
+
+    if kb_id:
+        return await _crystallize_into_wiki_kb(kb_id, title, markdown)
+
     page_id = uuid.uuid4().hex[:12]
     created_at = time.time()
 

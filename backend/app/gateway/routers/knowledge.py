@@ -1012,6 +1012,29 @@ async def lint_wiki(kb_id: str):
     return backend.lint_wiki(kb_id)
 
 
+@router.post("/{kb_id}/wiki/crystallize", summary="Crystallize Markdown into Wiki")
+async def crystallize_wiki(kb_id: str, body: dict[str, Any]):
+    _mgr, _kb, backend = _local_wiki_kb_or_404(kb_id)
+    title = str(body.get("title") or "").strip()
+    content = str(body.get("content") or "").strip()
+    page_type = str(body.get("type") or "note").strip()
+    confidence = str(body.get("confidence") or "UNVERIFIED").strip().upper()
+    sources = body.get("sources") if isinstance(body.get("sources"), list) else []
+    if not title or not content:
+        raise HTTPException(status_code=400, detail="title and content are required")
+    try:
+        return await backend.crystallize_wiki_text(
+            kb_id,
+            title,
+            content,
+            page_type=page_type,
+            sources=sources,
+            confidence=confidence,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/jobs/{job_id}/retry", summary="Retry a failed or interrupted ingestion job")
 async def retry_ingestion_job(job_id: str):
     if _prod_enabled():

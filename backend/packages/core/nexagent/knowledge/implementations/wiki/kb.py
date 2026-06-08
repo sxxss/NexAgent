@@ -258,6 +258,25 @@ class WikiKB(
         self._refresh_index(kb_id)
         return {"message": "deleted", "page_id": page_id}
 
+    async def crystallize_wiki_text(
+        self,
+        kb_id: str,
+        title: str,
+        content: str,
+        page_type: str = "note",
+        sources: list[str] | None = None,
+        confidence: str = "UNVERIFIED",
+    ) -> dict:
+        return await self.create_or_update_wiki_page(
+            kb_id,
+            page_type=page_type,
+            title=title,
+            content=content,
+            sources=sources or [],
+            confidence=confidence,
+            manual_edited=True,
+        )
+
     async def _do_index(self, kb_meta: KBMeta, file_meta: FileMeta) -> int:
         parsed_path = Path(file_meta.parsed_path)
         markdown = parsed_path.read_text(encoding="utf-8", errors="replace")
