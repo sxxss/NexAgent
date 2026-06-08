@@ -7,7 +7,10 @@ from pathlib import Path
 from nexagent.knowledge.base import KnowledgeBase
 from nexagent.knowledge.implementations.wiki.compile import WikiCompileMixin
 from nexagent.knowledge.implementations.wiki.constants import CONFIDENCE_VALUES, WIKI_PAGE_TYPES
+from nexagent.knowledge.implementations.wiki.graph import WikiGraphMixin
+from nexagent.knowledge.implementations.wiki.lint import WikiLintMixin
 from nexagent.knowledge.implementations.wiki.links import WikiLinksMixin
+from nexagent.knowledge.implementations.wiki.repair import WikiRepairMixin
 from nexagent.knowledge.implementations.wiki.storage import WikiStorageMixin
 from nexagent.knowledge.models import FileMeta, KBMeta, KBType, SearchResult
 
@@ -16,7 +19,15 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-class WikiKB(WikiCompileMixin, WikiStorageMixin, WikiLinksMixin, KnowledgeBase):
+class WikiKB(
+    WikiGraphMixin,
+    WikiLintMixin,
+    WikiRepairMixin,
+    WikiCompileMixin,
+    WikiStorageMixin,
+    WikiLinksMixin,
+    KnowledgeBase,
+):
     """Markdown-first LLM Wiki knowledge base."""
 
     @property
@@ -150,6 +161,44 @@ class WikiKB(WikiCompileMixin, WikiStorageMixin, WikiLinksMixin, KnowledgeBase):
             return "needs_review"
         return "generated"
 
+    async def accept_generated_wiki_page(self, kb_id: str, page_id: str) -> dict:
+        state = self._load_state(kb_id)
+        candidate = state.get("candidates", {}).get(page_id)
+        if not candidate:
+            raise ValueError(f"Wiki page {page_id} has no generated candidate")
+        path = self._find_page_path(kb_id, page_id)
+        if path is None:
+            raise ValueError(f"Wiki page {page_id} not found")
+        frontmatter = dict(candidate["frontmatter"])
+        frontmatter["manual_edited"] = False
+        frontmatter["updated_at"] = _now()
+        self._write_page(path, frontmatter, candidate["content"])
+        del state["candidates"][page_id]
+        self._save_state(kb_id, state)
+        self._refresh_index(kb_id)
+        return self.get_wiki_page(kb_id, page_id)
+
+    async def discard_generated_wiki_page(self, kb_id: str, page_id: str) -> dict:
+        state = self._load_state(kb_id)
+        if page_id not in state.get("candidates", {}):
+            raise ValueError(f"Wiki page {page_id} has no generated candidate")
+        del state["candidates"][page_id]
+        self._save_state(kb_id, state)
+        return self.get_wiki_page(kb_id, page_id)
+
+    async def delete_wiki_page(self, kb_id: str, page_id: str) -> dict:
+        path = self._find_page_path(kb_id, page_id)
+        if path is None:
+            raise ValueError(f"Wiki page {page_id} not found")
+        state = self._load_state(kb_id)
+        state.get("candidates", {}).pop(page_id, None)
+        state["needs_recompile"] = True
+        state["recompile_reason"] = "page_deleted"
+        self._save_state(kb_id, state)
+        path.unlink(missing_ok=True)
+        self._refresh_index(kb_id)
+        return {"message": "deleted", "page_id": page_id}
+
     async def _do_index(self, kb_meta: KBMeta, file_meta: FileMeta) -> int:
         parsed_path = Path(file_meta.parsed_path)
         markdown = parsed_path.read_text(encoding="utf-8", errors="replace")
@@ -222,4 +271,28 @@ class WikiKB(WikiCompileMixin, WikiStorageMixin, WikiLinksMixin, KnowledgeBase):
         shutil.rmtree(self._db_root(kb_meta.kb_id), ignore_errors=True)
 
     async def _do_delete_file(self, kb_meta: KBMeta, file_meta: FileMeta) -> None:
-        return None
+        removed_pages: list[str] = []
+        for detail in self._iter_page_details(kb_meta.kb_id):
+            sources = list(detail["frontmatter"].get("sources") or [])
+            if file_meta.file_id not in sources:
+                continue
+            if detail["type"] == "source" or sources == [file_meta.file_id]:
+                path = self._find_page_path(kb_meta.kb_id, detail["id"])
+                if path:
+                    path.unlink(missing_ok=True)
+                    removed_pages.append(detail["id"])
+                continue
+            sources = [source for source in sources if source != file_meta.file_id]
+            frontmatter = dict(detail["frontmatter"])
+            frontmatter["sources"] = sources
+            frontmatter["updated_at"] = _now()
+            path = self._find_page_path(kb_meta.kb_id, detail["id"])
+            if path:
+                self._write_page(path, frontmatter, detail["content"])
+        state = self._load_state(kb_meta.kb_id)
+        for page_id in removed_pages:
+            state.get("candidates", {}).pop(page_id, None)
+        state["needs_recompile"] = True
+        state["recompile_reason"] = f"source_deleted:{file_meta.file_id}"
+        self._save_state(kb_meta.kb_id, state)
+        self._refresh_index(kb_meta.kb_id)

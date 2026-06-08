@@ -137,3 +137,53 @@ async def test_wiki_kb_indexes_markdown_into_pages_and_searches(monkeypatch):
     finally:
         reset_manager()
         shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_graph_lint_and_candidate_actions():
+    from nexagent.knowledge.manager import reset_manager
+
+    work_dir = _work_dir("graph-lint")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+        page = await backend.create_or_update_wiki_page(
+            kb_meta.kb_id,
+            page_type="topic",
+            title="Alpha",
+            content="# Alpha\n\nLinks to [[Beta]] and [[Missing]].",
+            sources=["file-1"],
+            confidence="UNVERIFIED",
+        )
+        await backend.create_or_update_wiki_page(
+            kb_meta.kb_id,
+            page_type="entity",
+            title="Beta",
+            content="# Beta\n\nBack to [[Alpha]].",
+            sources=["file-1"],
+            confidence="EXTRACTED",
+        )
+        await backend.update_wiki_page(kb_meta.kb_id, page["id"], "# Alpha\n\nManual.")
+        await backend.create_or_update_wiki_page(
+            kb_meta.kb_id,
+            page_type="topic",
+            title="Alpha",
+            content="# Alpha\n\nCandidate mentions [[Beta]].",
+            confidence="INFERRED",
+        )
+
+        graph = backend.get_wiki_graph(kb_meta.kb_id)
+        lint = backend.lint_wiki(kb_meta.kb_id)
+        accepted = await backend.accept_generated_wiki_page(kb_meta.kb_id, page["id"])
+
+        assert graph["stats"]["total_nodes"] == 2
+        assert any(edge["signals"]["wikilink"] for edge in graph["edges"])
+        assert any(issue["type"] == "source_missing" for issue in lint["issues"])
+        assert any(issue["type"] == "needs_review" for issue in lint["issues"])
+        assert accepted["candidate"] is None
+        assert "Candidate mentions" in accepted["content"]
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
