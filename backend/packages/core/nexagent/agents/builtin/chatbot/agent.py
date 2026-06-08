@@ -151,10 +151,10 @@ async def _prepare_context_skills(context: BaseContext) -> None:
 
         loader = SkillLoader()
         selected_skills = loader.load_selected(context.skills) if context.skills else []
-        if selected_skills:
-            runtime_skills, issues = expand_skill_dependencies(selected_skills, loader=loader)
-        else:
-            runtime_skills, issues = loader.load_enabled(), []
+        if not selected_skills:
+            prepare_skill_runtime(context.thread_id, [])
+            return
+        runtime_skills, issues = expand_skill_dependencies(selected_skills, loader=loader)
         for issue in issues:
             logger.warning("Skill runtime dependency issue for thread=%s: %s", context.thread_id, issue.message)
         prepare_skill_runtime(context.thread_id, runtime_skills)
@@ -207,10 +207,11 @@ def _build_system_prompt(context: BaseContext) -> str:
         "directory_tree, read_file, write_file, or edit_file against managed Skill storage."
         "\n6. Generic file tools are only for user workspace/repository files unrelated to managed Skills, or when "
         "the user explicitly asks you to inspect project files outside the Skill manager."
-        "\n7. Runtime Skill usage is progressive: enabled or selected Skills are listed later in this prompt with "
-        "`/mnt/skills` locations. Read the matching SKILL.md only when the user's request matches its description, "
-        "then read referenced files on demand. Category paths such as `/mnt/skills/public/<skill-id>` and "
-        "`/mnt/skills/custom/<skill-id>` are compatibility aliases for imported Skills."
+        "\n7. Runtime Skill usage is progressive: Only Skills configured on the current Agent or run are listed "
+        "later in this prompt with `/mnt/skills` locations. Read the matching SKILL.md only when the user's "
+        "request matches its description, then read referenced files on demand. Category paths such as "
+        "`/mnt/skills/public/<skill-id>` and `/mnt/skills/custom/<skill-id>` are compatibility aliases for "
+        "imported Skills."
         "\n8. Bundled scripts are ordinary files under scripts/. When SKILL.md instructs script execution, run them "
         "from bash using absolute paths under `/mnt/skills/<skill-id>/scripts/...`."
         "\n\nSkill evolution policy: After completing a task, consider creating or updating a Skill when the task "
@@ -272,7 +273,7 @@ def _build_system_prompt(context: BaseContext) -> str:
         if context.skills:
             loaded, _issues = expand_skill_dependencies(loader.load_selected(context.skills), loader=loader)
         else:
-            loaded = loader.load_enabled()
+            loaded = []
         if not loaded:
             return base
         skill_section = loader.to_system_prompt_blocks(loaded)
