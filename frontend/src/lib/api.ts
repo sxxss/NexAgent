@@ -1249,6 +1249,19 @@ export async function fetchWikiKbLint(kbId: string): Promise<WikiLintPayload> {
   return res.json();
 }
 
+export async function crystallizeWikiKbPage(
+  kbId: string,
+  body: { title: string; content: string; type?: WikiPageType; sources?: string[]; confidence?: string },
+): Promise<WikiPageDetail> {
+  const res = await fetch(`${BASE}/knowledge/${kbId}/wiki/crystallize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await apiErrorMessage(res));
+  return res.json();
+}
+
 export async function updateKBQueryConfig(kbId: string, body: RetrievalConfig): Promise<KnowledgeQueryConfigResponse> {
   const res = await fetch(`${BASE}/knowledge/${kbId}/query-config`, {
     method: "PATCH",
@@ -1569,12 +1582,12 @@ export async function synthesizeSpeech(
 export interface WikiPage {
   id: string;
   title: string;
-  tags: string[];
-  thread_id: string;
+  tags?: string[];
+  thread_id?: string;
   kb_id?: string | null;
   file_id?: string | null;
-  created_at: number;
-  char_count: number;
+  created_at?: number;
+  char_count?: number;
   warning?: string;
   content?: string;
 }

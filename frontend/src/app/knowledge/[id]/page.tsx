@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
+  BookOpen,
   CheckCircle,
   ChevronDown,
   ChevronRight,
@@ -61,6 +62,7 @@ import {
 } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { WikiWorkbench } from "@/components/wiki/WikiWorkbench";
 import { cn, formatBytes, formatDate } from "@/lib/utils";
 
 interface ProviderModelOption {
@@ -283,12 +285,72 @@ export default function KBDetailPage() {
   }
   if (!kb) return null;
 
+  const isWiki = kb.kb_type === "wiki";
   const isMilvus = kb.kb_type === "milvus";
   const indexedCount = files.filter((file) => file.status === "indexed").length;
   const pendingCount = files.filter((file) =>
     ["uploaded", "parsed", "parse_error", "index_error", "error_graphing", "indexed_with_graph_degraded"].includes(file.status),
   ).length;
   const activeJob = jobs.find((job) => job.status === "queued" || job.status === "running");
+
+  if (isWiki) {
+    return (
+      <div className="flex h-full min-w-0 flex-col bg-slate-100">
+        <header className="border-b border-slate-200 bg-white px-6 py-4">
+          <div className="mb-3 flex items-center gap-1.5 text-xs text-slate-400">
+            <button onClick={() => router.push("/knowledge")} className="hover:text-slate-600">知识库</button>
+            <ChevronRight size={11} />
+            <span className="text-slate-600">{kb.name}</span>
+          </div>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
+                <BookOpen size={19} />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-slate-950">{kb.name}</h1>
+                <p className="mt-1 text-sm text-slate-500">{kb.description || "未填写描述"}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Badge variant="warning">LLM Wiki</Badge>
+                  <Badge variant="secondary">{files.length} 个文件</Badge>
+                  <Badge variant="success">{indexedCount} 已编译</Badge>
+                  {activeJob ? <Badge variant="info">处理中 {taskCompleted(activeJob) + taskFailed(activeJob)}/{activeJob.total_steps}</Badge> : null}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={handleProcessAll} disabled={!pendingCount || uploading} className={cn(outlineButton, pendingCount && "border-amber-200 text-amber-800")}>
+                <ListChecks size={14} />
+                编译待处理 {pendingCount || ""}
+              </button>
+              <button type="button" onClick={() => router.push(`/knowledge/${id}/wiki/graph`)} className={cn(outlineButton, "border-amber-200 text-amber-800")}>
+                <Network size={14} />
+                图谱浏览
+              </button>
+              <button type="button" onClick={() => router.push("/knowledge")} className={outlineButton}><ArrowLeft size={14} />返回</button>
+              <button type="button" onClick={() => void loadData()} className={iconButton}><RefreshCw size={14} /></button>
+            </div>
+          </div>
+        </header>
+
+        <main className="min-h-0 flex-1 overflow-y-auto p-6">
+          <div className="grid gap-6 xl:grid-cols-[minmax(320px,0.42fr)_minmax(0,1fr)]">
+            <section className="space-y-4">
+              <FileUploadCard uploading={uploading} inputRef={fileInputRef} onUpload={handleUpload} />
+              <UploadResultList results={uploadResults} />
+              <FileList files={files} processingIds={processingIds} onProcess={handleProcess} onPreview={handlePreview} onDelete={handleDelete} />
+              {preview || previewLoading ? <PreviewPanel preview={preview} loading={previewLoading} onClose={() => setPreview(null)} /> : null}
+              {jobs.length ? <JobHistory jobs={jobs.slice(0, 5)} onRetry={(jobId) => void retryIngestionJob(jobId).then(loadData)} onCancel={(taskId) => void cancelTask(taskId).then(loadData)} /> : null}
+            </section>
+
+            <section className="min-w-0">
+              <WikiWorkbench kb={kb} files={files} reload={loadData} />
+            </section>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-slate-100">
@@ -830,6 +892,7 @@ function ProbeNotice({ result, error }: { result: ModelProbeResult | null; error
 
 function defaultQueryConfig(kbType: KBMeta["kb_type"]): RetrievalConfig {
   if (kbType === "lightrag") return { mode: "lightrag_hybrid", search_mode: "lightrag_hybrid", final_top_k: 5, recall_top_k: 30, similarity_threshold: 0 };
+  if (kbType === "wiki") return { mode: "wiki", search_mode: "wiki", final_top_k: 10, recall_top_k: 30, similarity_threshold: 0 };
   return { mode: "hybrid", search_mode: "hybrid", final_top_k: 5, recall_top_k: 30, similarity_threshold: 0, vector_weight: 0.7, keyword_weight: 0.3, bm25_weight: 0.3, bm25_top_k: 30, bm25_drop_ratio_search: 0, use_reranker: false };
 }
 
@@ -841,6 +904,7 @@ function retrievalModeLabel(mode: string) {
     lightrag_local: "LightRAG Local",
     lightrag_global: "LightRAG Global",
     lightrag_hybrid: "LightRAG Hybrid",
+    wiki: "Wiki 检索",
   }[mode] ?? mode;
 }
 

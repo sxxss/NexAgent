@@ -27,16 +27,22 @@ export function WikiModal({
 
   if (!open) return null;
 
+  const wikiKbs = kbs.filter((kb) => kb.kb_type === "wiki");
+
   const run = async () => {
     if (!threadId) {
       setError("当前没有可沉淀的对话");
+      return;
+    }
+    if (!kbId) {
+      setError("请选择一个 Wiki 知识库");
       return;
     }
     setLoading(true);
     setError(null);
     setPage(null);
     try {
-      const result = await crystallizeWiki({ thread_id: threadId, kb_id: kbId || undefined, model });
+      const result = await crystallizeWiki({ thread_id: threadId, kb_id: kbId, model });
       setPage(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "沉淀失败");
@@ -76,8 +82,8 @@ export function WikiModal({
             onChange={(e) => setKbId(e.target.value)}
             className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-indigo-300"
           >
-            <option value="">不写入知识库（仅生成页面）</option>
-            {kbs.map((kb) => (
+            <option value="">选择 Wiki 知识库</option>
+            {wikiKbs.map((kb) => (
               <option key={kb.kb_id} value={kb.kb_id}>
                 写入：{kb.name}
               </option>
@@ -86,7 +92,7 @@ export function WikiModal({
           <button
             type="button"
             onClick={() => void run()}
-            disabled={loading}
+            disabled={loading || !wikiKbs.length}
             className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#4f46e5] px-3.5 text-xs font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-50"
           >
             {loading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
@@ -106,8 +112,11 @@ export function WikiModal({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
           {error ? <div className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-600">{error}</div> : null}
+          {!wikiKbs.length && !error ? (
+            <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">当前没有可写入的 Wiki 知识库</div>
+          ) : null}
           {!page && !error && !loading ? (
-            <div className="mt-12 text-center text-sm text-slate-400">选择是否写入知识库，然后点击「开始沉淀」</div>
+            <div className="mt-12 text-center text-sm text-slate-400">选择 Wiki 知识库，然后点击「开始沉淀」</div>
           ) : null}
           {loading ? (
             <div className="mt-12 flex flex-col items-center gap-3 text-sm text-slate-400">
