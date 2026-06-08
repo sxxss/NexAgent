@@ -17,7 +17,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
-  PanelRightOpen,
   Pencil,
   Plus,
   Search,
@@ -65,7 +64,6 @@ import { cn } from "@/lib/utils";
 let idSeed = 0;
 const uid = () => `local-${++idSeed}`;
 const CONVERSATION_COLLAPSED_KEY = "nexagent.home.conversationCollapsed";
-const INSPECTOR_COLLAPSED_KEY = "nexagent.home.inspectorCollapsed";
 const CHAT_PROFILES_KEY = "nexagent.home.chatProfiles";
 const SELECTED_PROFILE_KEY = "nexagent.home.selectedProfileId";
 const SELECTED_CHAT_MODE_KEY = "nexagent.home.selectedChatMode";
@@ -405,9 +403,11 @@ interface ChatProfile {
   subagentModel: string;
 }
 
-function readStoredBool(key: string) {
-  if (typeof window === "undefined") return false;
-  return window.localStorage.getItem(key) === "1";
+function readStoredBool(key: string, fallback = false) {
+  if (typeof window === "undefined") return fallback;
+  const stored = window.localStorage.getItem(key);
+  if (stored === null) return fallback;
+  return stored === "1";
 }
 
 function defaultProfile(): ChatProfile {
@@ -494,7 +494,7 @@ export default function ChatPage() {
   const [showThinkingPicker, setShowThinkingPicker] = useState(false);
   const [storageReady, setStorageReady] = useState(false);
   const [conversationCollapsed, setConversationCollapsed] = useState(false);
-  const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(true);
   const [showVoiceCall, setShowVoiceCall] = useState(false);
   const [showWiki, setShowWiki] = useState(false);
   const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
@@ -544,7 +544,6 @@ export default function ChatPage() {
       setSelectedProfileId(window.localStorage.getItem(SELECTED_PROFILE_KEY) || "default");
       setProfiles(readStoredProfiles());
       setConversationCollapsed(readStoredBool(CONVERSATION_COLLAPSED_KEY));
-      setInspectorCollapsed(readStoredBool(INSPECTOR_COLLAPSED_KEY));
       setStorageReady(true);
     }, 0);
     return () => window.clearTimeout(timer);
@@ -577,11 +576,6 @@ export default function ChatPage() {
   useEffect(() => {
     if (storageReady) window.localStorage.setItem(CONVERSATION_COLLAPSED_KEY, conversationCollapsed ? "1" : "0");
   }, [conversationCollapsed, storageReady]);
-
-  useEffect(() => {
-    if (storageReady) window.localStorage.setItem(INSPECTOR_COLLAPSED_KEY, inspectorCollapsed ? "1" : "0");
-  }, [inspectorCollapsed, storageReady]);
-
 
   useEffect(() => {
     const handler = (event: MouseEvent) => {
@@ -831,11 +825,11 @@ export default function ChatPage() {
   );
 
   const layoutClass = cn(
-    "grid h-full min-w-0 grid-cols-1 gap-4 overflow-hidden p-4",
-    conversationCollapsed && inspectorCollapsed && "lg:grid-cols-[64px_1fr] xl:grid-cols-[64px_1fr_64px]",
-    conversationCollapsed && !inspectorCollapsed && "lg:grid-cols-[64px_1fr] xl:grid-cols-[64px_1fr_300px]",
-    !conversationCollapsed && inspectorCollapsed && "lg:grid-cols-[280px_1fr] xl:grid-cols-[280px_1fr_64px]",
-    !conversationCollapsed && !inspectorCollapsed && "lg:grid-cols-[280px_1fr] xl:grid-cols-[280px_1fr_300px]",
+    "grid h-full min-w-0 grid-cols-1 gap-3 overflow-hidden p-3 md:gap-4 md:p-4",
+    conversationCollapsed && inspectorCollapsed && "lg:grid-cols-[56px_minmax(0,1fr)]",
+    conversationCollapsed && !inspectorCollapsed && "lg:grid-cols-[56px_minmax(0,1fr)] xl:grid-cols-[56px_minmax(0,1fr)_320px]",
+    !conversationCollapsed && inspectorCollapsed && "lg:grid-cols-[236px_minmax(0,1fr)]",
+    !conversationCollapsed && !inspectorCollapsed && "lg:grid-cols-[236px_minmax(0,1fr)] xl:grid-cols-[236px_minmax(0,1fr)_320px]",
   );
 
   return (
@@ -999,6 +993,20 @@ export default function ChatPage() {
             <div className="ml-auto flex items-center gap-2">
               <button
                 type="button"
+                onClick={() => setInspectorCollapsed((value) => !value)}
+                title={inspectorCollapsed ? "编辑本次运行配置" : "隐藏配置栏"}
+                className={cn(
+                  "hidden h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold shadow-sm xl:inline-flex",
+                  inspectorCollapsed
+                    ? "border-slate-200 bg-white/80 text-slate-700 hover:bg-white"
+                    : "border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100",
+                )}
+              >
+                {inspectorCollapsed ? <SlidersHorizontal size={14} /> : <PanelRightClose size={14} />}
+                {inspectorCollapsed ? "配置" : "隐藏配置"}
+              </button>
+              <button
+                type="button"
                 onClick={() => setShowVoiceCall(true)}
                 title="发起语音通话"
                 className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-600 shadow-sm hover:bg-emerald-100"
@@ -1047,7 +1055,7 @@ export default function ChatPage() {
               onStarter={(prompt) => void send(prompt)}
             />
           ) : (
-            <div className="mx-auto max-w-3xl px-5 pt-5 pb-40">
+            <div className="mx-auto w-full max-w-5xl px-5 pt-5 pb-40">
               {messages.map((message) => (
                 <MessageBubble key={message.id} message={message} />
               ))}
@@ -1058,8 +1066,8 @@ export default function ChatPage() {
 
         {/* Floating composer — overlays the message scroll area instead of a full bottom bar. */}
         <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 px-4">
-          <div className="pointer-events-auto mx-auto max-w-3xl">
-            <div className="mb-1.5 flex items-center justify-end">
+          <div className="pointer-events-auto mx-auto w-full max-w-5xl">
+            <div className="mb-1 flex items-center justify-end">
               <ProfilePicker
                 refNode={profilePickerRef}
                 open={showProfilePicker}
@@ -1176,11 +1184,11 @@ function ConversationPanel({
 
   if (collapsed) {
     return (
-      <aside className="hidden min-h-0 flex-col items-center overflow-hidden rounded-3xl border border-white/80 bg-white/64 py-4 shadow-[0_18px_46px_rgba(83,101,132,0.10)] backdrop-blur lg:flex">
+      <aside className="hidden min-h-0 flex-col items-center overflow-hidden rounded-3xl border border-white/80 bg-white/64 py-3 shadow-[0_18px_46px_rgba(83,101,132,0.10)] backdrop-blur lg:flex">
         <button
           type="button"
           onClick={onToggle}
-          className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#eef2ff] text-[#4f46e5] hover:bg-[#e0e7ff]"
+          className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[#eef2ff] text-[#4f46e5] hover:bg-[#e0e7ff]"
           title="展开对话记录"
           aria-label="展开对话记录"
         >
@@ -1195,7 +1203,7 @@ function ConversationPanel({
         <button
           type="button"
           onClick={onNew}
-          className="mt-4 flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white/80 text-slate-600 hover:bg-white"
+          className="mt-4 flex h-9 w-9 items-center justify-center rounded-2xl border border-slate-200 bg-white/80 text-slate-600 hover:bg-white"
           title="新对话"
           aria-label="新对话"
         >
@@ -1207,7 +1215,7 @@ function ConversationPanel({
 
   return (
     <aside className="hidden min-h-0 flex-col overflow-hidden rounded-3xl border border-white/80 bg-white/64 shadow-[0_18px_46px_rgba(83,101,132,0.10)] backdrop-blur lg:flex">
-      <div className="border-b border-slate-200/70 p-4">
+      <div className="border-b border-slate-200/70 p-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
             <History size={15} className="text-slate-400" />
@@ -1217,7 +1225,7 @@ function ConversationPanel({
             <button
               type="button"
               onClick={onToggle}
-              className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-slate-800"
+              className="flex h-7 w-7 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-slate-800"
               title="折叠对话记录"
               aria-label="折叠对话记录"
             >
@@ -1226,7 +1234,7 @@ function ConversationPanel({
             <button
               type="button"
               onClick={onNew}
-              className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-slate-800"
+              className="flex h-7 w-7 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-slate-800"
               title="新对话"
               aria-label="新对话"
             >
@@ -1234,18 +1242,18 @@ function ConversationPanel({
             </button>
           </div>
         </div>
-        <div className="mt-3 flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white/75 px-3">
+        <div className="mt-3 flex h-8 items-center gap-2 rounded-xl border border-slate-200 bg-white/75 px-2.5">
           <Search size={13} className="shrink-0 text-slate-400" />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="搜索对话"
-            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
+            className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-slate-400"
           />
         </div>
       </div>
 
-      <div className="no-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+      <div className="no-scrollbar min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2.5">
         {filtered.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-200 bg-white/55 p-5 text-center text-sm leading-6 text-slate-400">
             {query ? "没有匹配的对话" : "发送第一条消息后，对话会自动保存在这里。"}
@@ -1261,16 +1269,12 @@ function ConversationPanel({
                   : "border-transparent hover:border-slate-200 hover:bg-white/70",
               )}
             >
-              <button type="button" onClick={() => onSelect(conversation.id)} className="min-w-0 flex-1 px-3 py-3 text-left">
+              <button type="button" onClick={() => onSelect(conversation.id)} className="min-w-0 flex-1 px-2.5 py-2 text-left">
                 <span className="block truncate text-sm font-semibold text-slate-800">
                   {conversation.title || "未命名对话"}
                 </span>
-                <span className="mt-1 block truncate text-xs text-slate-500">
-                  {conversation.last_message || conversation.agent_name}
-                </span>
-                <span className="mt-2 block text-[10px] text-slate-400">{conversation.message_count} 条消息</span>
               </button>
-              <div className="mt-2 hidden shrink-0 gap-0.5 group-hover:flex">
+              <div className="mt-1.5 hidden shrink-0 gap-0.5 group-hover:flex">
                 <button
                   type="button"
                   onClick={() => onRename(conversation)}
@@ -1409,26 +1413,7 @@ function Inspector({
       : "全部";
   const subagentModelLabel = subagentModelStrategyLabel(profile.subagentModelStrategy, profile.subagentModel, models);
 
-  if (collapsed) {
-    return (
-      <aside className="hidden min-h-0 flex-col items-center overflow-hidden rounded-3xl border border-white/80 bg-white/64 py-4 shadow-[0_18px_46px_rgba(83,101,132,0.10)] backdrop-blur xl:flex">
-        <button
-          type="button"
-          onClick={onToggle}
-          className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#eef2ff] text-[#4f46e5] hover:bg-[#e0e7ff]"
-          title="展开模型能力"
-          aria-label="展开模型能力"
-        >
-          <PanelRightOpen size={18} />
-        </button>
-        <div className="mt-5 flex min-h-0 flex-1 flex-col items-center gap-3">
-          <SlidersHorizontal size={18} className="text-slate-400" />
-          <Zap size={18} className="text-slate-400" />
-          <Database size={18} className="text-slate-400" />
-        </div>
-      </aside>
-    );
-  }
+  if (collapsed) return null;
 
   return (
     <aside className="hidden min-h-0 flex-col overflow-hidden rounded-3xl border border-white/80 bg-white/64 shadow-[0_18px_46px_rgba(83,101,132,0.10)] backdrop-blur xl:flex">
@@ -1876,10 +1861,10 @@ function ProfilePicker({
       <button
         type="button"
         onClick={() => onOpenChange(!open)}
-        className="inline-flex h-8 items-center gap-2 rounded-xl border border-slate-200 bg-white/80 px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-white"
+        className="inline-flex h-7 max-w-48 items-center gap-1.5 rounded-xl border border-white/70 bg-white/60 px-2.5 text-[11px] font-semibold text-slate-600 shadow-sm backdrop-blur-xl hover:bg-white/80"
       >
-        <SlidersHorizontal size={13} className="text-slate-500" />
-        {selectedProfile.name}
+        <SlidersHorizontal size={12} className="shrink-0 text-slate-500" />
+        <span className="truncate">{profilePickerLabel(selectedProfile)}</span>
         <ChevronDown size={12} className="text-slate-400" />
       </button>
       {open ? (
@@ -1939,6 +1924,11 @@ function ProfilePicker({
       ) : null}
     </div>
   );
+}
+
+function profilePickerLabel(profile: ChatProfile) {
+  if (profile.id === "default" || profile.useAgentDefaults) return "Agent 默认";
+  return profile.name;
 }
 
 function ConfigBlock({
