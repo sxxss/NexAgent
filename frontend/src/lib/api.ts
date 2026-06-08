@@ -197,7 +197,7 @@ export interface WikiPageSummary {
 export interface WikiPageDetail extends WikiPageSummary {
   content: string;
   frontmatter: Record<string, unknown>;
-  candidate?: { frontmatter: Record<string, unknown>; content: string; created_at: string } | null;
+  candidate?: { frontmatter: Record<string, unknown>; content: string; created_at: string; reason?: string } | null;
 }
 
 export interface WikiGraphPayload {
@@ -216,9 +216,18 @@ export interface WikiLintPayload {
     action?: string;
     repairable?: boolean;
     repair_action?: string;
+    target?: string;
+    source_file_id?: string;
   }>;
   summary: { issue_count?: number; page_count?: number };
   compile_status?: Record<string, unknown>;
+}
+
+export interface WikiRepairResult {
+  repaired_count: number;
+  candidate_count: number;
+  skipped_issues: Array<{ id: string; reason: string }>;
+  failed_issues: Array<{ id: string; error: string }>;
 }
 
 export interface FileMeta {
@@ -1246,6 +1255,24 @@ export async function updateWikiKbPage(
   return res.json();
 }
 
+export async function deleteWikiKbPage(kbId: string, pageId: string): Promise<{ message: string; page_id: string }> {
+  const res = await fetch(`${BASE}/knowledge/${kbId}/wiki/pages/${encodeURIComponent(pageId)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await apiErrorMessage(res));
+  return res.json();
+}
+
+export async function acceptGeneratedWikiKbPage(kbId: string, pageId: string): Promise<WikiPageDetail> {
+  const res = await fetch(`${BASE}/knowledge/${kbId}/wiki/pages/${encodeURIComponent(pageId)}/accept-generated`, { method: "POST" });
+  if (!res.ok) throw new Error(await apiErrorMessage(res));
+  return res.json();
+}
+
+export async function discardGeneratedWikiKbPage(kbId: string, pageId: string): Promise<WikiPageDetail> {
+  const res = await fetch(`${BASE}/knowledge/${kbId}/wiki/pages/${encodeURIComponent(pageId)}/discard-generated`, { method: "POST" });
+  if (!res.ok) throw new Error(await apiErrorMessage(res));
+  return res.json();
+}
+
 export async function fetchWikiKbGraph(kbId: string, params: Record<string, string> = {}): Promise<WikiGraphPayload> {
   const query = new URLSearchParams(params);
   const suffix = query.toString() ? `?${query}` : "";
@@ -1256,6 +1283,32 @@ export async function fetchWikiKbGraph(kbId: string, params: Record<string, stri
 
 export async function fetchWikiKbLint(kbId: string): Promise<WikiLintPayload> {
   const res = await fetch(`${BASE}/knowledge/${kbId}/wiki/lint`);
+  if (!res.ok) throw new Error(await apiErrorMessage(res));
+  return res.json();
+}
+
+export async function repairWikiKbIssues(
+  kbId: string,
+  body: { issue_ids?: string[]; issue_types?: string[]; page_ids?: string[]; force?: boolean } = {},
+): Promise<WikiRepairResult> {
+  const res = await fetch(`${BASE}/knowledge/${kbId}/wiki/repair`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await apiErrorMessage(res));
+  return res.json();
+}
+
+export async function compileWikiKb(
+  kbId: string,
+  body: { file_ids?: string[]; force?: boolean; retry_failed?: boolean } = {},
+): Promise<Record<string, unknown>> {
+  const res = await fetch(`${BASE}/knowledge/${kbId}/wiki/compile`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
   if (!res.ok) throw new Error(await apiErrorMessage(res));
   return res.json();
 }

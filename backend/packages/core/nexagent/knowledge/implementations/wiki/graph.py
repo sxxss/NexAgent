@@ -95,6 +95,7 @@ class WikiGraphMixin:
                 "total_nodes": len(nodes),
                 "total_edges": len(display_edges),
                 "raw_edge_count": len(edges),
+                "display_edge_count": len(display_edges),
                 "communities": len(set(communities.values())) if communities else 0,
             },
         }
@@ -117,7 +118,29 @@ class WikiGraphMixin:
             return ordered[:edge_limit]
         explicit = [edge for edge in ordered if edge.get("signals", {}).get("wikilink")]
         weak = [edge for edge in ordered if not edge.get("signals", {}).get("wikilink")]
-        return (explicit + weak)[:edge_limit]
+        selected = explicit[:edge_limit]
+        if len(selected) >= edge_limit:
+            return selected
+
+        node_counts: dict[str, int] = defaultdict(int)
+        for edge in selected:
+            node_counts[edge["source"]] += 1
+            node_counts[edge["target"]] += 1
+
+        selected_keys = {tuple(sorted((edge["source"], edge["target"]))) for edge in selected}
+        for edge in weak:
+            if len(selected) >= edge_limit:
+                break
+            key = tuple(sorted((edge["source"], edge["target"])))
+            if key in selected_keys:
+                continue
+            if node_counts[edge["source"]] >= 3 or node_counts[edge["target"]] >= 3:
+                continue
+            selected.append(edge)
+            selected_keys.add(key)
+            node_counts[edge["source"]] += 1
+            node_counts[edge["target"]] += 1
+        return selected
 
     def _communities(self, node_ids: list[str], edges: list[dict]) -> dict[str, int]:
         adjacency: dict[str, set[str]] = defaultdict(set)

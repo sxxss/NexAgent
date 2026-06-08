@@ -1127,6 +1127,22 @@ async def lint_wiki(kb_id: str):
     return backend.lint_wiki(kb_id)
 
 
+@router.post("/{kb_id}/wiki/repair", summary="AI repair Wiki health issues")
+async def repair_wiki(kb_id: str, body: dict[str, Any] | None = None):
+    _mgr, _kb, backend = _local_wiki_kb_or_404(kb_id)
+    payload = body or {}
+    for key in ("issue_ids", "issue_types", "page_ids"):
+        if payload.get(key) is not None and not isinstance(payload.get(key), list):
+            raise HTTPException(status_code=400, detail=f"{key} must be a list")
+    return await backend.repair_wiki(
+        kb_id,
+        issue_ids=payload.get("issue_ids"),
+        issue_types=payload.get("issue_types"),
+        page_ids=payload.get("page_ids"),
+        force=bool(payload.get("force")),
+    )
+
+
 @router.post("/{kb_id}/wiki/crystallize", summary="Crystallize Markdown into Wiki")
 async def crystallize_wiki(kb_id: str, body: dict[str, Any]):
     _mgr, _kb, backend = _local_wiki_kb_or_404(kb_id)

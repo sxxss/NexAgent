@@ -306,3 +306,100 @@ async def test_wiki_graph_lint_and_candidate_actions():
     finally:
         reset_manager()
         shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_ai_repair_uses_llm_and_creates_candidate(monkeypatch):
+    from nexagent.knowledge.manager import reset_manager
+
+    calls = []
+
+    class FakeResponse:
+        content = """
+        {
+          "repairs": [
+            {
+              "page_id": "topic:alpha",
+              "content": "# Alpha\\n\\nAI repaired content with [[Beta]].",
+              "confidence": "INFERRED",
+              "reason": "补全断链和复核内容"
+            }
+          ]
+        }
+        """
+
+    class FakeLLM:
+        async def ainvoke(self, messages):
+            calls.append(messages)
+            return FakeResponse()
+
+    async def fake_load_chat_model_async(model_name=None, **kwargs):
+        calls.append((model_name, kwargs))
+        return FakeLLM()
+
+    work_dir = _work_dir("ai-repair")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+        await backend.create_or_update_wiki_page(
+            kb_meta.kb_id,
+            page_type="topic",
+            title="Alpha",
+            content="# Alpha\n\nBroken link [[Missing]].",
+            sources=[],
+            confidence="UNVERIFIED",
+        )
+        monkeypatch.setattr("nexagent.models.factory.load_chat_model_async", fake_load_chat_model_async)
+
+        result = await backend.repair_wiki(kb_meta.kb_id, issue_types=["needs_review"])
+        detail = backend.get_wiki_page(kb_meta.kb_id, "topic:alpha")
+
+        assert calls[0][1]["streaming"] is False
+        assert result["candidate_count"] == 1
+        assert result["repaired_count"] == 1
+        assert detail["content"] == "# Alpha\n\nBroken link [[Missing]]."
+        assert detail["candidate"]["content"] == "# Alpha\n\nAI repaired content with [[Beta]]."
+        assert detail["candidate"]["reason"] == "补全断链和复核内容"
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_graph_core_mode_caps_weak_inferred_degree():
+    from nexagent.knowledge.manager import reset_manager
+
+    work_dir = _work_dir("graph-core")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+        for index in range(6):
+            await backend.create_or_update_wiki_page(
+                kb_meta.kb_id,
+                page_type="topic",
+                title=f"Topic {index}",
+                content=f"# Topic {index}\n\n同一来源的弱关系页面。",
+                sources=["shared-source"],
+                confidence="INFERRED",
+            )
+
+        graph = backend.get_wiki_graph(kb_meta.kb_id, max_edges=15, include_weak=False)
+        weak_graph = backend.get_wiki_graph(kb_meta.kb_id, max_edges=15, include_weak=True)
+
+        degrees: dict[str, int] = {}
+        for edge in graph["edges"]:
+            degrees[edge["source"]] = degrees.get(edge["source"], 0) + 1
+            degrees[edge["target"]] = degrees.get(edge["target"], 0) + 1
+
+        assert weak_graph["stats"]["raw_edge_count"] == 15
+        assert graph["stats"]["raw_edge_count"] == 15
+        assert graph["stats"]["display_edge_count"] == len(graph["edges"])
+        assert len(graph["edges"]) < len(weak_graph["edges"])
+        assert max(degrees.values()) <= 3
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)

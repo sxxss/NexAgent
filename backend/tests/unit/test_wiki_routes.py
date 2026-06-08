@@ -245,3 +245,50 @@ async def test_wiki_pages_route_delegates_to_backend(monkeypatch):
         "status": "generated",
         "source_file_id": "file-1",
     }
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_repair_route_delegates_to_backend(monkeypatch):
+    calls = {}
+
+    class FakeBackend:
+        async def repair_wiki(self, kb_id, issue_ids=None, issue_types=None, page_ids=None, force=False):
+            calls.update(
+                {
+                    "kb_id": kb_id,
+                    "issue_ids": issue_ids,
+                    "issue_types": issue_types,
+                    "page_ids": page_ids,
+                    "force": force,
+                }
+            )
+            return {"candidate_count": 2}
+
+    class FakeManager:
+        def get_kb(self, kb_id):
+            return SimpleNamespace(kb_id=kb_id, kb_type=SimpleNamespace(value="wiki"))
+
+        def _find_backend(self, kb_id):
+            return FakeBackend()
+
+    monkeypatch.setattr(knowledge, "_mgr", lambda: FakeManager())
+
+    result = await knowledge.repair_wiki(
+        "wiki-1",
+        {
+            "issue_ids": ["issue-a"],
+            "issue_types": ["needs_review"],
+            "page_ids": ["topic:alpha"],
+            "force": True,
+        },
+    )
+
+    assert result == {"candidate_count": 2}
+    assert calls == {
+        "kb_id": "wiki-1",
+        "issue_ids": ["issue-a"],
+        "issue_types": ["needs_review"],
+        "page_ids": ["topic:alpha"],
+        "force": True,
+    }

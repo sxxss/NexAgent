@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, BookOpen, Loader2, RefreshCw } from "lucide-react";
 import { fetchKBs, fetchWikiKbGraph, type KBMeta, type WikiGraphPayload } from "@/lib/api";
-import { WikiGraphPanel } from "@/components/wiki/WikiGraphPanel";
+import { type WikiGraphOptions, WikiGraphPanel } from "@/components/wiki/WikiGraphPanel";
 import { Badge } from "@/components/ui/badge";
 
 const headerButton = "inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50";
@@ -16,6 +16,7 @@ export default function WikiGraphPage() {
   const router = useRouter();
   const [kb, setKb] = useState<KBMeta | null>(null);
   const [graph, setGraph] = useState<WikiGraphPayload | null>(null);
+  const [graphOptions, setGraphOptions] = useState<WikiGraphOptions>({ q: "", maxEdges: 240, includeWeak: true });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -23,7 +24,7 @@ export default function WikiGraphPage() {
     setError("");
     setLoading(true);
     try {
-      const [kbs, nextGraph] = await Promise.all([fetchKBs(), fetchWikiKbGraph(id, { max_edges: "240", include_weak: "true" })]);
+      const [kbs, nextGraph] = await Promise.all([fetchKBs(), fetchWikiKbGraph(id, graphParams(graphOptions))]);
       setKb(kbs.find((item) => item.kb_id === id) ?? null);
       setGraph(nextGraph);
     } catch (err) {
@@ -31,7 +32,7 @@ export default function WikiGraphPage() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [graphOptions, id]);
 
   useEffect(() => { void loadData(); }, [loadData]);
 
@@ -74,8 +75,25 @@ export default function WikiGraphPage() {
             <p className="mt-3 text-sm font-semibold text-slate-900">当前知识库不是 Wiki 类型</p>
           </div>
         ) : null}
-        {!loading && !unsupported && !error ? <WikiGraphPanel graph={graph} onReload={loadData} /> : null}
+        {!loading && !unsupported && !error ? (
+          <WikiGraphPanel
+            graph={graph}
+            options={graphOptions}
+            fullscreen
+            onOptionsChange={setGraphOptions}
+            onNodeSelect={(pageId) => router.push(`/knowledge/${id}?wikiPage=${encodeURIComponent(pageId)}`)}
+            onReload={loadData}
+          />
+        ) : null}
       </main>
     </div>
   );
+}
+
+function graphParams(options: WikiGraphOptions): Record<string, string> {
+  return {
+    max_edges: String(Math.max(20, Math.min(300, options.maxEdges || 240))),
+    include_weak: String(Boolean(options.includeWeak)),
+    ...(options.q.trim() ? { q: options.q.trim() } : {}),
+  };
 }
