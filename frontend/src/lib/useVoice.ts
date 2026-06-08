@@ -1,7 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { synthesizeSpeech, transcribeAudio } from "@/lib/api";
+
+const subscribeToVoiceSupport = () => () => undefined;
+
+function getVoiceSupportSnapshot(): boolean {
+  return typeof navigator !== "undefined" && !!navigator.mediaDevices && typeof MediaRecorder !== "undefined";
+}
+
+function getServerVoiceSupportSnapshot(): boolean {
+  return false;
+}
 
 function pickMimeType(): string {
   if (typeof MediaRecorder === "undefined") return "";
@@ -17,11 +27,14 @@ export function useVoiceRecorder(onTranscribed: (text: string) => void) {
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const supported = useSyncExternalStore(
+    subscribeToVoiceSupport,
+    getVoiceSupportSnapshot,
+    getServerVoiceSupportSnapshot,
+  );
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
-
-  const supported = typeof navigator !== "undefined" && !!navigator.mediaDevices && typeof MediaRecorder !== "undefined";
 
   const stopTracks = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());

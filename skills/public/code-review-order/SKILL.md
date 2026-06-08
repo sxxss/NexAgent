@@ -10,7 +10,6 @@ tags:
 - 开发
 required_tools:
 - read_file
-- read_text_file
 - execute_python
 ---
 

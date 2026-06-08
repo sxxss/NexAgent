@@ -311,21 +311,24 @@ async def update(skill_id: str, body: SkillUpdateRequest):
     name = body.name or current.name
     description = body.description if body.description is not None else current.description
     content = body.content if body.content is not None else current.content
-    _write_skill_md(
-        target,
-        skill_id=skill_id,
-        name=name,
-        description=description,
-        version=body.version or (current.version if current else "0.1.0"),
-        tags=body.tags if body.tags is not None else (current.tags if current else []),
-        required_mcp_ids=body.required_mcp_ids
-        if body.required_mcp_ids is not None else (current.required_mcp_ids if current else []),
-        required_tools=body.required_tools
-        if body.required_tools is not None else (current.required_tools if current else []),
-        skill_dependencies=body.skill_dependencies
-        if body.skill_dependencies is not None else (current.skill_dependencies if current else []),
-        content=content,
-    )
+    try:
+        _write_skill_md(
+            target,
+            skill_id=skill_id,
+            name=name,
+            description=description,
+            version=body.version or (current.version if current else "0.1.0"),
+            tags=body.tags if body.tags is not None else (current.tags if current else []),
+            required_mcp_ids=body.required_mcp_ids
+            if body.required_mcp_ids is not None else (current.required_mcp_ids if current else []),
+            required_tools=body.required_tools
+            if body.required_tools is not None else (current.required_tools if current else []),
+            skill_dependencies=body.skill_dependencies
+            if body.skill_dependencies is not None else (current.skill_dependencies if current else []),
+            content=content,
+        )
+    except OSError as exc:
+        _raise_skill_storage_write_error(exc, target)
     try:
         from nexagent.tools.builtin.skill_manager import _append_history, _text_hash
 
@@ -377,7 +380,10 @@ async def uninstall(skill_id: str):
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill '{skill_id}' not found")
     target = _writable_skill_root(loader, skill)
-    shutil.rmtree(target)
+    try:
+        shutil.rmtree(target)
+    except OSError as exc:
+        _raise_skill_storage_write_error(exc, target)
 
 
 @router.get("/{skill_id}/files/content")
@@ -442,8 +448,11 @@ async def update_skill_file_content(skill_id: str, path: str, body: SkillFileUpd
     if scan["decision"] == "block":
         raise HTTPException(status_code=400, detail=f"Security scan blocked this file: {scan['reason']}")
     previous = target.read_text(encoding="utf-8", errors="replace") if target.is_file() else None
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(body.content, encoding="utf-8")
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body.content, encoding="utf-8")
+    except OSError as exc:
+        _raise_skill_storage_write_error(exc, target)
     _append_history(skill_id, {
         "action": "write_file",
         "source": "api",
@@ -1108,6 +1117,17 @@ def _writable_skill_root(loader, skill) -> Path:
             detail="External skills are read-only through the Skills API. Copy or install the skill into custom first.",
         )
     return root
+
+
+def _raise_skill_storage_write_error(exc: OSError, path: Path) -> None:
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "message": f"Skill storage is not writable: {path}",
+            "path": str(path),
+            "fix": "If this is Docker development, mount ./skills as writable instead of ./skills:/app/skills:ro.",
+        },
+    ) from exc
 
 
 def _skill_response(skill) -> dict:

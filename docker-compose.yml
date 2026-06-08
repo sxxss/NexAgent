@@ -30,8 +30,9 @@ services:
       # Mount source code so edits on host are reflected instantly (hot-reload)
       - ./backend:/app/backend
       - ./config.yaml:/app/config.yaml:ro
-      - ./skills:/app/skills:ro
-      - nexagent_data:/app/.nexagent
+      - ./skills:/app/skills
+      - ${DOCKER_HOST_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
+      - ./.nexagent:/app/.nexagent
     ports:
       - "8001:8001"
     environment:
@@ -40,6 +41,8 @@ services:
       - PYTHONPATH=/app/backend/packages/core:/app/backend
       - NEXAGENT_CONFIG_PATH=/app/config.yaml
       - NEXAGENT_DATA_DIR=/app/.nexagent
+      - NEXAGENT_SANDBOX_HOST_ROOT=${PWD}/.nexagent
+      - NEXAGENT_SANDBOX_CONTAINER_ROOT=/app/.nexagent
       - DATABASE_URL=postgresql+asyncpg://nexagent:nexagent@postgres:5432/nexagent
       - REDIS_URL=redis://redis:6379/0
       - NEXAGENT_KB_STORAGE=${NEXAGENT_KB_STORAGE:-postgres}

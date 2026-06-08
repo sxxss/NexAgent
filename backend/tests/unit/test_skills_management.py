@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import uuid
 import zipfile
+from errno import EROFS
 from pathlib import Path
 
 import pytest
@@ -394,6 +395,38 @@ async def test_custom_skill_install_conflict_and_force(monkeypatch):
 
 
 @pytest.mark.unit
+@pytest.mark.asyncio
+async def test_update_skill_reports_read_only_storage(monkeypatch):
+    from app.gateway.routers import skills as skills_router
+    from app.gateway.routers.skills import SkillUpdateRequest, update
+
+    work_dir = _skills_dir("skills-read-only")
+    skill_dir = work_dir / "public" / "readonly"
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    skill_file = skill_dir / "SKILL.md"
+    skill_file.write_text(
+        "---\nid: readonly\nname: Readonly\ndescription: Read-only skill\nversion: 0.1.0\n---\n\n# Readonly\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NEXAGENT_SKILLS_DIR", str(work_dir))
+
+    def fail_write(*args, **kwargs):
+        raise OSError(EROFS, "Read-only file system", str(skill_file))
+
+    monkeypatch.setattr(skills_router, "_write_skill_md", fail_write)
+
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            await update("readonly", SkillUpdateRequest(content="# Updated"))
+
+        assert exc_info.value.status_code == 409
+        assert "not writable" in str(exc_info.value.detail["message"])
+        assert str(skill_file) in exc_info.value.detail["path"]
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
 def test_missing_tool_dependency_reports_error(monkeypatch):
     from nexagent.skills.validation import missing_tool_issues
 
@@ -406,6 +439,23 @@ def test_missing_tool_dependency_reports_error(monkeypatch):
         assert "missing_tool" in issues[0].message
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+def test_public_skills_only_require_registered_tools():
+    from nexagent.skills.loader import SkillLoader
+    from nexagent.skills.validation import missing_tool_issues
+
+    repo_root = Path(__file__).resolve().parents[3]
+    loader = SkillLoader(repo_root / "skills")
+
+    missing = {
+        skill.id: [issue.message for issue in missing_tool_issues(skill.required_tools, loader=loader)]
+        for skill in loader.load_all()
+    }
+    missing = {skill_id: issues for skill_id, issues in missing.items() if issues}
+
+    assert missing == {}
 
 
 @pytest.mark.unit

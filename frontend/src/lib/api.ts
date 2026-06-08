@@ -4,6 +4,21 @@
 // handling, so NEXT_PUBLIC_API_BASE points the client straight at the backend.
 const BASE = process.env.NEXT_PUBLIC_API_BASE || "/api";
 
+async function apiErrorMessage(res: Response): Promise<string> {
+  const text = await res.text().catch(() => "");
+  if (!text) return `HTTP ${res.status}`;
+  try {
+    const error = JSON.parse(text);
+    const detail = error.detail;
+    if (typeof detail === "string") return detail;
+    if (detail?.message) return detail.message;
+    if (error.message) return error.message;
+  } catch {
+    return text;
+  }
+  return `HTTP ${res.status}`;
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface Model {
@@ -1751,8 +1766,12 @@ export async function uploadSkill(file: File, options: { id?: string; force?: bo
 }
 
 export async function updateSkill(id: string, body: Partial<SkillCustomBody>): Promise<SkillInfo> {
-  const res = await fetch(`${BASE}/skills/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`);
+  const res = await fetch(`${BASE}/skills/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await apiErrorMessage(res));
   return res.json();
 }
 
