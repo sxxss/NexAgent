@@ -12,14 +12,22 @@ function applyTheme(theme: Theme) {
 }
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>(() => {
-    if (typeof window === "undefined") return "light";
-    return window.localStorage.getItem("nexagent-theme") === "dark" ? "dark" : "light";
-  });
+  // Render the light-mode icon on the server and the first client paint to keep
+  // SSR markup consistent; sync the real theme from localStorage after mount.
+  const [theme, setTheme] = useState<Theme>("light");
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    applyTheme(theme);
-  }, [theme]);
+    // Sync the real theme from localStorage after mount to avoid a hydration mismatch.
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setMounted(true);
+    setTheme(window.localStorage.getItem("nexagent-theme") === "dark" ? "dark" : "light");
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, []);
+
+  useEffect(() => {
+    if (mounted) applyTheme(theme);
+  }, [theme, mounted]);
 
   return (
     <button

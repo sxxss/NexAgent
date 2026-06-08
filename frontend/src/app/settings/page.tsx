@@ -1093,31 +1093,42 @@ function ProviderCard({
   onDefault: () => void;
   onDelete: () => void;
 }) {
-  const inactive = !item.is_enabled;
+  const inactive = item.created && !item.is_enabled;
   return (
     <article
       className={cn(
-        "group overflow-hidden rounded-xl border bg-white transition",
-        inactive
-          ? "border-slate-100 bg-white/70 opacity-70 grayscale hover:opacity-90"
-          : "border-slate-200 shadow-sm hover:-translate-y-0.5 hover:shadow-[0_18px_36px_rgba(15,23,42,0.08)]",
+        "group flex flex-col overflow-hidden rounded-xl border bg-white transition",
+        !item.created
+          ? "border-dashed border-slate-200 bg-white/60"
+          : inactive
+            ? "border-slate-200 bg-slate-50/60 hover:shadow-sm"
+            : "border-slate-200 shadow-sm hover:-translate-y-0.5 hover:shadow-[0_18px_36px_rgba(15,23,42,0.08)]",
       )}
     >
-      <div className="p-5">
+      <div className={cn("flex-1 p-5", inactive && "opacity-75")}>
         <div className="flex items-start gap-3">
           <ProviderLogo name={item.name} enabled={item.is_enabled} />
           <div className="min-w-0 flex-1">
             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
               <div className="min-w-0">
-                <h2 className="truncate text-base font-bold text-slate-800">{item.name}</h2>
+                <div className="flex items-center gap-1.5">
+                  <h2 className="truncate text-base font-bold text-slate-800">{item.name}</h2>
+                  {item.is_default ? (
+                    <span className="shrink-0 rounded-md bg-[#eef2ff] px-1.5 py-0.5 text-[10px] font-bold text-[#4f46e5]">默认</span>
+                  ) : null}
+                </div>
                 <p className="truncate font-mono text-xs text-slate-400">{item.id}</p>
               </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <span className={cn("inline-flex h-7 min-w-[58px] shrink-0 items-center justify-center whitespace-nowrap rounded-md px-2 text-xs font-semibold", item.is_enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500")}>
-                  {item.is_enabled ? "已启用" : "未启用"}
-                </span>
-                <span className={cn("h-2 w-2 shrink-0 rounded-full", item.is_enabled ? "bg-emerald-500" : "bg-slate-200")} />
-              </div>
+              {item.created ? (
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <Toggle checked={item.is_enabled} onChange={onToggle} />
+                  <span className={cn("text-[11px] font-semibold", item.is_enabled ? "text-emerald-600" : "text-slate-400")}>
+                    {item.is_enabled ? "已启用" : "已停用"}
+                  </span>
+                </div>
+              ) : (
+                <span className="inline-flex h-7 shrink-0 items-center rounded-md bg-slate-100 px-2 text-xs font-semibold text-slate-500">未配置</span>
+              )}
             </div>
           </div>
         </div>
@@ -1125,7 +1136,7 @@ function ProviderCard({
         <div className="mt-5 space-y-2 text-sm">
           <InfoLine label="Base URL" value={item.base_url || "-"} />
           <InfoLine label="类型" value={item.provider_type || "openai"} />
-          <InfoLine label="已启用" value={`${item.models.length} 个模型`} />
+          <InfoLine label="模型" value={`${item.models.length} 个`} />
         </div>
 
         <div className="mt-4 flex flex-wrap gap-1.5">
@@ -1145,10 +1156,13 @@ function ProviderCard({
             <button type="button" onClick={onEdit} className={cn(miniButtonClass, "ml-auto")} title="编辑供应商">
               <Edit3 size={14} />
             </button>
-            <button type="button" onClick={onToggle} className={miniButtonClass} title={item.is_enabled ? "停用供应商" : "启用供应商"}>
-              {item.is_enabled ? <EyeOff size={14} /> : <Eye size={14} />}
-            </button>
-            <button type="button" onClick={onDefault} disabled={item.is_default} className={miniButtonClass} title={item.is_default ? "默认供应商" : "设为默认"}>
+            <button
+              type="button"
+              onClick={onDefault}
+              disabled={item.is_default}
+              className={cn(miniButtonClass, item.is_default && "border-indigo-100 bg-[#eef2ff] text-[#4f46e5]")}
+              title={item.is_default ? "当前默认供应商" : "设为默认"}
+            >
               <Check size={14} />
             </button>
             <button type="button" onClick={onDelete} className={cn(miniButtonClass, "hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600")} title="删除供应商">
@@ -1809,7 +1823,13 @@ function VoiceSettingsPanel() {
   const patchImage = (patch: Partial<ImageConfig>) => setImage((p) => (p ? { ...p, ...patch } : p));
 
   return (
-    <div className="mx-auto grid max-w-5xl gap-5 lg:grid-cols-2">
+    <div className="mx-auto max-w-5xl space-y-5">
+      <div>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#4f46e5]">Speech &amp; Image Runtime</p>
+        <h2 className="mt-2 text-xl font-bold text-slate-950">语音与图像</h2>
+        <p className="mt-1 text-sm text-slate-500">配置语音识别、语音合成与文生图能力，留空 Base URL / API Key 时复用默认对话供应商。</p>
+      </div>
+      <div className="grid gap-5 lg:grid-cols-2">
       {/* ASR card */}
       <EngineCard
         icon={<Mic size={20} />}
@@ -1912,15 +1932,13 @@ function VoiceSettingsPanel() {
           }}
           testLabel="试生成"
         >
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
             <CredFields
               baseUrl={image.base_url}
               apiKey={image.api_key}
               onBaseUrl={(v) => patchImage({ base_url: v })}
               onApiKey={(v) => patchImage({ api_key: v })}
             />
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
             <div>
               <label className={speechLabelCls}>生成模型</label>
               <input className={speechInputCls} value={image.model} onChange={(e) => patchImage({ model: e.target.value })} placeholder="Kwai-Kolors/Kolors" />
@@ -1933,6 +1951,7 @@ function VoiceSettingsPanel() {
             </div>
           </div>
         </EngineCard>
+      </div>
       </div>
     </div>
   );
@@ -1993,8 +2012,8 @@ function EngineCard({
   };
 
   return (
-    <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-[0_14px_36px_rgba(83,101,132,0.10)]">
-      <div className={cn("relative flex items-start gap-3 bg-gradient-to-br via-transparent to-transparent px-5 py-4", a.soft)}>
+    <section className="flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-[0_14px_36px_rgba(83,101,132,0.10)]">
+      <div className={cn("relative flex items-center gap-3 bg-gradient-to-br via-transparent to-transparent px-5 py-4", a.soft)}>
         <span
           className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br text-white", a.from, a.to)}
           style={{ boxShadow: `0 8px 18px ${a.shadow}` }}
@@ -2006,13 +2025,16 @@ function EngineCard({
             <h3 className="text-sm font-bold text-slate-900">{title}</h3>
             <StatusPill ok={configured} />
           </div>
-          <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>
+          <p className="mt-0.5 truncate text-xs text-slate-500">{subtitle}</p>
         </div>
-        <Toggle checked={enabled} onChange={onToggle} />
+        <div className="flex shrink-0 flex-col items-center gap-1">
+          <Toggle checked={enabled} onChange={onToggle} />
+          <span className={cn("text-[11px] font-semibold", enabled ? "text-indigo-600" : "text-slate-400")}>{enabled ? "已启用" : "已关闭"}</span>
+        </div>
       </div>
       <div className="flex flex-wrap gap-1.5 border-b border-slate-100 px-5 py-2.5">{badges}</div>
-      <div className="space-y-3 px-5 py-4">{children}</div>
-      <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 px-5 py-3">
+      <div className="flex-1 space-y-3 px-5 py-4">{children}</div>
+      <div className="mt-auto flex flex-wrap items-center gap-3 border-t border-slate-100 px-5 py-3">
         <button type="button" onClick={doSave} disabled={saving} className={primaryButtonClass}>
           {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
           保存
@@ -2180,7 +2202,7 @@ const inputClass = "h-10 w-full rounded-xl border border-slate-200 bg-white px-3
 const primaryButtonClass = "inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#6366f1] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#287da8] disabled:opacity-50";
 const outlineButtonClass = "inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50";
 const iconButtonClass = "flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50";
-const miniButtonClass = "flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 disabled:bg-emerald-50 disabled:text-emerald-600";
+const miniButtonClass = "flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 disabled:cursor-default";
 const switchClass = "flex h-6 w-11 items-center rounded-full bg-slate-300 p-0.5 transition";
 const searchCardClass = "flex h-full min-h-[430px] flex-col rounded-2xl border bg-white p-5 shadow-sm transition";
 const activeSearchCardClass = "border-[#4f46e5] shadow-[0_14px_32px_rgba(79,70,229,0.12)]";

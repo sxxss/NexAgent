@@ -2,10 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   BarChart3,
-  BookOpen,
   Bot,
   Boxes,
   Brain,
@@ -29,7 +28,6 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "洞察", icon: LayoutDashboard },
   { href: "/agents", label: "Agent", icon: Bot },
   { href: "/knowledge", label: "知识库", icon: Database },
-  { href: "/wiki", label: "Wiki", icon: BookOpen },
   { href: "/memory", label: "记忆", icon: Brain },
   { href: "/mcp", label: "MCP", icon: Boxes },
   { href: "/skills", label: "Skills", icon: Wrench },
@@ -44,14 +42,15 @@ const STORAGE_KEY = "nexagent.sidebar.collapsed";
 
 export function Sidebar() {
   const path = usePathname();
+  // Always render the expanded layout on the server and the first client paint
+  // so SSR markup matches; restore the persisted state after mount to avoid a
+  // hydration mismatch.
   const [collapsed, setCollapsed] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
 
-  // Read the persisted state once, during render (avoids setState-in-effect).
-  if (!hydrated && typeof window !== "undefined") {
-    setHydrated(true);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- restore persisted state after mount to avoid a hydration mismatch
     if (window.localStorage.getItem(STORAGE_KEY) === "1") setCollapsed(true);
-  }
+  }, []);
 
   const toggle = () => {
     setCollapsed((prev) => {

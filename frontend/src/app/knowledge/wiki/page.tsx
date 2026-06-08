@@ -1,18 +1,22 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, FileText, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, BookOpen, ChevronRight, FileText, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { PageHeader } from "@/components/PageHeader";
+import { Badge } from "@/components/ui/badge";
 import { deleteWikiPage, fetchWikiPage, fetchWikiPages, type WikiPage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const outlineButton =
-  "inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50";
+  "inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50";
+const iconButton =
+  "inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50";
 
-export default function WikiPageView() {
+export default function WikiKnowledgePage() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [synced, setSynced] = useState(false);
@@ -42,17 +46,34 @@ export default function WikiPageView() {
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-slate-100">
-      <PageHeader
-        eyebrow="LLM Wiki"
-        title="知识沉淀"
-        description="把对话提炼成的结构化 Wiki 知识页面集中在这里浏览与管理。在对话页点击「沉淀 Wiki」即可新增。"
-        actions={
-          <button type="button" onClick={() => void queryClient.invalidateQueries({ queryKey: ["wiki-pages"] })} className={outlineButton}>
-            <RefreshCw size={14} className={listQuery.isFetching ? "animate-spin" : ""} />
-            刷新
-          </button>
-        }
-      />
+      <header className="border-b border-slate-200 bg-white px-6 py-4">
+        <div className="mb-3 flex items-center gap-1.5 text-xs text-slate-400">
+          <button onClick={() => router.push("/knowledge")} className="hover:text-slate-600">知识库</button>
+          <ChevronRight size={11} />
+          <span className="text-slate-600">LLM Wiki</span>
+        </div>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
+              <BookOpen size={19} />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-slate-950">LLM Wiki</h1>
+              <p className="mt-1 text-sm text-slate-500">把对话提炼成的结构化 Wiki 知识页面集中浏览与管理。在对话页点击「沉淀 Wiki」即可新增。</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Badge variant="warning">Wiki 知识库</Badge>
+                <Badge variant="secondary">{pages.length} 篇</Badge>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => router.push("/knowledge")} className={outlineButton}><ArrowLeft size={14} />返回</button>
+            <button type="button" onClick={() => void queryClient.invalidateQueries({ queryKey: ["wiki-pages"] })} className={iconButton} title="刷新">
+              <RefreshCw size={14} className={listQuery.isFetching ? "animate-spin" : ""} />
+            </button>
+          </div>
+        </div>
+      </header>
 
       <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden p-6 lg:grid-cols-[320px_minmax(0,1fr)]">
         {/* List */}
@@ -76,12 +97,12 @@ export default function WikiPageView() {
                   onClick={() => setSelectedId(page.id)}
                   className={cn(
                     "group mb-1 flex w-full items-start gap-2 rounded-xl px-3 py-2.5 text-left transition",
-                    selectedId === page.id ? "bg-indigo-50" : "hover:bg-slate-50",
+                    selectedId === page.id ? "bg-amber-50" : "hover:bg-slate-50",
                   )}
                 >
-                  <FileText size={15} className={cn("mt-0.5 shrink-0", selectedId === page.id ? "text-indigo-600" : "text-slate-400")} />
+                  <FileText size={15} className={cn("mt-0.5 shrink-0", selectedId === page.id ? "text-amber-600" : "text-slate-400")} />
                   <span className="min-w-0 flex-1">
-                    <span className={cn("block truncate text-sm font-semibold", selectedId === page.id ? "text-indigo-700" : "text-slate-800")}>{page.title}</span>
+                    <span className={cn("block truncate text-sm font-semibold", selectedId === page.id ? "text-amber-700" : "text-slate-800")}>{page.title}</span>
                     {page.tags?.length ? (
                       <span className="mt-0.5 block truncate text-[11px] text-slate-400">{page.tags.join(" · ")}</span>
                     ) : null}
@@ -123,7 +144,7 @@ function WikiContent({ page }: { page: WikiPage }) {
       {page.tags?.length ? (
         <div className="mb-4 flex flex-wrap gap-1.5">
           {page.tags.map((tag) => (
-            <span key={tag} className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-600">{tag}</span>
+            <span key={tag} className="rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">{tag}</span>
           ))}
         </div>
       ) : null}

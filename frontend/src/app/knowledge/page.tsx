@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
+  BookOpen,
   CheckCircle,
   ChevronDown,
   ChevronRight,
@@ -28,6 +29,7 @@ import {
   deleteKB,
   fetchKBs,
   fetchProviders,
+  fetchWikiPages,
   testProviderModel,
   updateKBModelConfig,
   type KBMeta,
@@ -73,6 +75,9 @@ export default function KnowledgePage() {
 
   const kbsQuery = useQuery({ queryKey: ["kbs"], queryFn: fetchKBs });
   const providersQuery = useQuery({ queryKey: ["providers"], queryFn: fetchProviders });
+  const wikiQuery = useQuery({ queryKey: ["wiki-pages"], queryFn: fetchWikiPages });
+  const wikiCount = wikiQuery.data?.length ?? 0;
+  const showWiki = "llm wiki 知识沉淀".includes(search.trim().toLowerCase());
   const kbs = useMemo(() => kbsQuery.data ?? [], [kbsQuery.data]);
   const providers = useMemo(() => providersQuery.data ?? [], [providersQuery.data]);
   const embeddingModels = useMemo(() => providerModelOptions(providers, "embedding"), [providers]);
@@ -161,10 +166,11 @@ export default function KnowledgePage() {
       />
 
       <main className="min-h-0 flex-1 overflow-y-auto p-6">
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Stat label="知识库总数" value={kbs.length} icon={Database} />
           <Stat label="向量 RAG" value={kbs.filter((item) => item.kb_type === "milvus").length} icon={Layers} />
           <Stat label="LightRAG 图谱" value={kbs.filter((item) => item.kb_type === "lightrag").length} icon={Network} />
+          <Stat label="LLM Wiki" value={wikiCount} icon={BookOpen} />
         </div>
 
         <div className="mt-5 flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 shadow-sm">
@@ -180,10 +186,11 @@ export default function KnowledgePage() {
         <div className="mt-5">
           {kbsQuery.isLoading ? (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{[1, 2, 3].map((item) => <div key={item} className="h-52 animate-pulse rounded-xl bg-white" />)}</div>
-          ) : filtered.length === 0 ? (
+          ) : filtered.length === 0 && !showWiki ? (
             <Empty onCreate={() => setShowCreate(true)} />
           ) : (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {showWiki ? <WikiCard count={wikiCount} /> : null}
               {filtered.map((kb) => (
                 <KBCard
                   key={kb.kb_id}
@@ -326,6 +333,34 @@ export default function KnowledgePage() {
         </div>
       </Dialog>
     </div>
+  );
+}
+
+function WikiCard({ count }: { count: number }) {
+  return (
+    <Card className="group border-amber-200/70 transition hover:-translate-y-0.5 hover:border-amber-300">
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700"><BookOpen size={20} /></div>
+          <Badge variant="warning">内置</Badge>
+        </div>
+        <div className="mt-4 flex items-start justify-between gap-2">
+          <h2 className="truncate text-sm font-semibold text-slate-950">LLM Wiki</h2>
+        </div>
+        <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">把对话提炼成结构化 Wiki 知识页面，集中浏览与管理。</p>
+        <div className="mt-4 flex flex-wrap gap-1.5">
+          <Badge variant="warning">Wiki 知识库</Badge>
+          <Badge variant="secondary">{count} 篇</Badge>
+        </div>
+        <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
+          <span className="truncate">对话沉淀生成</span>
+        </div>
+        <Link href="/knowledge/wiki" className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+          打开
+          <ChevronRight size={13} />
+        </Link>
+      </CardContent>
+    </Card>
   );
 }
 
