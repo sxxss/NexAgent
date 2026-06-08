@@ -40,7 +40,7 @@ import {
 } from "@/lib/api";
 import { cn, formatDate } from "@/lib/utils";
 
-type KBKind = "milvus" | "lightrag";
+type KBKind = "milvus" | "lightrag" | "wiki";
 
 interface ProviderModelOption {
   value: string;
@@ -96,10 +96,10 @@ export default function KnowledgePage() {
         chunk_size: form.chunk_size,
         chunk_overlap: form.chunk_overlap,
         chunk_preset_id: form.chunk_preset_id,
-        embed_model: form.embed_model || undefined,
-        embed_dimension: form.embed_dimension || undefined,
+        embed_model: form.kb_type === "wiki" ? undefined : form.embed_model || undefined,
+        embed_dimension: form.kb_type === "wiki" ? undefined : form.embed_dimension || undefined,
       });
-      if (form.use_reranker || form.reranker_model) {
+      if (form.kb_type !== "wiki" && (form.use_reranker || form.reranker_model)) {
         await updateKBModelConfig(kb.kb_id, {
           use_reranker: form.use_reranker,
           reranker_model: form.reranker_model,
@@ -143,7 +143,7 @@ export default function KnowledgePage() {
     setProbeError("");
   };
 
-  const submitDisabled = !form.name.trim() || !form.embed_model || createMutation.isPending;
+  const submitDisabled = !form.name.trim() || (form.kb_type !== "wiki" && !form.embed_model) || createMutation.isPending;
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-slate-100">
@@ -170,7 +170,7 @@ export default function KnowledgePage() {
           <Stat label="知识库总数" value={kbs.length} icon={Database} />
           <Stat label="向量 RAG" value={kbs.filter((item) => item.kb_type === "milvus").length} icon={Layers} />
           <Stat label="LightRAG 图谱" value={kbs.filter((item) => item.kb_type === "lightrag").length} icon={Network} />
-          <Stat label="LLM Wiki" value={wikiCount} icon={BookOpen} />
+          <Stat label="LLM Wiki" value={kbs.filter((item) => item.kb_type === "wiki").length} icon={BookOpen} />
         </div>
 
         <div className="mt-5 flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 shadow-sm">
@@ -221,7 +221,7 @@ export default function KnowledgePage() {
                 <textarea className={`${inputClass} min-h-20 resize-none`} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="描述知识库内容、适用 Agent 或维护范围" />
               </Field>
               <Field label="知识库类型" required>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-3 sm:grid-cols-3">
                   <TypeCard
                     active={form.kb_type === "milvus"}
                     icon={Layers}
@@ -236,39 +236,48 @@ export default function KnowledgePage() {
                     description="适合实体关系、图谱浏览和跨文档关联分析。"
                     onClick={() => setForm({ ...form, kb_type: "lightrag" })}
                   />
+                  <TypeCard
+                    active={form.kb_type === "wiki"}
+                    icon={BookOpen}
+                    title="Wiki"
+                    description="适合把资料和对话沉淀成可维护页面、双链和页面关系图。"
+                    onClick={() => setForm({ ...form, kb_type: "wiki" })}
+                  />
                 </div>
               </Field>
             </FormSection>
 
-            <FormSection title="Embedding 配置" description="从设置页已添加的模型供应商中选择 embedding 模型。保存时使用 provider::model，避免同名模型串供应商。">
-              <Field label="Embedding 模型" required hint="只显示已启用供应商中标记为 embedding 的模型。">
-                <ModelPicker
-                  value={form.embed_model}
-                  options={embeddingModels}
-                  placeholder={providersQuery.isLoading ? "加载模型中..." : "选择 Embedding 模型"}
-                  onChange={(option) => {
-                    setForm({ ...form, embed_model: option.value, embed_dimension: option.dimension || form.embed_dimension });
-                    setProbeResult(null);
-                    setProbeError("");
-                  }}
-                />
-              </Field>
-              <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-                <Field label="向量维度" hint="检测成功后会自动填入返回维度。">
-                  <input className={inputClass} type="number" min={1} max={8192} value={form.embed_dimension} onChange={(event) => setForm({ ...form, embed_dimension: Number(event.target.value) })} />
+            {form.kb_type !== "wiki" ? (
+              <FormSection title="Embedding 配置" description="从设置页已添加的模型供应商中选择 embedding 模型。保存时使用 provider::model，避免同名模型串供应商。">
+                <Field label="Embedding 模型" required hint="只显示已启用供应商中标记为 embedding 的模型。">
+                  <ModelPicker
+                    value={form.embed_model}
+                    options={embeddingModels}
+                    placeholder={providersQuery.isLoading ? "加载模型中..." : "选择 Embedding 模型"}
+                    onChange={(option) => {
+                      setForm({ ...form, embed_model: option.value, embed_dimension: option.dimension || form.embed_dimension });
+                      setProbeResult(null);
+                      setProbeError("");
+                    }}
+                  />
                 </Field>
-                <button
-                  type="button"
-                  className={cn(outlineButton, "mt-6 justify-center")}
-                  disabled={!selectedEmbedding || testModelMutation.isPending}
-                  onClick={() => selectedEmbedding && testModelMutation.mutate({ option: selectedEmbedding, capability: "embedding" })}
-                >
-                  {testModelMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                  检测模型
-                </button>
-              </div>
-              <ProbeNotice result={probeResult} error={probeError} />
-            </FormSection>
+                <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                  <Field label="向量维度" hint="检测成功后会自动填入返回维度。">
+                    <input className={inputClass} type="number" min={1} max={8192} value={form.embed_dimension} onChange={(event) => setForm({ ...form, embed_dimension: Number(event.target.value) })} />
+                  </Field>
+                  <button
+                    type="button"
+                    className={cn(outlineButton, "mt-6 justify-center")}
+                    disabled={!selectedEmbedding || testModelMutation.isPending}
+                    onClick={() => selectedEmbedding && testModelMutation.mutate({ option: selectedEmbedding, capability: "embedding" })}
+                  >
+                    {testModelMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                    检测模型
+                  </button>
+                </div>
+                <ProbeNotice result={probeResult} error={probeError} />
+              </FormSection>
+            ) : null}
 
             <FormSection title="分块与检索增强" description="分块参数会影响后续入库结果。Rerank 可先关闭，之后在详情页随时开启。">
               <div className="grid gap-3 sm:grid-cols-2">
@@ -288,14 +297,16 @@ export default function KnowledgePage() {
                   <input className={inputClass} type="number" min={0} max={512} value={form.chunk_overlap} onChange={(event) => setForm({ ...form, chunk_overlap: Number(event.target.value) })} />
                 </Field>
               </div>
-              <label className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-800">启用 Rerank</p>
-                  <p className="text-xs text-slate-500">适合需要更高引用准确性的 RAG 场景。</p>
-                </div>
-                <input type="checkbox" checked={form.use_reranker} onChange={(event) => setForm({ ...form, use_reranker: event.target.checked })} />
-              </label>
-              {form.use_reranker ? (
+              {form.kb_type !== "wiki" ? (
+                <label className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">启用 Rerank</p>
+                    <p className="text-xs text-slate-500">适合需要更高引用准确性的 RAG 场景。</p>
+                  </div>
+                  <input type="checkbox" checked={form.use_reranker} onChange={(event) => setForm({ ...form, use_reranker: event.target.checked })} />
+                </label>
+              ) : null}
+              {form.kb_type !== "wiki" && form.use_reranker ? (
                 <Field label="Rerank 模型">
                   <ModelPicker value={form.reranker_model} options={rerankModels} placeholder="选择 Rerank 模型" onChange={(option) => setForm({ ...form, reranker_model: option.value })} />
                 </Field>
@@ -307,13 +318,13 @@ export default function KnowledgePage() {
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-sm font-semibold text-slate-900">创建预览</p>
               <div className="mt-4 space-y-3 text-sm">
-                <PreviewRow label="类型" value={form.kb_type === "milvus" ? "向量 RAG" : "LightRAG 图谱"} />
-                <PreviewRow label="Embedding" value={selectedEmbedding?.label || "未选择"} />
-                <PreviewRow label="维度" value={String(form.embed_dimension || "-")} />
+                <PreviewRow label="类型" value={form.kb_type === "wiki" ? "Wiki" : form.kb_type === "milvus" ? "向量 RAG" : "LightRAG 图谱"} />
+                <PreviewRow label="Embedding" value={form.kb_type === "wiki" ? "不需要" : selectedEmbedding?.label || "未选择"} />
+                <PreviewRow label="维度" value={form.kb_type === "wiki" ? "Markdown" : String(form.embed_dimension || "-")} />
                 <PreviewRow label="分块" value={`${form.chunk_preset_id} · ${form.chunk_size} / ${form.chunk_overlap}`} />
                 <PreviewRow label="Rerank" value={form.use_reranker ? (selectedReranker?.label || "已开启，未选择模型") : "关闭"} />
               </div>
-              {embeddingModels.length === 0 ? (
+              {form.kb_type !== "wiki" && embeddingModels.length === 0 ? (
                 <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs leading-5 text-amber-700">
                   没有可用的 Embedding 模型。请先到设置页给供应商添加 embedding 类型模型并启用供应商。
                 </div>
@@ -365,13 +376,14 @@ function WikiCard({ count }: { count: number }) {
 }
 
 function KBCard({ kb, onDelete }: { kb: KBMeta; onDelete: () => void }) {
+  const isWiki = kb.kb_type === "wiki";
   const isRag = kb.kb_type === "milvus";
   const requiresReindex = Boolean(kb.extra?.requires_reindex);
   return (
     <Card className="group transition hover:-translate-y-0.5 hover:border-slate-300">
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-4">
-          <div className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl", isRag ? "bg-sky-50 text-sky-700" : "bg-indigo-50 text-indigo-700")}>{isRag ? <FileText size={20} /> : <Network size={20} />}</div>
+          <div className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl", isWiki ? "bg-amber-50 text-amber-700" : isRag ? "bg-sky-50 text-sky-700" : "bg-indigo-50 text-indigo-700")}>{isWiki ? <BookOpen size={20} /> : isRag ? <FileText size={20} /> : <Network size={20} />}</div>
           <button type="button" onClick={onDelete} className="hidden h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 group-hover:flex"><Trash2 size={14} /></button>
         </div>
         <div className="mt-4 flex items-start justify-between gap-2">
@@ -380,11 +392,11 @@ function KBCard({ kb, onDelete }: { kb: KBMeta; onDelete: () => void }) {
         </div>
         <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{kb.description || "未填写描述"}</p>
         <div className="mt-4 flex flex-wrap gap-1.5">
-          <Badge variant={isRag ? "teal" : "violet"}>{isRag ? "向量 RAG" : "LightRAG"}</Badge>
-          <Badge variant="secondary">{kb.embed_info?.dimension || "-"} dim</Badge>
+          <Badge variant={isWiki ? "warning" : isRag ? "teal" : "violet"}>{isWiki ? "Wiki" : isRag ? "向量 RAG" : "LightRAG"}</Badge>
+          {isWiki ? <Badge variant="secondary">Markdown</Badge> : <Badge variant="secondary">{kb.embed_info?.dimension || "-"} dim</Badge>}
         </div>
         <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-          <span className="truncate">{kb.embed_info?.model || "默认 Embedding"}</span>
+          <span className="truncate">{isWiki ? "页面知识库" : kb.embed_info?.model || "默认 Embedding"}</span>
           <span>{formatDate(kb.updated_at || kb.created_at)}</span>
         </div>
         <Link href={`/knowledge/${kb.kb_id}`} className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">

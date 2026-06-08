@@ -165,7 +165,7 @@ export interface PlanStep {
 export interface KBMeta {
   kb_id: string;
   name: string;
-  kb_type: "milvus" | "lightrag";
+  kb_type: "milvus" | "lightrag" | "wiki";
   description: string;
   chunk_size: number;
   chunk_overlap: number;
@@ -175,6 +175,49 @@ export interface KBMeta {
   updated_at: string;
   embed_info: { model: string; dimension: number; base_url?: string };
   extra?: Record<string, unknown>;
+}
+
+export type WikiPageType = "source" | "entity" | "topic" | "synthesis" | "comparison" | "query" | "note";
+
+export interface WikiPageSummary {
+  id: string;
+  title: string;
+  type: WikiPageType;
+  path: string;
+  manual_edited: boolean;
+  confidence: "EXTRACTED" | "INFERRED" | "AMBIGUOUS" | "UNVERIFIED" | string;
+  updated_at?: string;
+  sources: string[];
+  excerpt: string;
+  has_candidate?: boolean;
+  status?: string;
+}
+
+export interface WikiPageDetail extends WikiPageSummary {
+  content: string;
+  frontmatter: Record<string, unknown>;
+  candidate?: { frontmatter: Record<string, unknown>; content: string; created_at: string } | null;
+}
+
+export interface WikiGraphPayload {
+  nodes: Array<{ id: string; label: string; type: string; sources: string[]; confidence: string; community: number }>;
+  edges: Array<{ source: string; target: string; weight: number; signals: Record<string, unknown> }>;
+  stats: Record<string, number>;
+}
+
+export interface WikiLintPayload {
+  issues: Array<{
+    id: string;
+    type: string;
+    page_id: string;
+    severity: string;
+    message: string;
+    action?: string;
+    repairable?: boolean;
+    repair_action?: string;
+  }>;
+  summary: { issue_count?: number; page_count?: number };
+  compile_status?: Record<string, unknown>;
 }
 
 export interface FileMeta {
@@ -1076,7 +1119,7 @@ export async function searchKB(kbId: string, query: string, topK = 5): Promise<S
   return (await res.json()).results ?? [];
 }
 
-export type RetrievalMode = "vector" | "keyword" | "hybrid" | "lightrag_local" | "lightrag_global" | "lightrag_hybrid";
+export type RetrievalMode = "vector" | "keyword" | "hybrid" | "lightrag_local" | "lightrag_global" | "lightrag_hybrid" | "wiki";
 export interface RetrievalConfig {
   mode?: RetrievalMode | string;
   search_mode?: RetrievalMode | string;
@@ -1162,6 +1205,48 @@ export async function fetchKBQueryConfig(kbId: string): Promise<KnowledgeQueryCo
     query_config: body.query_config ?? {},
     effective_config: body.effective_config ?? body.query_config ?? {},
   };
+}
+
+export async function fetchWikiKbPages(kbId: string, params: Record<string, string> = {}): Promise<WikiPageSummary[]> {
+  const query = new URLSearchParams(params);
+  const suffix = query.toString() ? `?${query}` : "";
+  const res = await fetch(`${BASE}/knowledge/${kbId}/wiki/pages${suffix}`);
+  if (!res.ok) throw new Error(await apiErrorMessage(res));
+  return (await res.json()).pages ?? [];
+}
+
+export async function fetchWikiKbPage(kbId: string, pageId: string): Promise<WikiPageDetail> {
+  const res = await fetch(`${BASE}/knowledge/${kbId}/wiki/pages/${encodeURIComponent(pageId)}`);
+  if (!res.ok) throw new Error(await apiErrorMessage(res));
+  return res.json();
+}
+
+export async function updateWikiKbPage(
+  kbId: string,
+  pageId: string,
+  body: { content: string; frontmatter?: Record<string, unknown> },
+): Promise<WikiPageDetail> {
+  const res = await fetch(`${BASE}/knowledge/${kbId}/wiki/pages/${encodeURIComponent(pageId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await apiErrorMessage(res));
+  return res.json();
+}
+
+export async function fetchWikiKbGraph(kbId: string, params: Record<string, string> = {}): Promise<WikiGraphPayload> {
+  const query = new URLSearchParams(params);
+  const suffix = query.toString() ? `?${query}` : "";
+  const res = await fetch(`${BASE}/knowledge/${kbId}/wiki/graph${suffix}`);
+  if (!res.ok) throw new Error(await apiErrorMessage(res));
+  return res.json();
+}
+
+export async function fetchWikiKbLint(kbId: string): Promise<WikiLintPayload> {
+  const res = await fetch(`${BASE}/knowledge/${kbId}/wiki/lint`);
+  if (!res.ok) throw new Error(await apiErrorMessage(res));
+  return res.json();
 }
 
 export async function updateKBQueryConfig(kbId: string, body: RetrievalConfig): Promise<KnowledgeQueryConfigResponse> {
