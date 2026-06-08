@@ -256,7 +256,7 @@ services:
     image: node:22-alpine
     container_name: nexagent-frontend
     working_dir: /app/frontend
-    command: sh -c "npm install --silent && npm run dev -- --hostname 0.0.0.0"
+    command: sh -c "npm install --silent && npm run build && npm run start -- --hostname 0.0.0.0"
     volumes:
       - ./frontend:/app/frontend
       - /app/frontend/node_modules
