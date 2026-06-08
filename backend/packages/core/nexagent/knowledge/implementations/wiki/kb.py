@@ -12,7 +12,7 @@ from nexagent.knowledge.implementations.wiki.lint import WikiLintMixin
 from nexagent.knowledge.implementations.wiki.links import WikiLinksMixin
 from nexagent.knowledge.implementations.wiki.repair import WikiRepairMixin
 from nexagent.knowledge.implementations.wiki.storage import WikiStorageMixin
-from nexagent.knowledge.models import FileMeta, KBMeta, KBType, SearchResult
+from nexagent.knowledge.models import FileMeta, FileStatus, KBMeta, KBType, SearchResult
 
 
 def _now() -> str:
@@ -160,6 +160,65 @@ class WikiKB(
         if frontmatter.get("confidence") in {"AMBIGUOUS", "UNVERIFIED"}:
             return "needs_review"
         return "generated"
+
+    async def compile_wiki(
+        self,
+        kb_id: str,
+        *,
+        file_ids: list[str] | None = None,
+        force: bool = False,
+        retry_failed: bool = False,
+    ) -> dict:
+        wanted = set(file_ids or [])
+        candidates = []
+        for file_meta in self.list_files(kb_id):
+            if wanted and file_meta.file_id not in wanted:
+                continue
+            if file_meta.status in {FileStatus.UPLOADED, FileStatus.PARSED}:
+                candidates.append(file_meta.file_id)
+            elif retry_failed and file_meta.status in {FileStatus.PARSE_ERROR, FileStatus.INDEX_ERROR}:
+                candidates.append(file_meta.file_id)
+            elif force and file_meta.status in {FileStatus.INDEXED, FileStatus.GRAPH_INDEXED}:
+                candidates.append(file_meta.file_id)
+
+        result = {"processed": 0, "failed": 0, "items": []}
+        state = self._load_state(kb_id)
+        state["compile_status"] = {"status": "running", "total": len(candidates), "processed": 0}
+        self._save_state(kb_id, state)
+        for file_id in candidates:
+            try:
+                file_meta = self.get_file(kb_id, file_id)
+                if file_meta is None:
+                    raise ValueError(f"File not found: {file_id}")
+                if file_meta.status in {FileStatus.UPLOADED, FileStatus.PARSE_ERROR}:
+                    file_meta = await self.parse_file(kb_id, file_id)
+                if force and file_meta.status in {FileStatus.INDEXED, FileStatus.GRAPH_INDEXED}:
+                    file_meta = await self.reindex_file(kb_id, file_id)
+                elif file_meta.status in {FileStatus.PARSED, FileStatus.INDEX_ERROR}:
+                    file_meta = await self.index_file(kb_id, file_id)
+                result["processed"] += 1
+                result["items"].append({"file_id": file_id, "status": file_meta.status.value})
+            except Exception as exc:
+                result["failed"] += 1
+                result["items"].append({"file_id": file_id, "status": "error", "error": str(exc)})
+            finally:
+                state = self._load_state(kb_id)
+                state["compile_status"] = {
+                    "status": "running",
+                    "total": len(candidates),
+                    "processed": int(result["processed"]) + int(result["failed"]),
+                }
+                self._save_state(kb_id, state)
+        state = self._load_state(kb_id)
+        state["compile_status"] = {
+            "status": "failed" if result["failed"] and not result["processed"] else "completed",
+            "total": len(candidates),
+            "processed": int(result["processed"]),
+            "failed": int(result["failed"]),
+        }
+        state["needs_recompile"] = False
+        self._save_state(kb_id, state)
+        return result
 
     async def accept_generated_wiki_page(self, kb_id: str, page_id: str) -> dict:
         state = self._load_state(kb_id)

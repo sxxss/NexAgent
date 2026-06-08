@@ -42,7 +42,7 @@ _ACTIVE_INGESTION_FILES: set[str] = set()
 class KBCreateRequest(BaseModel):
     name: str
     description: str = ""
-    kb_type: str = Field(default="milvus", pattern="^(milvus|lightrag)$")
+    kb_type: str = Field(default="milvus", pattern="^(milvus|lightrag|wiki)$")
     chunk_size: int = Field(default=512, ge=64, le=4096)
     chunk_overlap: int = Field(default=64, ge=0, le=512)
     chunk_preset_id: str = Field(default="general", pattern="^(general|qa|book|laws|paper)$")
@@ -58,7 +58,7 @@ class SearchRequest(BaseModel):
     top_k: int = Field(default=5, ge=1, le=50)
     mode: str = Field(
         default="hybrid",
-        description="vector | keyword | hybrid | lightrag_local | lightrag_global | lightrag_hybrid",
+        description="vector | keyword | hybrid | lightrag_local | lightrag_global | lightrag_hybrid | wiki",
     )
     search_mode: str | None = None
     recall_top_k: int | None = Field(default=None, ge=1, le=200)
@@ -173,6 +173,28 @@ def _kb_or_404(kb_id: str):
     if kb is None:
         raise HTTPException(status_code=404, detail=f"Knowledge base not found: {kb_id}")
     return mgr, kb
+
+
+def _kb_type_value(kb) -> str:
+    return str(getattr(getattr(kb, "kb_type", ""), "value", getattr(kb, "kb_type", "")))
+
+
+def _local_wiki_kb_or_404(kb_id: str):
+    mgr = _mgr()
+    kb = mgr.get_kb(kb_id)
+    if kb is None:
+        raise HTTPException(status_code=404, detail=f"Knowledge base not found: {kb_id}")
+    if _kb_type_value(kb) != "wiki":
+        raise HTTPException(status_code=400, detail="This endpoint only supports Wiki knowledge bases.")
+    return mgr, kb, mgr._find_backend(kb_id)
+
+
+async def _is_local_wiki_kb(kb_id: str) -> bool:
+    try:
+        kb = _mgr().get_kb(kb_id)
+        return bool(kb and _kb_type_value(kb) == "wiki")
+    except Exception:
+        return False
 
 
 def _raise_knowledge_file_error(exc: KnowledgeFileError) -> None:
@@ -536,7 +558,7 @@ def _mode_for_request(req: SearchRequest, kb_type: str) -> str:
     if raw == "bm25":
         raw = "keyword"
     allowed = _available_modes(kb_type)
-    default = "lightrag_hybrid" if kb_type == KBType.LIGHTRAG.value else "hybrid"
+    default = "wiki" if kb_type == KBType.WIKI.value else "lightrag_hybrid" if kb_type == KBType.LIGHTRAG.value else "hybrid"
     mode = raw or default
     if mode not in allowed:
         raise HTTPException(
@@ -548,6 +570,8 @@ def _mode_for_request(req: SearchRequest, kb_type: str) -> str:
 
 
 def _available_modes(kb_type: str) -> list[str]:
+    if kb_type == KBType.WIKI.value:
+        return ["wiki"]
     if kb_type == KBType.LIGHTRAG.value:
         return ["lightrag_local", "lightrag_global", "lightrag_hybrid"]
     return ["vector", "keyword", "hybrid"]
@@ -733,17 +757,23 @@ async def list_kbs():
     if _prod_enabled():
         prod = _prod_service()
         prod_kbs = [kb.to_dict() for kb in await prod.list_kbs()]
+        local_wiki = []
         legacy = []
         try:
             for kb in _mgr().list_kbs():
                 item = kb.to_dict()
+                if _kb_type_value(kb) == "wiki":
+                    item["extra"] = {**item.get("extra", {}), "storage": "local_wiki"}
+                    local_wiki.append(item)
+                    continue
                 item.setdefault("extra", {})
                 item["extra"] = {**item.get("extra", {}), "legacy": True, "read_only": True}
                 item["status"] = "legacy"
                 legacy.append(item)
         except Exception:
+            local_wiki = []
             legacy = []
-        items = prod_kbs + legacy
+        items = prod_kbs + local_wiki + legacy
         return {"knowledge_bases": items, "total": len(items), "mode": "production"}
     mgr = _mgr()
     kbs = mgr.list_kbs()
@@ -752,6 +782,23 @@ async def list_kbs():
 
 @router.post("/", summary="Create a knowledge base", status_code=201)
 async def create_kb(req: KBCreateRequest):
+    if req.kb_type == "wiki":
+        mgr = _mgr()
+        try:
+            kb = await mgr.create_kb(
+                name=req.name,
+                description=req.description,
+                kb_type="wiki",
+                embed_info=None,
+                chunk_size=req.chunk_size,
+                chunk_overlap=req.chunk_overlap,
+                chunk_preset_id=req.chunk_preset_id,
+                chunk_parser_config=req.chunk_parser_config,
+            )
+            return kb.to_dict()
+        except Exception as exc:
+            logger.exception("Failed to create Wiki KB")
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
     if _prod_enabled():
         try:
             embed_info = None
@@ -821,7 +868,7 @@ async def hybrid_search(req: HybridSearchRequest):
     mode = str(req.search_mode or req.mode or "hybrid").lower()
     if mode == "bm25":
         mode = "keyword"
-    allowed = {"vector", "keyword", "hybrid", "lightrag_local", "lightrag_global", "lightrag_hybrid"}
+    allowed = {"vector", "keyword", "hybrid", "lightrag_local", "lightrag_global", "lightrag_hybrid", "wiki"}
     if mode not in allowed:
         raise HTTPException(status_code=400, detail=f"Unsupported search mode: {mode}")
     try:
@@ -879,6 +926,92 @@ async def get_ingestion_job_logs(job_id: str):
     }
 
 
+@router.post("/{kb_id}/wiki/compile", summary="Compile Wiki pages")
+async def compile_wiki(kb_id: str, body: dict[str, Any] | None = None):
+    _mgr, _kb, backend = _local_wiki_kb_or_404(kb_id)
+    file_ids = (body or {}).get("file_ids")
+    if file_ids is not None and not isinstance(file_ids, list):
+        raise HTTPException(status_code=400, detail="file_ids must be a list")
+    force = bool((body or {}).get("force"))
+    retry_failed = bool((body or {}).get("retry_failed"))
+    return await backend.compile_wiki(kb_id, file_ids=file_ids, force=force, retry_failed=retry_failed)
+
+
+@router.get("/{kb_id}/wiki/pages", summary="List Wiki pages")
+async def list_wiki_pages(
+    kb_id: str,
+    type: str | None = None,
+    q: str | None = None,
+    status: str | None = None,
+    source_file_id: str | None = None,
+):
+    _mgr, _kb, backend = _local_wiki_kb_or_404(kb_id)
+    return backend.list_wiki_pages(kb_id, page_type=type, q=q, status=status, source_file_id=source_file_id)
+
+
+@router.get("/{kb_id}/wiki/pages/{page_id}", summary="Get Wiki page")
+async def get_wiki_page(kb_id: str, page_id: str):
+    _mgr, _kb, backend = _local_wiki_kb_or_404(kb_id)
+    try:
+        return backend.get_wiki_page(kb_id, page_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.put("/{kb_id}/wiki/pages/{page_id}", summary="Update Wiki page")
+async def update_wiki_page(kb_id: str, page_id: str, body: dict[str, Any]):
+    _mgr, _kb, backend = _local_wiki_kb_or_404(kb_id)
+    frontmatter = body.get("frontmatter") if isinstance(body.get("frontmatter"), dict) else None
+    try:
+        return await backend.update_wiki_page(kb_id, page_id, str(body.get("content") or ""), frontmatter=frontmatter)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/{kb_id}/wiki/pages/{page_id}", summary="Delete Wiki page")
+async def delete_wiki_page(kb_id: str, page_id: str):
+    _mgr, _kb, backend = _local_wiki_kb_or_404(kb_id)
+    try:
+        return await backend.delete_wiki_page(kb_id, page_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{kb_id}/wiki/pages/{page_id}/accept-generated", summary="Accept Wiki candidate")
+async def accept_generated_wiki_page(kb_id: str, page_id: str):
+    _mgr, _kb, backend = _local_wiki_kb_or_404(kb_id)
+    try:
+        return await backend.accept_generated_wiki_page(kb_id, page_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{kb_id}/wiki/pages/{page_id}/discard-generated", summary="Discard Wiki candidate")
+async def discard_generated_wiki_page(kb_id: str, page_id: str):
+    _mgr, _kb, backend = _local_wiki_kb_or_404(kb_id)
+    try:
+        return await backend.discard_generated_wiki_page(kb_id, page_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/{kb_id}/wiki/graph", summary="Get Wiki graph")
+async def get_wiki_graph(
+    kb_id: str,
+    max_edges: int = Query(80),
+    include_weak: bool = Query(False),
+    q: str | None = Query(None),
+):
+    _mgr, _kb, backend = _local_wiki_kb_or_404(kb_id)
+    return backend.get_wiki_graph(kb_id, max_edges=max_edges, include_weak=include_weak, q=q)
+
+
+@router.get("/{kb_id}/wiki/lint", summary="Lint Wiki")
+async def lint_wiki(kb_id: str):
+    _mgr, _kb, backend = _local_wiki_kb_or_404(kb_id)
+    return backend.lint_wiki(kb_id)
+
+
 @router.post("/jobs/{job_id}/retry", summary="Retry a failed or interrupted ingestion job")
 async def retry_ingestion_job(job_id: str):
     if _prod_enabled():
@@ -907,6 +1040,11 @@ async def get_kb(kb_id: str):
     prod_kb = await _prod_kb(kb_id)
     if prod_kb:
         return prod_kb.to_dict()
+    if await _is_local_wiki_kb(kb_id):
+        _, kb = _kb_or_404(kb_id)
+        item = kb.to_dict()
+        item["extra"] = {**item.get("extra", {}), "storage": "local_wiki"}
+        return item
     if _prod_enabled():
         _, kb = _kb_or_404(kb_id)
         item = kb.to_dict()
@@ -937,6 +1075,9 @@ async def get_query_config(kb_id: str):
             "reranker_model": str(prod_kb.extra.get("reranker_model") or ""),
             "requires_reindex": bool(prod_kb.extra.get("requires_reindex")),
         }
+    if await _is_local_wiki_kb(kb_id):
+        mgr, kb = _kb_or_404(kb_id)
+        return _query_config_response(mgr, kb_id, kb.kb_type.value)
     mgr, kb = _kb_or_404(kb_id)
     return _query_config_response(mgr, kb_id, kb.kb_type.value)
 
@@ -945,6 +1086,11 @@ async def get_query_config(kb_id: str):
 async def update_query_config(kb_id: str, req: QueryConfigUpdate):
     if await _prod_kb(kb_id):
         return {"kb_id": kb_id, **req.model_dump(exclude_none=True), "status": "saved"}
+    if await _is_local_wiki_kb(kb_id):
+        mgr, kb = _kb_or_404(kb_id)
+        patch = req.model_dump(exclude_none=True)
+        mgr.update_query_config(kb_id, patch)
+        return _query_config_response(mgr, kb_id, kb.kb_type.value)
     if _prod_enabled():
         raise _legacy_read_only_error(kb_id)
     mgr, kb = _kb_or_404(kb_id)
@@ -969,6 +1115,12 @@ async def update_model_config(kb_id: str, req: ModelConfigUpdate):
                 if provider_model.get("dimension") and "embed_dimension" not in patch:
                     patch["embed_dimension"] = provider_model["dimension"]
             return await _prod_service().update_model_config(kb_id, patch)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if await _is_local_wiki_kb(kb_id):
+        mgr, _ = _kb_or_404(kb_id)
+        try:
+            return mgr.update_model_config(kb_id, req.model_dump(exclude_none=True))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     if _prod_enabled():
@@ -1021,6 +1173,12 @@ async def update_chunk_config(kb_id: str, req: ChunkConfigUpdate):
             return await _prod_service().update_chunk_config(kb_id, req.model_dump(exclude_none=True))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if await _is_local_wiki_kb(kb_id):
+        mgr, _ = _kb_or_404(kb_id)
+        try:
+            return mgr.update_chunk_config(kb_id, req.model_dump(exclude_none=True))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     if _prod_enabled():
         raise _legacy_read_only_error(kb_id)
     mgr, _ = _kb_or_404(kb_id)
@@ -1034,6 +1192,11 @@ async def update_chunk_config(kb_id: str, req: ChunkConfigUpdate):
 async def knowledge_diagnostics(kb_id: str):
     if await _prod_kb(kb_id):
         return await _prod_service().diagnostics(kb_id)
+    if await _is_local_wiki_kb(kb_id):
+        mgr, _ = _kb_or_404(kb_id)
+        payload = mgr.diagnostics(kb_id)
+        payload["storage"] = "local_wiki"
+        return payload
     if _prod_enabled():
         return {
             "kb_id": kb_id,
@@ -1054,6 +1217,14 @@ async def delete_kb(kb_id: str):
         except Exception as exc:
             logger.exception("Failed to delete production KB %s", kb_id)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if await _is_local_wiki_kb(kb_id):
+        mgr, _ = _kb_or_404(kb_id)
+        try:
+            await mgr.delete_kb(kb_id)
+            return None
+        except Exception as exc:
+            logger.exception("Failed to delete local Wiki KB %s", kb_id)
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
     if _prod_enabled():
         raise _legacy_read_only_error(kb_id)
     mgr, _ = _kb_or_404(kb_id)
@@ -1071,6 +1242,10 @@ async def list_files(kb_id: str):
     if await _prod_kb(kb_id):
         files = await _prod_service().list_files(kb_id)
         return {"files": [f.to_dict() for f in files], "total": len(files)}
+    if await _is_local_wiki_kb(kb_id):
+        mgr, _ = _kb_or_404(kb_id)
+        files = mgr.list_files(kb_id)
+        return {"files": [f.to_dict() for f in files], "total": len(files)}
     if _prod_enabled():
         _, _ = _kb_or_404(kb_id)
         return {"files": [], "total": 0, "legacy": True, "read_only": True}
@@ -1083,6 +1258,13 @@ async def list_files(kb_id: str):
 async def list_ingestion_jobs(kb_id: str):
     if await _prod_kb(kb_id):
         payload = await _prod_service().list_jobs(kb_id)
+        return {"tasks": payload, "jobs": payload, "total": len(payload)}
+    if await _is_local_wiki_kb(kb_id):
+        _, _ = _kb_or_404(kb_id)
+        from nexagent.services.task_service import list_tasks
+
+        tasks = list_tasks(kind=KNOWLEDGE_INGESTION_TASK_KIND, metadata={"kb_id": kb_id}, limit=50)
+        payload = [task.to_dict() for task in tasks]
         return {"tasks": payload, "jobs": payload, "total": len(payload)}
     if _prod_enabled():
         _, _ = _kb_or_404(kb_id)
@@ -1109,6 +1291,17 @@ async def process_all_files(kb_id: str, req: ProcessAllRequest | None = None):
             if f.status.value in retryable
         ]
         return {"task": jobs[0] if len(jobs) == 1 else None, "job": jobs[0] if len(jobs) == 1 else None, "jobs": jobs, "queued": len(jobs)}
+    if await _is_local_wiki_kb(kb_id):
+        mgr, _ = _kb_or_404(kb_id)
+        retry_errors = True if req is None else req.retry_errors
+        retryable = {"uploaded", "parsed"}
+        if retry_errors:
+            retryable.update({"parse_error", "index_error", "error_graphing", "indexed_with_graph_degraded"})
+        file_ids = [f.file_id for f in mgr.list_files(kb_id) if f.status.value in retryable]
+        if not file_ids:
+            return {"task": None, "job": None, "queued": 0, "message": "No pending files to process."}
+        task = _queue_ingestion(kb_id, file_ids)
+        return {"task": task.to_dict(), "job": task.to_dict(), "queued": len(file_ids)}
     if _prod_enabled():
         raise _legacy_read_only_error(kb_id)
     mgr, _ = _kb_or_404(kb_id)
@@ -1140,6 +1333,24 @@ async def upload_file(kb_id: str, file: UploadFile = File(...)):
                     "message": str(exc),
                     "details": {"filename": file.filename or ""},
                     "action": "check_minio_postgres",
+                },
+            ) from exc
+        return meta.to_dict()
+    if await _is_local_wiki_kb(kb_id):
+        mgr, _ = _kb_or_404(kb_id)
+        try:
+            content = await _read_upload_content(file)
+            meta = await mgr.add_file(kb_id, file.filename or "unknown", content)
+        except KnowledgeFileError as exc:
+            _raise_knowledge_file_error(exc)
+        except Exception as exc:
+            logger.exception("Failed to upload file to local Wiki KB %s", kb_id)
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error_code": "upload_failed",
+                    "message": str(exc),
+                    "details": {"filename": file.filename or ""},
                 },
             ) from exc
         return meta.to_dict()
@@ -1223,6 +1434,17 @@ async def delete_file(kb_id: str, file_id: str):
         except Exception as exc:
             logger.exception("Failed to delete production file %s", file_id)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if await _is_local_wiki_kb(kb_id):
+        mgr, _ = _kb_or_404(kb_id)
+        f = mgr.get_file(kb_id, file_id)
+        if f is None:
+            raise HTTPException(status_code=404, detail=f"File not found: {file_id}")
+        try:
+            await mgr.delete_file(kb_id, file_id)
+            return None
+        except Exception as exc:
+            logger.exception("Failed to delete local Wiki file %s", file_id)
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
     if _prod_enabled():
         raise _legacy_read_only_error(kb_id)
     mgr, _ = _kb_or_404(kb_id)
@@ -1245,6 +1467,18 @@ async def parse_file(kb_id: str, file_id: str):
             _raise_knowledge_file_error(exc)
         except KeyError:
             raise HTTPException(status_code=404, detail=f"File not found: {file_id}") from None
+    if await _is_local_wiki_kb(kb_id):
+        mgr, _ = _kb_or_404(kb_id)
+        f = mgr.get_file(kb_id, file_id)
+        if f is None:
+            raise HTTPException(status_code=404, detail=f"File not found: {file_id}")
+        try:
+            return (await mgr.parse_file(kb_id, file_id)).to_dict()
+        except KnowledgeFileError as exc:
+            _raise_knowledge_file_error(exc)
+        except Exception as exc:
+            logger.exception("Parse failed for local Wiki file %s", file_id)
+            raise HTTPException(status_code=500, detail=_state_error_detail(exc)) from exc
     if _prod_enabled():
         raise _legacy_read_only_error(kb_id)
     """Parse the raw document and extract plain text (PDF → text, DOCX → text…)."""
@@ -1271,6 +1505,17 @@ async def reparse_file(kb_id: str, file_id: str):
             _raise_knowledge_file_error(exc)
         except KeyError:
             raise HTTPException(status_code=404, detail=f"File not found: {file_id}") from None
+    if await _is_local_wiki_kb(kb_id):
+        mgr, _ = _kb_or_404(kb_id)
+        if mgr.get_file(kb_id, file_id) is None:
+            raise HTTPException(status_code=404, detail=f"File not found: {file_id}")
+        try:
+            return (await mgr.reparse_file(kb_id, file_id)).to_dict()
+        except KnowledgeFileError as exc:
+            _raise_knowledge_file_error(exc)
+        except Exception as exc:
+            logger.exception("Reparse failed for local Wiki file %s", file_id)
+            raise HTTPException(status_code=500, detail=_state_error_detail(exc)) from exc
     if _prod_enabled():
         raise _legacy_read_only_error(kb_id)
     mgr, _ = _kb_or_404(kb_id)
@@ -1295,6 +1540,17 @@ async def index_file(kb_id: str, file_id: str):
             _raise_knowledge_file_error(exc)
         except KeyError:
             raise HTTPException(status_code=404, detail=f"File not found: {file_id}") from None
+    if await _is_local_wiki_kb(kb_id):
+        mgr, _ = _kb_or_404(kb_id)
+        if mgr.get_file(kb_id, file_id) is None:
+            raise HTTPException(status_code=404, detail=f"File not found: {file_id}")
+        try:
+            return (await mgr.index_file(kb_id, file_id)).to_dict()
+        except KnowledgeFileError as exc:
+            _raise_knowledge_file_error(exc)
+        except Exception as exc:
+            logger.exception("Index failed for local Wiki file %s", file_id)
+            raise HTTPException(status_code=500, detail=_state_error_detail(exc)) from exc
     if _prod_enabled():
         raise _legacy_read_only_error(kb_id)
     """Chunk the parsed text, generate embeddings, and store in the vector/graph backend."""
@@ -1323,6 +1579,17 @@ async def reindex_file(kb_id: str, file_id: str):
             _raise_knowledge_file_error(exc)
         except KeyError:
             raise HTTPException(status_code=404, detail=f"File not found: {file_id}") from None
+    if await _is_local_wiki_kb(kb_id):
+        mgr, _ = _kb_or_404(kb_id)
+        if mgr.get_file(kb_id, file_id) is None:
+            raise HTTPException(status_code=404, detail=f"File not found: {file_id}")
+        try:
+            return (await mgr.reindex_file(kb_id, file_id)).to_dict()
+        except KnowledgeFileError as exc:
+            _raise_knowledge_file_error(exc)
+        except Exception as exc:
+            logger.exception("Reindex failed for local Wiki file %s", file_id)
+            raise HTTPException(status_code=500, detail=_state_error_detail(exc)) from exc
     if _prod_enabled():
         raise _legacy_read_only_error(kb_id)
     mgr, _ = _kb_or_404(kb_id)
@@ -1347,6 +1614,17 @@ async def rebuild_graph_file(kb_id: str, file_id: str):
             _raise_knowledge_file_error(exc)
         except KeyError:
             raise HTTPException(status_code=404, detail=f"File not found: {file_id}") from None
+    if await _is_local_wiki_kb(kb_id):
+        mgr, _ = _kb_or_404(kb_id)
+        if mgr.get_file(kb_id, file_id) is None:
+            raise HTTPException(status_code=404, detail=f"File not found: {file_id}")
+        try:
+            return (await mgr.rebuild_graph_file(kb_id, file_id)).to_dict()
+        except KnowledgeFileError as exc:
+            _raise_knowledge_file_error(exc)
+        except Exception as exc:
+            logger.exception("Graph rebuild failed for local Wiki file %s", file_id)
+            raise HTTPException(status_code=500, detail=_state_error_detail(exc)) from exc
     if _prod_enabled():
         raise _legacy_read_only_error(kb_id)
     mgr, _ = _kb_or_404(kb_id)
@@ -1374,6 +1652,23 @@ async def process_file(kb_id: str, file_id: str):
             return {"parsed": parsed.to_dict(), "indexed": indexed.to_dict()}
         except KnowledgeFileError as exc:
             _raise_knowledge_file_error(exc)
+    if await _is_local_wiki_kb(kb_id):
+        mgr, _ = _kb_or_404(kb_id)
+        f = mgr.get_file(kb_id, file_id)
+        if f is None:
+            raise HTTPException(status_code=404, detail=f"File not found: {file_id}")
+        try:
+            parsed = f
+            if f.status.value in {"uploaded", "parse_error"}:
+                parsed = await mgr.parse_file(kb_id, file_id)
+                f = mgr.get_file(kb_id, file_id) or parsed
+            indexed = await mgr.index_file(kb_id, file_id)
+            return {"parsed": parsed.to_dict(), "indexed": indexed.to_dict()}
+        except KnowledgeFileError as exc:
+            _raise_knowledge_file_error(exc)
+        except Exception as exc:
+            logger.exception("Process failed for local Wiki file %s", file_id)
+            raise HTTPException(status_code=500, detail=_state_error_detail(exc)) from exc
     if _prod_enabled():
         raise _legacy_read_only_error(kb_id)
     """Run full ingestion for clients that do not need parse/index step control."""
@@ -1419,6 +1714,17 @@ async def process_file_async(kb_id: str, file_id: str):
             return {"job": None, "file": f.to_dict(), "message": f"File is already {f.status.value}."}
         job = await _prod_service().create_job(kb_id, file_id, "ingest")
         return {"task": job, "job": job, "file": f.to_dict()}
+    if await _is_local_wiki_kb(kb_id):
+        mgr, _ = _kb_or_404(kb_id)
+        f = mgr.get_file(kb_id, file_id)
+        if f is None:
+            raise HTTPException(status_code=404, detail=f"File not found: {file_id}")
+        if f"{kb_id}:{file_id}" in _ACTIVE_INGESTION_FILES:
+            return {"job": None, "file": f.to_dict(), "message": "File is already being processed."}
+        if f.status.value in {"parsing", "indexing", "graphing", "indexed", "graph_indexed"}:
+            return {"job": None, "file": f.to_dict(), "message": f"File is already {f.status.value}."}
+        task = _queue_ingestion(kb_id, [file_id])
+        return {"task": task.to_dict(), "job": task.to_dict(), "file": f.to_dict()}
     if _prod_enabled():
         raise _legacy_read_only_error(kb_id)
     mgr, _ = _kb_or_404(kb_id)
@@ -1440,7 +1746,7 @@ async def search(kb_id: str, req: SearchRequest):
         mgr = None
         kb = prod_kb
     else:
-        if _prod_enabled():
+        if _prod_enabled() and not await _is_local_wiki_kb(kb_id):
             raise _legacy_read_only_error(kb_id)
         mgr, kb = _kb_or_404(kb_id)
     mode = _mode_for_request(req, kb.kb_type.value)

@@ -139,6 +139,7 @@ async def test_upload_route_returns_structured_validation_error(monkeypatch):
     try:
         manager = reset_manager(str(work_dir))
         kb = await manager.create_kb(name="kb", kb_type="milvus")
+        monkeypatch.setattr(knowledge, "_prod_enabled", lambda: False)
         monkeypatch.setattr(knowledge, "_kb_or_404", lambda kb_id: (manager, kb))
 
         upload = UploadFile(filename="../secret.txt", file=BytesIO(b"content"))
