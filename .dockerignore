@@ -1,0 +1,62 @@
+.git
+.github
+
+# Local configuration and secrets
+.env
+.env.*
+config.yaml
+*.pem
+*.key
+*.crt
+
+# Runtime state
+.nexagent
+**/.nexagent
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+
+# Python
+**/__pycache__
+**/*.py[cod]
+backend/.venv
+backend/.uv-cache
+.ruff_cache
+**/.ruff_cache
+.pytest_cache
+**/.pytest_cache
+.coverage
+htmlcov
+
+# Node / Next.js
+frontend/node_modules
+frontend/.next
+frontend/out
+frontend/build
+frontend/coverage
+frontend/tsconfig.tsbuildinfo
+frontend/next-env.d.ts
+
+# Local tools and editor state
+.idea
+.vscode
+.claude
+.codex
+.agents
+.test-workspaces
+test-artifacts
+**/test-artifacts
+
+# Skill runtime history and local custom skills
+skills/public/.history
+skills/custom/*
+!skills/custom/.gitkeep
+
+# OS / logs
+.DS_Store
+Thumbs.db
+*.log
+logs

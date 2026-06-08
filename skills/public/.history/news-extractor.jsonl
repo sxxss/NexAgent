@@ -1,2 +1,0 @@
-{"action": "edit", "file_path": "SKILL.md", "message": "edit skill package", "source": "skill_manage", "ts": "2026-04-29T09:41:41.515247+00:00"}
-{"action": "write_file", "file_path": "references/extraction-strategy.md", "new_hash": "2aaefbc42edbe30589068a1d1d6e97674303ce6453a25585e37707cdb1163918", "prev_hash": "", "scanner": {"decision": "allow", "reason": ""}, "source": "skill_manage", "ts": "2026-04-29T09:42:06.217845+00:00"}

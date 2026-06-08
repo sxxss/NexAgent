@@ -45,7 +45,7 @@ version: 0.1.0
 > 以确保格式一致。这是三层结构中"按需加载"的典型用法。
 
 ```
-view /home/claude/demo-skill/references/output-template.md
+view references/output-template.md
 ```
 
 ### Step 3：执行分析
@@ -54,7 +54,7 @@ view /home/claude/demo-skill/references/output-template.md
 ```bash
 # 调用脚本做词频统计，辅助关键词抽取
 # 这展示了 scripts/ 层的使用方式：脚本直接执行，无需加载全文到上下文
-python /home/claude/demo-skill/scripts/word_freq.py "<文本>"
+python scripts/word_freq.py "<文本>"
 ```
 
 ### Step 4：输出结果

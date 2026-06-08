@@ -1,22 +1,24 @@
 # NexAgent Frontend
 
-Next.js workbench for NexAgent. It provides the user-facing product surface for chat, deep research, agents, knowledge bases, memory, MCP, skills, channels, evaluation, creation workflows, dashboard, and settings.
+Next.js workbench for NexAgent. It provides the user-facing surface for chat, deep research, agents, knowledge bases, memory, MCP, skills, channels, evaluation, creation workflows, dashboard, and settings.
+
+See the root [README](../README.md) for the full project overview and setup flow.
 
 ## Development
 
-```powershell
-cd D:\tools\agents\NexAgent\frontend
+```bash
+cd frontend
 npm install
 npm run dev
 ```
 
-Open http://localhost:3000.
+Open `http://localhost:3000`.
 
 The frontend proxies `/api/*` to the backend URL configured by `NEXT_PUBLIC_API_URL`; if it is not set, it uses `http://localhost:8001`.
 
 ## Useful Commands
 
-```powershell
+```bash
 npm run lint
 npm run build
 ```

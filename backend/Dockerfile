@@ -63,7 +63,7 @@ COPY backend/packages/core/ backend/packages/core/
 COPY backend/app/           backend/app/
 COPY backend/pyproject.toml backend/
 COPY skills/                skills/
-COPY config.yaml            config.yaml
+COPY config.example.yaml    config.yaml
 
 RUN python -m pip install --upgrade pip setuptools wheel \
     && pip install --retries 10 --timeout 60 \
