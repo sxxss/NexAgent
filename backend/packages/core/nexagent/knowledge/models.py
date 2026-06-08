@@ -111,9 +111,11 @@ class EmbedInfo:
     api_key: str = ""
     dimension: int = 1024
 
-    def to_dict(self) -> dict:
-        return {"model": self.model, "base_url": self.base_url,
-                "api_key": self.api_key, "dimension": self.dimension}
+    def to_dict(self, *, include_secret: bool = True) -> dict:
+        payload = {"model": self.model, "base_url": self.base_url, "dimension": self.dimension}
+        if include_secret:
+            payload["api_key"] = self.api_key
+        return payload
 
     @classmethod
     def from_dict(cls, d: dict) -> EmbedInfo:
@@ -128,9 +130,11 @@ class LLMInfo:
     base_url: str = ""
     api_key: str = ""
 
-    def to_dict(self) -> dict:
-        return {"provider": self.provider, "model": self.model,
-                "base_url": self.base_url, "api_key": self.api_key}
+    def to_dict(self, *, include_secret: bool = True) -> dict:
+        payload = {"provider": self.provider, "model": self.model, "base_url": self.base_url}
+        if include_secret:
+            payload["api_key"] = self.api_key
+        return payload
 
     @classmethod
     def from_dict(cls, d: dict) -> LLMInfo:
@@ -154,14 +158,14 @@ class KBMeta:
     updated_at: str = field(default_factory=_now)
     extra: dict = field(default_factory=dict)
 
-    def to_dict(self) -> dict:
+    def to_dict(self, *, include_secrets: bool = True) -> dict:
         return {
             "kb_id": self.kb_id,
             "name": self.name,
             "kb_type": self.kb_type.value,
             "description": self.description,
-            "embed_info": self.embed_info.to_dict(),
-            "llm_info": self.llm_info.to_dict(),
+            "embed_info": self.embed_info.to_dict(include_secret=include_secrets),
+            "llm_info": self.llm_info.to_dict(include_secret=include_secrets),
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
             "chunk_preset_id": self.chunk_preset_id,

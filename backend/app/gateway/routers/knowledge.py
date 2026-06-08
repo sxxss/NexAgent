@@ -179,6 +179,31 @@ def _kb_type_value(kb) -> str:
     return str(getattr(getattr(kb, "kb_type", ""), "value", getattr(kb, "kb_type", "")))
 
 
+def _kb_public_dict(kb) -> dict:
+    if hasattr(kb, "to_dict"):
+        try:
+            payload = kb.to_dict(include_secrets=False)
+        except TypeError:
+            payload = kb.to_dict()
+    else:
+        payload = dict(kb)
+    for key in ("embed_info", "llm_info"):
+        if isinstance(payload.get(key), dict):
+            payload[key].pop("api_key", None)
+    return payload
+
+
+def _redact_kb_secrets(payload: dict) -> dict:
+    out = dict(payload)
+    for key in ("embed_info", "llm_info"):
+        if isinstance(out.get(key), dict):
+            out[key] = dict(out[key])
+            out[key].pop("api_key", None)
+    if isinstance(out.get("kb"), dict):
+        out["kb"] = _redact_kb_secrets(out["kb"])
+    return out
+
+
 def _local_wiki_kb_or_404(kb_id: str):
     mgr = _mgr()
     kb = mgr.get_kb(kb_id)
@@ -756,12 +781,12 @@ except Exception as exc:
 async def list_kbs():
     if _prod_enabled():
         prod = _prod_service()
-        prod_kbs = [kb.to_dict() for kb in await prod.list_kbs()]
+        prod_kbs = [_kb_public_dict(kb) for kb in await prod.list_kbs()]
         local_wiki = []
         legacy = []
         try:
             for kb in _mgr().list_kbs():
-                item = kb.to_dict()
+                item = _kb_public_dict(kb)
                 if _kb_type_value(kb) == "wiki":
                     item["extra"] = {**item.get("extra", {}), "storage": "local_wiki"}
                     local_wiki.append(item)
@@ -777,7 +802,7 @@ async def list_kbs():
         return {"knowledge_bases": items, "total": len(items), "mode": "production"}
     mgr = _mgr()
     kbs = mgr.list_kbs()
-    return {"knowledge_bases": [kb.to_dict() for kb in kbs], "total": len(kbs)}
+    return {"knowledge_bases": [_kb_public_dict(kb) for kb in kbs], "total": len(kbs)}
 
 
 @router.post("/", summary="Create a knowledge base", status_code=201)
@@ -795,7 +820,7 @@ async def create_kb(req: KBCreateRequest):
                 chunk_preset_id=req.chunk_preset_id,
                 chunk_parser_config=req.chunk_parser_config,
             )
-            return kb.to_dict()
+            return _kb_public_dict(kb)
         except Exception as exc:
             logger.exception("Failed to create Wiki KB")
             raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -820,7 +845,7 @@ async def create_kb(req: KBCreateRequest):
                 chunk_preset_id=req.chunk_preset_id,
                 chunk_parser_config=req.chunk_parser_config,
             )
-            return kb.to_dict()
+            return _kb_public_dict(kb)
         except Exception as exc:
             logger.exception("Failed to create production KB")
             raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -848,7 +873,7 @@ async def create_kb(req: KBCreateRequest):
     except Exception as exc:
         logger.exception("Failed to create KB")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return kb.to_dict()
+    return _kb_public_dict(kb)
 
 
 @router.get("/status", summary="Knowledge backend status")
@@ -1062,20 +1087,20 @@ async def retry_ingestion_job(job_id: str):
 async def get_kb(kb_id: str):
     prod_kb = await _prod_kb(kb_id)
     if prod_kb:
-        return prod_kb.to_dict()
+        return _kb_public_dict(prod_kb)
     if await _is_local_wiki_kb(kb_id):
         _, kb = _kb_or_404(kb_id)
-        item = kb.to_dict()
+        item = _kb_public_dict(kb)
         item["extra"] = {**item.get("extra", {}), "storage": "local_wiki"}
         return item
     if _prod_enabled():
         _, kb = _kb_or_404(kb_id)
-        item = kb.to_dict()
+        item = _kb_public_dict(kb)
         item["extra"] = {**item.get("extra", {}), "legacy": True, "read_only": True}
         item["status"] = "legacy"
         return item
     _, kb = _kb_or_404(kb_id)
-    return kb.to_dict()
+    return _kb_public_dict(kb)
 
 
 @router.get("/{kb_id}/query-config", summary="Get knowledge base query config")
@@ -1137,13 +1162,13 @@ async def update_model_config(kb_id: str, req: ModelConfigUpdate):
                 patch.setdefault("embed_api_key", provider_model.get("api_key", ""))
                 if provider_model.get("dimension") and "embed_dimension" not in patch:
                     patch["embed_dimension"] = provider_model["dimension"]
-            return await _prod_service().update_model_config(kb_id, patch)
+            return _redact_kb_secrets(await _prod_service().update_model_config(kb_id, patch))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     if await _is_local_wiki_kb(kb_id):
         mgr, _ = _kb_or_404(kb_id)
         try:
-            return mgr.update_model_config(kb_id, req.model_dump(exclude_none=True))
+            return _redact_kb_secrets(mgr.update_model_config(kb_id, req.model_dump(exclude_none=True)))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     if _prod_enabled():
@@ -1161,7 +1186,7 @@ async def update_model_config(kb_id: str, req: ModelConfigUpdate):
             patch.setdefault("embed_api_key", provider_model.get("api_key", ""))
             if provider_model.get("dimension") and "embed_dimension" not in patch:
                 patch["embed_dimension"] = provider_model["dimension"]
-        return mgr.update_model_config(kb_id, patch)
+        return _redact_kb_secrets(mgr.update_model_config(kb_id, patch))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

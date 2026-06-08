@@ -52,7 +52,13 @@ def production_enabled() -> bool:
 
 class ProductionKnowledgeService:
     def __init__(self) -> None:
-        self.object_store = get_object_store()
+        self._object_store = None
+
+    @property
+    def object_store(self):
+        if self._object_store is None:
+            self._object_store = get_object_store()
+        return self._object_store
 
     async def list_kbs(self) -> list[KBMeta]:
         async with AsyncSessionLocal() as session:
@@ -712,8 +718,14 @@ class ProductionKnowledgeService:
             await session.commit()
 
 
+_PRODUCTION_SERVICE: ProductionKnowledgeService | None = None
+
+
 def get_production_service() -> ProductionKnowledgeService:
-    return ProductionKnowledgeService()
+    global _PRODUCTION_SERVICE
+    if _PRODUCTION_SERVICE is None:
+        _PRODUCTION_SERVICE = ProductionKnowledgeService()
+    return _PRODUCTION_SERVICE
 
 
 def _prod_work_dir() -> Path:

@@ -25,6 +25,25 @@ def test_file_meta_progress_is_exposed_in_dict():
 
 
 @pytest.mark.unit
+def test_kb_meta_public_dict_redacts_api_keys():
+    from nexagent.knowledge.models import EmbedInfo, KBMeta, KBType, LLMInfo
+
+    meta = KBMeta(
+        kb_id="kb-a",
+        name="kb",
+        kb_type=KBType.WIKI,
+        embed_info=EmbedInfo(api_key="secret-embed"),
+        llm_info=LLMInfo(api_key="secret-llm"),
+    )
+
+    payload = meta.to_dict(include_secrets=False)
+
+    assert "api_key" not in payload["embed_info"]
+    assert "api_key" not in payload["llm_info"]
+    assert meta.to_dict()["embed_info"]["api_key"] == "secret-embed"
+
+
+@pytest.mark.unit
 def test_search_result_payload_includes_evidence():
     from app.gateway.routers.knowledge import _search_result_payload
 
@@ -51,3 +70,28 @@ def test_search_result_payload_includes_evidence():
 
     assert payload["evidence"]["id"] == "E2"
     assert payload["source"] == "doc.md"
+
+
+@pytest.mark.unit
+def test_production_service_uses_singleton_and_lazy_object_store(monkeypatch):
+    from nexagent.knowledge import production_service
+
+    calls = {"count": 0}
+
+    class FakeObjectStore:
+        pass
+
+    def fake_get_object_store():
+        calls["count"] += 1
+        return FakeObjectStore()
+
+    monkeypatch.setattr(production_service, "_PRODUCTION_SERVICE", None, raising=False)
+    monkeypatch.setattr(production_service, "get_object_store", fake_get_object_store)
+
+    service_a = production_service.get_production_service()
+    service_b = production_service.get_production_service()
+
+    assert service_a is service_b
+    assert calls["count"] == 0
+    assert service_a.object_store is service_a.object_store
+    assert calls["count"] == 1
