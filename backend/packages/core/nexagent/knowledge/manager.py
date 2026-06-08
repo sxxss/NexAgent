@@ -579,6 +579,16 @@ def _parser_capabilities() -> dict:
 
 
 def _default_query_config(kb_type: str) -> dict:
+    if kb_type == "wiki":
+        return {
+            "mode": "wiki",
+            "search_mode": "wiki",
+            "final_top_k": 10,
+            "recall_top_k": 10,
+            "similarity_threshold": 0.0,
+            "use_reranker": False,
+            "reranker_model": "",
+        }
     if kb_type == "lightrag":
         return {
             "mode": "lightrag_hybrid",
@@ -636,12 +646,18 @@ def _clean_query_config(value: dict, kb_type: str) -> dict:
 
 
 def _available_modes(kb_type: str) -> list[str]:
+    if kb_type == "wiki":
+        return ["wiki"]
     if kb_type == "lightrag":
         return ["lightrag_local", "lightrag_global", "lightrag_hybrid"]
     return ["vector", "keyword", "hybrid"]
 
 
 def _query_options(kb_type: str) -> list[dict]:
+    if kb_type == "wiki":
+        return [
+            {"key": "final_top_k", "label": "返回数量", "type": "number", "min": 1, "max": 50},
+        ]
     if kb_type == "lightrag":
         return [
             {

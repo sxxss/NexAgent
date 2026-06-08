@@ -86,3 +86,54 @@ async def test_wiki_pages_are_frontmatter_markdown_and_manual_pages_get_candidat
     finally:
         reset_manager()
         shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_kb_indexes_markdown_into_pages_and_searches(monkeypatch):
+    from nexagent.knowledge.manager import reset_manager
+    from nexagent.knowledge.models import FileStatus
+
+    work_dir = _work_dir("compile")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", description="Architecture notes", kb_type="wiki")
+        file_meta = await manager.add_file(kb_meta.kb_id, "paper.md", b"# Transformer\n\nAttention links Encoder.")
+        parsed = await manager.parse_file(kb_meta.kb_id, file_meta.file_id)
+        backend = manager._find_backend(kb_meta.kb_id)
+
+        async def fake_compile(kb_id, file_id, meta, markdown):
+            assert "Attention links Encoder" in markdown
+            source = await backend.create_or_update_wiki_page(
+                kb_id,
+                page_type="source",
+                title="Transformer Paper",
+                content="# Transformer Paper\n\n## Summary\n\nAttention links [[Encoder]].",
+                sources=[file_id],
+                confidence="EXTRACTED",
+            )
+            topic = await backend.create_or_update_wiki_page(
+                kb_id,
+                page_type="topic",
+                title="Transformer Architecture",
+                content="# Transformer Architecture\n\nAttention and Encoder are related.",
+                sources=[file_id],
+                confidence="EXTRACTED",
+            )
+            return [source, topic]
+
+        monkeypatch.setattr(backend, "_compile_markdown_file", fake_compile)
+
+        indexed = await manager.index_file(kb_meta.kb_id, parsed.file_id)
+        pages = backend.list_wiki_pages(kb_meta.kb_id)["pages"]
+        results = await manager.search(kb_meta.kb_id, "attention encoder", top_k=5, mode="wiki")
+
+        assert indexed.status == FileStatus.INDEXED
+        assert indexed.chunk_count == 2
+        assert {page["type"] for page in pages} == {"source", "topic"}
+        assert results[0].metadata["page_id"] == "topic:transformer-architecture"
+        assert results[0].metadata["page_type"] == "topic"
+        assert "Attention" in results[0].content
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)

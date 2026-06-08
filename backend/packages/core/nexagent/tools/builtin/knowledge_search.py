@@ -16,6 +16,7 @@ VALID_TOOL_MODES = {
     "lightrag_local",
     "lightrag_global",
     "lightrag_hybrid",
+    "wiki",
 }
 
 
@@ -38,7 +39,7 @@ def get_knowledge_search_tool(kb_ids: list[str] | None = None):
             if normalized_mode not in VALID_TOOL_MODES:
                 return (
                     f"Knowledge base search failed: unsupported mode '{mode}'. "
-                    "Use vector, keyword, hybrid, lightrag_local, lightrag_global, or lightrag_hybrid."
+                    "Use vector, keyword, hybrid, lightrag_local, lightrag_global, lightrag_hybrid, or wiki."
                 )
 
             mgr = get_manager()

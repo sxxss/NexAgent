@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import shutil
 from datetime import UTC, datetime
+from pathlib import Path
 
 from nexagent.knowledge.base import KnowledgeBase
+from nexagent.knowledge.implementations.wiki.compile import WikiCompileMixin
 from nexagent.knowledge.implementations.wiki.constants import CONFIDENCE_VALUES, WIKI_PAGE_TYPES
 from nexagent.knowledge.implementations.wiki.links import WikiLinksMixin
 from nexagent.knowledge.implementations.wiki.storage import WikiStorageMixin
@@ -14,7 +16,7 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-class WikiKB(WikiStorageMixin, WikiLinksMixin, KnowledgeBase):
+class WikiKB(WikiCompileMixin, WikiStorageMixin, WikiLinksMixin, KnowledgeBase):
     """Markdown-first LLM Wiki knowledge base."""
 
     @property
@@ -149,7 +151,11 @@ class WikiKB(WikiStorageMixin, WikiLinksMixin, KnowledgeBase):
         return "generated"
 
     async def _do_index(self, kb_meta: KBMeta, file_meta: FileMeta) -> int:
-        return 0
+        parsed_path = Path(file_meta.parsed_path)
+        markdown = parsed_path.read_text(encoding="utf-8", errors="replace")
+        pages = await self._compile_markdown_file(kb_meta.kb_id, file_meta.file_id, file_meta, markdown)
+        self._refresh_index(kb_meta.kb_id)
+        return len(pages)
 
     async def _do_search(
         self,
@@ -158,7 +164,59 @@ class WikiKB(WikiStorageMixin, WikiLinksMixin, KnowledgeBase):
         top_k: int = 5,
         **kwargs,
     ) -> list[SearchResult]:
-        return []
+        terms = self._tokenize(query)
+        if not terms:
+            return []
+        results: list[SearchResult] = []
+        for detail in self._iter_page_details(kb_meta.kb_id):
+            match = self._score_page_match(detail, terms)
+            if match["score"] <= 0:
+                continue
+            results.append(
+                SearchResult(
+                    content=self._make_snippet(detail["content"], terms),
+                    score=float(match["score"]),
+                    source=detail["title"],
+                    file_id=",".join(detail["frontmatter"].get("sources") or []),
+                    metadata={
+                        "kb_id": kb_meta.kb_id,
+                        "page_id": detail["id"],
+                        "page_type": detail["type"],
+                        "confidence": detail["frontmatter"].get("confidence", "UNVERIFIED"),
+                        "sources": detail["frontmatter"].get("sources") or [],
+                        "match_reason": match["reasons"],
+                        "engine": "wiki",
+                    },
+                )
+            )
+        results.sort(key=lambda item: (-item.score, item.source))
+        return results[: int(top_k or 5)]
+
+    def _score_page_match(self, detail: dict, terms: list[str]) -> dict:
+        title = detail["title"].lower()
+        content = detail["content"].lower()
+        links = " ".join(self._extract_wikilinks(detail["content"])).lower()
+        source_names = " ".join(
+            (self._files.get(source_id).filename if self._files.get(source_id) else source_id)
+            for source_id in detail["frontmatter"].get("sources", [])
+        )
+        score = 2.0 if detail.get("type") in {"topic", "entity", "synthesis"} else 0.0
+        reasons: list[str] = []
+        for term in terms:
+            if term in title:
+                score += 10
+                reasons.append("title")
+            body_hits = content.count(term)
+            if body_hits:
+                score += body_hits
+                reasons.append("content")
+            if term in links:
+                score += 2
+                reasons.append("wikilink")
+            if term in source_names.lower():
+                score += 3
+                reasons.append("source")
+        return {"score": score, "reasons": sorted(set(reasons))}
 
     async def _do_delete_kb(self, kb_meta: KBMeta) -> None:
         shutil.rmtree(self._db_root(kb_meta.kb_id), ignore_errors=True)

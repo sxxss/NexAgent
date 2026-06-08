@@ -15,6 +15,7 @@ RetrievalMode = Literal[
     "lightrag_local",
     "lightrag_global",
     "lightrag_hybrid",
+    "wiki",
 ]
 
 
@@ -224,16 +225,26 @@ def _normalize_mode(mode: str) -> RetrievalMode:
     normalized = str(mode or "hybrid").lower()
     if normalized == "bm25":
         normalized = "keyword"
-    if normalized in {"vector", "keyword", "hybrid", "lightrag_local", "lightrag_global", "lightrag_hybrid"}:
+    if normalized in {
+        "vector",
+        "keyword",
+        "hybrid",
+        "lightrag_local",
+        "lightrag_global",
+        "lightrag_hybrid",
+        "wiki",
+    }:
         return normalized  # type: ignore[return-value]
     raise ValueError(
         "Unsupported search mode "
         f"'{mode}'. Available modes: vector, keyword, hybrid, "
-        "lightrag_local, lightrag_global, lightrag_hybrid."
+        "lightrag_local, lightrag_global, lightrag_hybrid, wiki."
     )
 
 
 def _mode_for_kb(mode: RetrievalMode, kb_type: str) -> RetrievalMode:
+    if kb_type == "wiki":
+        return "wiki"
     if kb_type == "lightrag":
         if mode in {"lightrag_local", "lightrag_global", "lightrag_hybrid"}:
             return mode
@@ -244,6 +255,8 @@ def _mode_for_kb(mode: RetrievalMode, kb_type: str) -> RetrievalMode:
 
 
 def _backend_mode(mode: RetrievalMode) -> str:
+    if mode == "wiki":
+        return "wiki"
     if mode == "lightrag_local":
         return "local"
     if mode == "lightrag_global":
