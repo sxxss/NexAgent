@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -39,27 +38,12 @@ def builtin_tool_names() -> set[str]:
 
 
 def skill_tool_names(loader: SkillLoader | None = None) -> set[str]:
-    loader = loader or SkillLoader()
-    names: set[str] = set()
-    for skill_id in loader.discover():
-        executable = loader.load_executable(skill_id)
-        if executable:
-            names.update(tool.name for tool in executable.get_tools())
-    return names
+    return set()
 
 
 def tool_conflicts(loader: SkillLoader | None = None) -> dict[str, list[str]]:
-    """Return tool name conflicts across built-ins and executable skills."""
-    loader = loader or SkillLoader()
-    sources: dict[str, list[str]] = defaultdict(list)
-    for name in builtin_tool_names():
-        sources[name].append("built-in")
-    for skill_id in loader.discover():
-        executable = loader.load_executable(skill_id)
-        if executable:
-            for tool in executable.get_tools():
-                sources[tool.name].append(f"skill:{skill_id}")
-    return {name: items for name, items in sources.items() if len(items) > 1}
+    """Executable skill tools are no longer loaded, so conflicts cannot occur."""
+    return {}
 
 
 async def dependency_issues(skill: Skill, *, loader: SkillLoader | None = None) -> list[SkillIssue]:
@@ -147,16 +131,6 @@ async def resolve_runtime_plan(
     for skill in skills:
         issues.extend(skill.validation_issues)
         issues.extend(await dependency_issues(skill, loader=loader))
-        if (skill.path.parent / "skill.py").exists() and loader.load_executable(skill.path.parent.name) is None:
-            issues.append(
-                SkillIssue(
-                    "error",
-                    "executable_import_failed",
-                    f"Executable skill '{skill.id}' could not be imported.",
-                    "Open skill.py and fix the import or runtime error.",
-                )
-            )
-
     if "delegate_subagents" in required_tools and not allow_subagents:
         issues.append(
             SkillIssue(

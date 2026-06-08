@@ -13,6 +13,7 @@ class VirtualPathTranslator:
     UPLOADS = "/mnt/user-data/uploads"
     OUTPUTS = "/mnt/user-data/outputs"
     KNOWLEDGE = "/mnt/knowledge"
+    SKILLS = "/mnt/skills"
 
     def __init__(self, base_dir: str | Path = ".nexagent") -> None:
         self.base_dir = Path(base_dir)
@@ -40,6 +41,10 @@ class VirtualPathTranslator:
             suffix = value[len(self.KNOWLEDGE) :].lstrip("/")
             return _resolve_inside(self.base_dir / "knowledge", suffix)
 
+        if value == self.SKILLS or value.startswith(self.SKILLS + "/"):
+            suffix = value[len(self.SKILLS) :].lstrip("/")
+            return _resolve_inside(root / "skills", suffix)
+
         raise ValueError(f"Path is outside sandbox virtual roots: {virtual}")
 
     def to_virtual(self, real: str | Path, thread_id: str) -> str:
@@ -49,6 +54,7 @@ class VirtualPathTranslator:
             (root / "workspace").resolve(): self.WORKSPACE,
             (root / "uploads").resolve(): self.UPLOADS,
             (root / "outputs").resolve(): self.OUTPUTS,
+            (root / "skills").resolve(): self.SKILLS,
             (self.base_dir / "knowledge").resolve(): self.KNOWLEDGE,
         }
         for real_root, virtual_root in mappings.items():
@@ -61,7 +67,7 @@ class VirtualPathTranslator:
 
     def ensure_thread_dirs(self, thread_id: str) -> None:
         root = self.thread_root(thread_id)
-        for name in ("workspace", "uploads", "outputs"):
+        for name in ("workspace", "uploads", "outputs", "skills"):
             (root / name).mkdir(parents=True, exist_ok=True)
 
 

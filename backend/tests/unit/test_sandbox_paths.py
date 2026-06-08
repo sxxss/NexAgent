@@ -17,6 +17,10 @@ def test_virtual_path_translator_keeps_paths_inside_thread():
     assert real == (base_dir / "threads" / "thread-1" / "workspace" / "report.md").resolve()
     assert translator.to_virtual(real, "thread-1") == "/mnt/user-data/workspace/report.md"
 
+    skill_real = translator.to_real("/mnt/skills/demo/SKILL.md", "thread-1")
+    assert skill_real == (base_dir / "threads" / "thread-1" / "skills" / "demo" / "SKILL.md").resolve()
+    assert translator.to_virtual(skill_real, "thread-1") == "/mnt/skills/demo/SKILL.md"
+
 
 @pytest.mark.unit
 def test_virtual_path_translator_rejects_escape():

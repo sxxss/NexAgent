@@ -42,6 +42,7 @@ class ChatbotAgent(BaseAgent):
             reasoning_effort=context.reasoning_effort,
         )
         checkpointer = await self._get_checkpointer()
+        await _prepare_context_skills(context)
         tools = await _load_context_tools(context)
         system_prompt = _build_system_prompt(context)
 
@@ -132,8 +133,6 @@ async def _load_context_tools(context: BaseContext):
         parent_model=context.model,
         subagent_model=context.subagent_model,
     )
-    if selected_skills:
-        tools.extend(loader.load_executable_tools([skill.path.parent.name for skill in selected_skills]))
     if mcp_ids:
         from nexagent.tools.mcp.client import load_mcp_tools
 
@@ -141,12 +140,24 @@ async def _load_context_tools(context: BaseContext):
     return tools
 
 
+async def _prepare_context_skills(context: BaseContext) -> None:
+    """Mirror selected Skills into the sandbox runtime before tools execute."""
+    try:
+        from nexagent.skills.loader import SkillLoader
+        from nexagent.skills.runtime import prepare_skill_runtime
+
+        loader = SkillLoader()
+        selected_skills = loader.load_selected(context.skills) if context.skills else []
+        prepare_skill_runtime(context.thread_id, selected_skills)
+    except Exception as exc:
+        logger.warning("Failed to prepare skill runtime for thread=%s: %s", context.thread_id, exc)
+
+
 def _build_system_prompt(context: BaseContext) -> str:
     """Build the final system prompt, optionally injecting selected skill blocks.
 
-    Skill content is appended after the base prompt under a clearly delimited
-    ``## Specialised Capabilities`` section so the LLM knows when to invoke
-    each capability.
+    Selected Skills are appended as a progressive-loading manifest. The model
+    reads SKILL.md only when a user request matches a listed Skill.
     """
     base = context.system_prompt or "You are a helpful AI assistant powered by NexAgent."
     today = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
@@ -179,20 +190,19 @@ def _build_system_prompt(context: BaseContext) -> str:
         "changes, verify with read_skill."
         "\n4a. Keep each skill_manage call small and incremental. Do not generate a full rewritten Skill package in "
         "one tool call unless the user explicitly asks to replace the whole Skill. For ordinary improvements, patch "
-        "one focused section at a time and write one support file at a time. Keep find/replace/content/executable_code "
-        "arguments concise; if a change would require a large executable_code or many files, explain the plan first "
-        "and ask the user before generating that large payload."
+        "one focused section at a time and write one support file at a time. Keep find/replace/content arguments "
+        "concise; if a change would require many files, explain the plan first and ask the user before generating "
+        "that large payload."
         "\n5. Do not create or modify Skills by guessing absolute paths, manually writing SKILL.md with generic "
         "filesystem tools, running bash/execute_python, or using MCP filesystem tools such as ls, list_directory, "
         "directory_tree, read_file, write_file, or edit_file against managed Skill storage."
         "\n6. Generic file tools are only for user workspace/repository files unrelated to managed Skills, or when "
         "the user explicitly asks you to inspect project files outside the Skill manager."
-        "\n7. If the user asks what tools a Skill exposes or what those tools do, answer from the tools and "
-        "executable_tools fields returned by list_skills/read_skill. Do not read skill.py through generic "
-        "filesystem tools for tool inventory."
-        "\n8. If the user asks to review, optimize, debug, or modify executable Skill behavior, you may read "
-        "skill.py through read_skill path='skill.py' and then update executable_code or support files through "
-        "skill_manage."
+        "\n7. Runtime Skill usage is progressive: selected Skills are listed later in this prompt with `/mnt/skills` "
+        "locations. Read the matching SKILL.md only when the user's request matches its description, then read "
+        "referenced files on demand."
+        "\n8. Bundled scripts are ordinary files under scripts/. When SKILL.md instructs script execution, run them "
+        "from bash using the workspace mirror `skills/<skill-id>/...`."
         "\n\nSkill evolution policy: After completing a task, consider creating or updating a Skill when the task "
         "required many tool calls, overcame non-obvious pitfalls, the user corrected the approach, or you found a "
         "recurring workflow. If you used a Skill and found a gap in it, patch that Skill when the user asked for "
@@ -202,10 +212,8 @@ def _build_system_prompt(context: BaseContext) -> str:
         "progressive disclosure, and move bulky references/scripts/examples/evals into bundled files. Include "
         "realistic test prompts for objectively verifiable Skills, preferably in test-cases/ or evals/evals.json. "
         "Use files[] with folders such as references/, scripts/, test-cases/, evals/, examples/, templates/, and "
-        "assets/ instead of putting everything in SKILL.md. When the requested Skill needs callable behavior, pass "
-        "executable_code that imports BaseSkill and SkillMetadata from nexagent.skills.base, defines a BaseSkill "
-        "subclass, and returns LangChain tools; otherwise leave executable_code empty. Never import from "
-        "legacy agent.skills modules."
+        "assets/ instead of putting everything in SKILL.md. Put reusable automation in scripts/ as ordinary files "
+        "that can be run from the sandbox workspace mirror."
     )
     if context.user_id:
         try:

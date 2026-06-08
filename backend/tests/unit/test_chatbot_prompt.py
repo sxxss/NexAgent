@@ -33,9 +33,8 @@ def test_chatbot_prompt_requires_skill_creator_standard():
     assert "progressive disclosure" in prompt
     assert "test-cases/" in prompt
     assert "evals/evals.json" in prompt
-    assert "executable_tools field" in prompt
-    assert "Do not read skill.py through generic filesystem tools" in prompt
-    assert "read skill.py through read_skill path='skill.py'" in prompt
+    assert "scripts/" in prompt
+    assert "ordinary files" in prompt
 
 
 @pytest.mark.unit
@@ -53,4 +52,6 @@ def test_chatbot_prompt_enforces_managed_skill_lifecycle_tools():
     assert "running bash/execute_python" in prompt
     assert "MCP filesystem tools such as ls, list_directory" in prompt
     assert "Generic file tools are only for user workspace/repository files unrelated to managed Skills" in prompt
+    assert "selected Skills are listed later in this prompt with `/mnt/skills`" in prompt
+    assert "workspace mirror `skills/<skill-id>/...`" in prompt
     assert "Skill evolution policy" in prompt

@@ -51,8 +51,9 @@ Use this skill for tabular data profiling.
         assert len(skill.content_hash) == 64
         assert skill.validation_issues == []
         prompt = loader.to_system_prompt_blocks([skill])
-        assert "Skill metadata: id=csv-profiler" in prompt
-        assert skill.content_hash[:12] in prompt
+        assert "<id>csv-profiler</id>" in prompt
+        assert "<location>/mnt/skills/csv-profiler/SKILL.md</location>" in prompt
+        assert "Use this skill for tabular data profiling." not in prompt
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
@@ -90,9 +91,9 @@ Use the packaged rubric before answering.
         assert {item["path"] for item in skill.files} == {"SKILL.md", "assets.bin", "rubric.md"}
         assert skill.resources == [{"path": "rubric.md", "content": "# Rubric\n\nCheck sources and assumptions."}]
         prompt = loader.to_system_prompt_blocks([skill])
-        assert "Supporting resources" in prompt
-        assert "rubric.md" in prompt
-        assert "Check sources and assumptions." in prompt
+        assert "<location>/mnt/skills/analyst/SKILL.md</location>" in prompt
+        assert "rubric.md" not in prompt
+        assert "Check sources and assumptions." not in prompt
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
@@ -360,7 +361,11 @@ def test_skill_prompt_injection_has_stable_order_and_budget(monkeypatch):
         skill_dir = work_dir / "public" / skill_id
         skill_dir.mkdir(parents=True, exist_ok=True)
         (skill_dir / "SKILL.md").write_text(
-            f"---\nid: {skill_id}\nname: {skill_id}\nversion: 0.1.0\n---\n\n" + ("x" * 200),
+            (
+                f"---\nid: {skill_id}\nname: {skill_id}\n"
+                f"description: {skill_id} description\nversion: 0.1.0\n---\n\n"
+                + ("x" * 200)
+            ),
             encoding="utf-8",
         )
     monkeypatch.setenv("NEXAGENT_SKILLS_DIR", str(work_dir))
@@ -369,7 +374,8 @@ def test_skill_prompt_injection_has_stable_order_and_budget(monkeypatch):
         loader = SkillLoader()
         skills = loader.load_selected(["b-skill", "a-skill"])
         prompt = loader.to_system_prompt_blocks(skills, max_chars_per_skill=20, max_total_chars=80)
-        assert prompt.index("### a-skill") < prompt.index("### b-skill")
-        assert "[Skill content truncated by prompt budget.]" in prompt
+        assert prompt.index("<id>a-skill</id>") < prompt.index("<id>b-skill</id>")
+        assert "x" * 20 not in prompt
+        assert "skills/<skill-id>/scripts/example.py" in prompt
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)

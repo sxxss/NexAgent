@@ -71,6 +71,11 @@ class LocalSandbox(Sandbox):
         return result
 
     async def write_file(self, path: str, content: str, append: bool = False) -> str:
+        if _is_runtime_skill_path(path):
+            return (
+                "Skill runtime files are read-only. Update installed Skills through the Skill manager, "
+                "not sandbox file tools."
+            )
         real = self.translator.to_real(path, self.thread_id)
         real.parent.mkdir(parents=True, exist_ok=True)
         mode = "a" if append else "w"
@@ -81,6 +86,11 @@ class LocalSandbox(Sandbox):
         return result
 
     async def str_replace(self, path: str, old_str: str, new_str: str) -> str:
+        if _is_runtime_skill_path(path):
+            return (
+                "Skill runtime files are read-only. Update installed Skills through the Skill manager, "
+                "not sandbox file tools."
+            )
         real = self.translator.to_real(path, self.thread_id)
         text = real.read_text(encoding="utf-8", errors="replace")
         count = text.count(old_str)
@@ -217,6 +227,20 @@ def _validate_command(command: str) -> str | None:
         if blocked and blocked.strip().lower() in lowered:
             return f"Command blocked by sandbox policy: {blocked}"
     return None
+
+
+def _is_runtime_skill_path(path: str) -> bool:
+    value = str(path).replace("\\", "/").strip()
+    while value.startswith("./"):
+        value = value[2:]
+    return (
+        value == "skills"
+        or value.startswith("skills/")
+        or value == "/mnt/skills"
+        or value.startswith("/mnt/skills/")
+        or value == "/mnt/user-data/workspace/skills"
+        or value.startswith("/mnt/user-data/workspace/skills/")
+    )
 
 
 def _audit(thread_id: str, action: str, input_data: dict, status: str, message: str) -> None:

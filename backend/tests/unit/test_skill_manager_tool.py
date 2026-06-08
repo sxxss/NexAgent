@@ -58,7 +58,7 @@ async def test_skill_manage_create_writes_to_managed_skill_dir(monkeypatch):
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_skill_manage_create_writes_executable_skill_py(monkeypatch):
+async def test_skill_manage_create_writes_script_resource(monkeypatch):
     from nexagent.tools.builtin.skill_manager import get_skill_manage_tool
 
     workspace = _workspace()
@@ -70,58 +70,17 @@ async def test_skill_manage_create_writes_executable_skill_py(monkeypatch):
             "action": "create",
             "id": "echo-skill",
             "name": "Echo Skill",
-            "content": "# Echo\n\nUse echo_text for echoing.",
-            "executable_code": '''
-from langchain_core.tools import tool
-from nexagent.skills.base import BaseSkill, SkillMetadata
-
-
-class EchoSkill(BaseSkill):
-    metadata = SkillMetadata(name="echo-skill", description="Echo text.")
-
-    def get_tools(self):
-        @tool("echo_text")
-        def echo_text(text: str) -> str:
-            """Echo the provided text."""
-            return text
-
-        return [echo_text]
-''',
+            "content": "# Echo\n\nRun scripts/echo.py for echoing.",
+            "files": [{"path": "scripts/echo.py", "content": "print('echo')\n"}],
         })
 
         payload = json.loads(result)
         assert payload["ok"] is True
         assert payload["storage"] == "managed"
         assert "path" not in payload
-        assert payload["executable"] is True
-        assert payload["tools"] == ["echo_text"]
-        assert payload["executable_tools"][0]["name"] == "echo_text"
-        assert not any(item["path"] == "skill.py" for item in payload["files"])
-        assert (workspace / "skills" / "public" / "echo-skill" / "skill.py").exists()
-    finally:
-        shutil.rmtree(workspace, ignore_errors=True)
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_skill_manage_requires_executable_contract(monkeypatch):
-    from nexagent.tools.builtin.skill_manager import get_skill_manage_tool
-
-    workspace = _workspace()
-    _patch_loader(monkeypatch, workspace)
-
-    try:
-        tool = get_skill_manage_tool()
-        result = await tool.ainvoke({
-            "action": "create",
-            "id": "bad-skill",
-            "name": "Bad Skill",
-            "content": "# Bad",
-            "executable_code": "print('no')",
-        })
-
-        assert result.startswith("Error:")
-        assert "BaseSkill" in result
+        assert "executable" not in payload
+        assert any(item["path"] == "scripts/echo.py" and item["kind"] == "script" for item in payload["files"])
+        assert (workspace / "skills" / "public" / "echo-skill" / "scripts" / "echo.py").exists()
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
 
@@ -141,23 +100,10 @@ async def test_read_skill_tool_returns_managed_files(monkeypatch):
             "id": "reader-skill",
             "name": "Reader Skill",
             "content": "# Reader\n\nUse references.",
-            "files": [{"path": "references/example.md", "content": "example content"}],
-            "executable_code": '''
-from langchain_core.tools import tool
-from nexagent.skills.base import BaseSkill, SkillMetadata
-
-
-class ReaderSkill(BaseSkill):
-    metadata = SkillMetadata(name="reader-skill", description="Read examples.")
-
-    def get_tools(self):
-        @tool("read_example")
-        def read_example(text: str) -> str:
-            """Read example text."""
-            return text
-
-        return [read_example]
-''',
+            "files": [
+                {"path": "references/example.md", "content": "example content"},
+                {"path": "scripts/example.py", "content": "print('example')\n"},
+            ],
         })
 
         read_tool = get_read_skill_tool()
@@ -167,15 +113,14 @@ class ReaderSkill(BaseSkill):
         assert payload["id"] == "reader-skill"
         assert payload["storage"] == "managed"
         assert "path" not in payload
-        assert not any(item["path"] == "skill.py" for item in payload["files"])
-        assert payload["executable_tools"][0]["name"] == "read_example"
+        assert "executable_tools" not in payload
         assert any(item["path"] == "SKILL.md" for item in payload["contents"])
         assert not any(item["path"] == "references/example.md" for item in payload["contents"])
 
-        result = await read_tool.ainvoke({"id": "reader-skill", "path": "skill.py"})
+        result = await read_tool.ainvoke({"id": "reader-skill", "path": "scripts/example.py"})
         payload = json.loads(result)
-        assert payload["contents"][0]["path"] == "skill.py"
-        assert "class ReaderSkill" in payload["contents"][0]["content"]
+        assert payload["contents"][0]["path"] == "scripts/example.py"
+        assert "print('example')" in payload["contents"][0]["content"]
 
         result = await read_tool.ainvoke({"id": "reader-skill", "path": "references/example.md"})
         payload = json.loads(result)
@@ -221,58 +166,34 @@ async def test_skill_manage_edit_preserves_existing_support_files(monkeypatch):
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_skill_manage_edit_allows_preserved_broken_skill_py(monkeypatch):
+async def test_skill_manage_edit_preserves_existing_plain_python_file(monkeypatch):
     from nexagent.tools.builtin.skill_manager import get_skill_manage_tool
 
     workspace = _workspace()
     _patch_loader(monkeypatch, workspace)
 
     try:
-        root = workspace / "skills" / "public" / "broken-executable"
+        root = workspace / "skills" / "public" / "legacy-python"
         root.mkdir(parents=True)
         (root / "SKILL.md").write_text(
-            "---\nid: broken-executable\nname: Broken Executable\ndescription: Broken.\n---\n\n# Old\n",
+            "---\nid: legacy-python\nname: Legacy Python\ndescription: Legacy file.\n---\n\n# Old\n",
             encoding="utf-8",
         )
-        (root / "skill.py").write_text("from agent.skills import BaseSkill\n", encoding="utf-8")
+        (root / "skill.py").write_text("print('legacy')\n", encoding="utf-8")
 
         tool = get_skill_manage_tool()
         result = await tool.ainvoke({
             "action": "edit",
-            "id": "broken-executable",
-            "name": "Broken Executable",
+            "id": "legacy-python",
+            "name": "Legacy Python",
             "description": "Updated.",
             "content": "# Updated",
         })
 
         payload = json.loads(result)
         assert payload["ok"] is True
-        assert payload["warning"]
-        assert payload["issues"][0]["code"] == "preserved_executable_import_failed"
-    finally:
-        shutil.rmtree(workspace, ignore_errors=True)
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_skill_manage_rejects_foreign_skill_imports(monkeypatch):
-    from nexagent.tools.builtin.skill_manager import get_skill_manage_tool
-
-    workspace = _workspace()
-    _patch_loader(monkeypatch, workspace)
-
-    try:
-        tool = get_skill_manage_tool()
-        result = await tool.ainvoke({
-            "action": "create",
-            "id": "foreign-import",
-            "name": "Foreign Import",
-            "content": "# Foreign",
-            "executable_code": "from agent.skills import BaseSkill\n\ndef get_tools(self):\n    return []",
-        })
-
-        assert result.startswith("Error:")
-        assert "nexagent.skills.base" in result
+        assert "warning" not in payload
+        assert (root / "skill.py").read_text(encoding="utf-8") == "print('legacy')\n"
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
 
@@ -294,22 +215,7 @@ async def test_list_skills_tool_filters_managed_skills(monkeypatch):
             "description": "Extract structured news data from webpages.",
             "content": "# News Extractor",
             "tags": ["news", "web"],
-            "executable_code": '''
-from langchain_core.tools import tool
-from nexagent.skills.base import BaseSkill, SkillMetadata
-
-
-class NewsExtractorSkill(BaseSkill):
-    metadata = SkillMetadata(name="news-extractor", description="Extract news.")
-
-    def get_tools(self):
-        @tool("extract_news")
-        def extract_news(url: str) -> str:
-            """Extract structured news data from a URL."""
-            return url
-
-        return [extract_news]
-''',
+            "files": [{"path": "scripts/extract_news.py", "content": "print('news')\n"}],
         })
 
         list_tool = get_list_skills_tool()
@@ -318,8 +224,8 @@ class NewsExtractorSkill(BaseSkill):
 
         assert payload["count"] == 1
         assert payload["skills"][0]["id"] == "news-extractor"
-        assert payload["skills"][0]["executable_tools"][0]["name"] == "extract_news"
-        assert "structured news" in payload["skills"][0]["executable_tools"][0]["description"]
+        assert "executable_tools" not in payload["skills"][0]
+        assert payload["skills"][0]["tags"] == ["news", "web"]
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
 

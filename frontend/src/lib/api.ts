@@ -347,8 +347,6 @@ export interface SkillInfo {
   issues?: SkillIssue[];
   content?: string;
   content_preview: string;
-  tools?: ToolInfo[];
-  executable?: boolean;
 }
 export interface SkillRegistryItem {
   id: string;
@@ -454,7 +452,6 @@ export interface RemoteSkillCandidate {
   file_count: number;
   files: Array<{ path: string; size: number; kind: string; text: boolean }>;
   content_hash: string;
-  has_executable: boolean;
   content_preview: string;
 }
 export interface SkillFileContent {
@@ -1756,7 +1753,7 @@ export async function updateSkill(id: string, body: Partial<SkillCustomBody>): P
   return res.json();
 }
 
-export async function testSkill(id: string): Promise<{ ok: boolean; message: string; executable: boolean; tools: ToolInfo[]; content_hash?: string; issues?: SkillIssue[] }> {
+export async function testSkill(id: string): Promise<{ ok: boolean; message: string; content_hash?: string; issues?: SkillIssue[] }> {
   const res = await fetch(`${BASE}/skills/${id}/test`, { method: "POST" });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`);
   return res.json();

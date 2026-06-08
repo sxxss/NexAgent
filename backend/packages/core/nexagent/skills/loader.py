@@ -1,4 +1,4 @@
-"""Skill loader — discovers, parses and injects SKILL.md files.
+"""Skill loader — discovers, parses and advertises SKILL.md files.
 
 Skills live in  ``<project_root>/skills/public/<skill-name>/SKILL.md``.
 Each file may carry a YAML frontmatter block (``---`` delimited) followed
@@ -18,14 +18,14 @@ Typical use
     # Load all skills
     skills = loader.load_all()
 
-    # Inject selected skills into a system prompt
+    # Advertise selected skills in a system prompt
     prompt = "You are a helpful assistant." + loader.to_system_prompt_blocks(skills)
 """
 
 from __future__ import annotations
 
 import hashlib
-import importlib.util
+import html
 import logging
 import re
 from dataclasses import dataclass, field
@@ -33,8 +33,6 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-
-from nexagent.skills.base import BaseSkill
 
 logger = logging.getLogger(__name__)
 SKILL_ID_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{1,63}$")
@@ -96,7 +94,7 @@ class Skill:
     required_mcp_ids: list[str] = field(default_factory=list)
     #: Tool names this skill expects at runtime.
     required_tools: list[str] = field(default_factory=list)
-    #: SHA-256 over SKILL.md and optional skill.py content.
+    #: SHA-256 over SKILL.md and bundled resource content.
     content_hash: str = ""
     #: Files packaged with this skill, relative to the skill directory.
     files: list[dict[str, Any]] = field(default_factory=list)
@@ -124,7 +122,6 @@ class Skill:
             "validation_issues": [issue.to_dict() for issue in self.validation_issues],
             "content": self.content,
             "path": str(self.path),
-            "executable": (self.path.parent / "skill.py").exists(),
         }
 
 
@@ -212,42 +209,6 @@ class SkillLoader:
         """Load a specific subset of skills, silently skipping unknown ones."""
         return [s for name in names if (s := self.load(name)) is not None]
 
-    def load_executable(self, skill_name: str) -> BaseSkill | None:
-        """Load ``skill.py`` from a skill directory if it defines a BaseSkill subclass."""
-        skill_py = self.public_dir / skill_name / "skill.py"
-        if not skill_py.exists():
-            return None
-
-        module_name = f"nexagent_user_skill_{skill_name.replace('-', '_')}"
-        spec = importlib.util.spec_from_file_location(module_name, skill_py)
-        if spec is None or spec.loader is None:
-            return None
-
-        module = importlib.util.module_from_spec(spec)
-        try:
-            spec.loader.exec_module(module)
-        except Exception as exc:
-            logger.warning("Failed to import executable skill '%s': %s", skill_name, exc)
-            return None
-
-        for value in module.__dict__.values():
-            if isinstance(value, type) and issubclass(value, BaseSkill) and value is not BaseSkill:
-                try:
-                    return value()
-                except Exception as exc:
-                    logger.warning("Failed to instantiate executable skill '%s': %s", skill_name, exc)
-                    return None
-        return None
-
-    def load_executable_tools(self, names: list[str]) -> list:
-        """Load LangChain tools exposed by selected executable skills."""
-        tools = []
-        for name in names:
-            skill = self.load_executable(name)
-            if skill is not None:
-                tools.extend(skill.get_tools())
-        return tools
-
     def reload(self) -> None:
         """Clear the cache so all skills are re-read from disk on next access."""
         self._cache.clear()
@@ -261,44 +222,48 @@ class SkillLoader:
         max_chars_per_skill: int = DEFAULT_MAX_SKILL_PROMPT_CHARS,
         max_total_chars: int = DEFAULT_MAX_SKILLS_PROMPT_CHARS,
     ) -> str:
-        """Format a list of skills as a system-prompt appendix.
+        """Format selected skills as a progressive-loading prompt appendix.
 
-        Returns an empty string when ``skills`` is empty so callers can
-        safely concatenate without a conditional::
-
-            prompt = base_prompt + loader.to_system_prompt_blocks(loaded)
+        The prompt intentionally contains only metadata and the sandbox path to
+        each ``SKILL.md``. The model should read the skill file only after a user
+        request matches the skill's trigger, then read referenced resources on
+        demand.
         """
         if not skills:
             return ""
 
         sections: list[str] = [
-            "\n\n---",
-            "## Specialised Capabilities",
-            "You have been equipped with the following skills. "
-            "Use them when the user's request matches the described scenarios.\n",
+            "\n\n<skill_system>",
+            "You have access to selected Skills that provide optimized workflows for specific tasks.",
+            "",
+            "Progressive loading pattern:",
+            "1. When the user's request matches a Skill description, immediately read that Skill's "
+            "SKILL.md from the location below.",
+            "2. Follow the workflow in SKILL.md precisely.",
+            "3. Load referenced files under the same Skill folder only when needed.",
+            "4. To execute bundled scripts, use bash from the sandbox workspace with the mirrored "
+            "relative path `skills/<skill-id>/...`, for example "
+            "`python skills/<skill-id>/scripts/example.py`.",
+            "",
+            "Skills are read-only during a run. Do not modify files under `/mnt/skills` or the "
+            "workspace `skills/` mirror.",
+            "",
+            "<available_skills>",
         ]
-        used_chars = 0
         for skill in sorted(skills, key=lambda item: item.id):
-            remaining_total = max_total_chars - used_chars
-            if remaining_total <= 0:
-                sections.append("Additional selected skills were omitted because the skill prompt budget was reached.")
-                break
-            content = skill.content
-            limit = min(max_chars_per_skill, remaining_total)
-            if len(content) > limit:
-                content = content[:limit].rstrip() + "\n\n[Skill content truncated by prompt budget.]"
-            sections.append(f"### {skill.name}")
+            skill_id = html.escape(skill.id)
+            name = html.escape(skill.name)
+            description = html.escape(skill.description)
             sections.append(
-                f"Skill metadata: id={skill.id}; version={skill.version}; hash={skill.content_hash[:12]}"
+                "  <skill>\n"
+                f"    <id>{skill_id}</id>\n"
+                f"    <name>{name}</name>\n"
+                f"    <description>{description}</description>\n"
+                f"    <location>/mnt/skills/{skill_id}/SKILL.md</location>\n"
+                f"    <bash_path>skills/{skill_id}/</bash_path>\n"
+                "  </skill>"
             )
-            if skill.description:
-                sections.append(f"*{skill.description}*\n")
-            sections.append(content)
-            resource_block = _format_skill_resources(skill.resources, max_chars=DEFAULT_MAX_RESOURCE_CHARS)
-            if resource_block:
-                sections.append(resource_block)
-            sections.append("")   # blank line between skills
-            used_chars += len(content) + len(resource_block)
+        sections.extend(["</available_skills>", "</skill_system>"])
 
         return "\n".join(sections)
 
@@ -416,7 +381,7 @@ def _scan_skill_files(root: Path) -> list[dict[str, Any]]:
         result.append({
             "path": rel,
             "size": path.stat().st_size,
-            "kind": "entry" if rel == "SKILL.md" else "executable" if rel == "skill.py" else "resource",
+            "kind": _skill_file_kind(rel),
             "text": _is_text_resource(path),
         })
     return result
@@ -426,7 +391,7 @@ def _load_text_resources(root: Path) -> list[dict[str, str]]:
     resources: list[dict[str, str]] = []
     for path in _iter_skill_files(root):
         rel = path.relative_to(root).as_posix()
-        if rel in {"SKILL.md", "skill.py"} or not _is_text_resource(path):
+        if rel == "SKILL.md" or not _is_text_resource(path):
             continue
         try:
             text = path.read_text(encoding="utf-8")
@@ -440,6 +405,14 @@ def _load_text_resources(root: Path) -> list[dict[str, str]]:
 
 def _is_text_resource(path: Path) -> bool:
     return path.suffix.lower() in TEXT_RESOURCE_EXTENSIONS
+
+
+def _skill_file_kind(rel: str) -> str:
+    if rel == "SKILL.md":
+        return "entry"
+    if rel.startswith("scripts/"):
+        return "script"
+    return "resource"
 
 
 def _format_skill_resources(resources: list[dict[str, str]], *, max_chars: int) -> str:

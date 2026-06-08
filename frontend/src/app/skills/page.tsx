@@ -77,8 +77,6 @@ type UploadForm = {
 type SkillTestState = {
   ok: boolean;
   message: string;
-  executable: boolean;
-  tools: { name: string; description: string }[];
   content_hash?: string;
   issues?: SkillIssue[];
 };
@@ -346,27 +344,31 @@ export default function SkillsPage() {
         <section className="mt-6">
           <h2 className="mb-3 text-sm font-semibold text-slate-950">内置模板</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {registry.map((item) => (
-              <Card key={item.id}>
-                <CardContent className="p-5">
+            {registry.map((item) => {
+              const installed = installedIds.has(item.id);
+              return (
+              <Card key={item.id} className="flex h-full flex-col">
+                <CardContent className="flex flex-1 flex-col p-5">
                   <div className="flex items-start gap-3">
-                    <Code2 size={18} className="mt-1 text-slate-500" />
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500"><Code2 size={18} /></div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="text-sm font-semibold text-slate-950">{item.name}</h3>
+                      <h3 className="truncate text-sm font-semibold text-slate-950">{item.name}</h3>
                       <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{item.description}</p>
                     </div>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {item.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}
-                    {item.content_hash ? <Tag>{item.content_hash.slice(0, 12)}</Tag> : null}
-                  </div>
-                  <IssueList issues={item.issues ?? []} />
-                  <button type="button" disabled={installedIds.has(item.id)} onClick={() => void installSkill(item.id).then(refresh)} className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-                    {installedIds.has(item.id) ? "已安装" : "安装"}
+                  {item.tags.length ? (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {item.tags.slice(0, 4).map((tag) => <Tag key={tag}>{tag}</Tag>)}
+                    </div>
+                  ) : null}
+                  <IssueBadge issues={item.issues ?? []} />
+                  <button type="button" disabled={installed} onClick={() => void installSkill(item.id).then(refresh)} className="mt-auto inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50">
+                    {installed ? <><CheckCircle size={13} />已安装</> : <><Plus size={13} />安装</>}
                   </button>
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
           </div>
         </section>
       </main>
@@ -556,7 +558,6 @@ function RemoteSkillForm({
                 <div className="mt-2 flex flex-wrap gap-1">
                   <Tag>{item.id}</Tag>
                   {item.subdir ? <Tag>{item.subdir}</Tag> : null}
-                  {item.has_executable ? <Tag>skill.py</Tag> : null}
                 </div>
               </button>
             );
@@ -609,36 +610,48 @@ function SkillCard({
   onDelete: () => void;
 }) {
   const issues = dedupeIssues([...(skill.issues ?? []), ...(result && "issues" in result ? result.issues ?? [] : [])]);
-  const resourceFiles = skill.files?.filter((file) => file.kind === "resource") ?? [];
+  const bundledFiles = skill.files?.filter((file) => file.kind !== "entry") ?? [];
 
   return (
-    <Card>
-      <CardContent className="p-5">
+    <Card className="flex h-full flex-col">
+      <CardContent className="flex flex-1 flex-col p-5">
         <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-50 text-sky-700"><Wrench size={18} /></div>
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700"><Wrench size={18} /></div>
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-sm font-semibold text-slate-950">{skill.name}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="truncate text-sm font-semibold text-slate-950">{skill.name}</h2>
+            </div>
             <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{skill.description || "未填写描述"}</p>
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {(skill.tags ?? []).map((tag) => <Tag key={tag}>{tag}</Tag>)}
-          {skill.executable ? <Tag>executable</Tag> : null}
-          {skill.content_hash ? <Tag>{skill.content_hash.slice(0, 12)}</Tag> : null}
-        </div>
-        <DependencyLine label="MCP" items={skill.required_mcp_ids ?? []} />
-        <DependencyLine label="Tools" items={skill.required_tools ?? []} />
-        {resourceFiles.length ? <DependencyLine label="Files" items={resourceFiles.map((file) => file.path)} /> : null}
-        <IssueList issues={issues} />
-        {result ? <SkillTestResult result={result} /> : null}
-        {skill.content_preview ? <pre className="mt-3 max-h-28 overflow-auto rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600">{skill.content_preview}</pre> : null}
+        {(skill.tags ?? []).length ? (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {(skill.tags ?? []).slice(0, 4).map((tag) => <Tag key={tag}>{tag}</Tag>)}
+          </div>
+        ) : null}
 
-        <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-          <button type="button" onClick={onView} className={outlineButton}><Code2 size={13} />详情</button>
-          <button type="button" onClick={onReplace} className={outlineButton}><RefreshCw size={13} />替换</button>
-          <button type="button" onClick={onTest} className={outlineButton}><CheckCircle size={13} />测试</button>
-          <button type="button" onClick={onDelete} className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border border-rose-200 px-2.5 text-xs font-semibold text-rose-600 hover:bg-rose-50"><Trash2 size={13} /></button>
+        {(skill.required_mcp_ids?.length || skill.required_tools?.length || bundledFiles.length) ? (
+          <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
+            <DependencyLine label="MCP" items={skill.required_mcp_ids ?? []} max={4} />
+            <DependencyLine label="Tools" items={skill.required_tools ?? []} max={4} />
+            {bundledFiles.length ? (
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                <span className="shrink-0">Files</span>
+                <Tag>{bundledFiles.length} 个捆绑文件</Tag>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <IssueBadge issues={issues} />
+        {result ? <SkillTestResult result={result} /> : null}
+
+        <div className="mt-auto flex items-center gap-1.5 border-t border-slate-100 pt-4">
+          <button type="button" onClick={onView} className={`${outlineButton} flex-1 justify-center px-1`}><Code2 size={13} />详情</button>
+          <button type="button" onClick={onReplace} className={`${outlineButton} flex-1 justify-center px-1`}><RefreshCw size={13} />替换</button>
+          <button type="button" onClick={onTest} className={`${outlineButton} flex-1 justify-center px-1`}><CheckCircle size={13} />测试</button>
+          <button type="button" onClick={onDelete} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50" title="删除 Skill"><Trash2 size={13} /></button>
         </div>
       </CardContent>
     </Card>
@@ -745,6 +758,12 @@ function SkillDetailOverlay({
             <DependencyLine label="Tags" items={skill.tags ?? []} />
             <DependencyLine label="MCP" items={skill.required_mcp_ids ?? []} />
             <DependencyLine label="Tools" items={skill.required_tools ?? []} />
+            {skill.issues?.length ? (
+              <div>
+                <p className="font-semibold text-slate-700">依赖问题</p>
+                <IssueList issues={skill.issues} />
+              </div>
+            ) : null}
             <div>
               <p className="font-semibold text-slate-700">文件</p>
               <div className="mt-2 rounded-xl border border-slate-200 bg-white p-1.5">
@@ -983,11 +1002,27 @@ function SkillTestResult({ result }: { result: SkillTestState | { ok: false; mes
         {result.ok ? <CheckCircle size={13} /> : <AlertCircle size={13} />}
         <span>{result.message}</span>
       </div>
-      {"tools" in result && result.tools.length ? (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {result.tools.map((tool) => <Tag key={tool.name}>{tool.name}</Tag>)}
-        </div>
-      ) : null}
+    </div>
+  );
+}
+
+const ISSUE_LABELS: Record<string, string> = {
+  missing_tool_dependency: "缺少依赖工具",
+  missing_mcp_dependency: "缺少依赖 MCP",
+};
+
+function IssueBadge({ issues }: { issues: SkillIssue[] }) {
+  if (!issues.length) return null;
+  const hasError = issues.some((issue) => issue.severity === "error");
+  const tone = hasError ? "bg-rose-50 text-rose-600" : "bg-amber-50 text-amber-700";
+  const label = issues.length > 1 ? `${issues.length} 个依赖问题` : ISSUE_LABELS[issues[0].code] ?? issues[0].code;
+  return (
+    <div
+      className={`mt-3 inline-flex max-w-full items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-semibold ${tone}`}
+      title={issues.map((issue) => `${issue.code}: ${issue.message}${issue.fix ? `（${issue.fix}）` : ""}`).join("\n")}
+    >
+      <AlertCircle size={12} className="shrink-0" />
+      <span className="truncate">{label}</span>
     </div>
   );
 }
@@ -1017,12 +1052,16 @@ function dedupeIssues(issues: SkillIssue[]) {
   });
 }
 
-function DependencyLine({ label, items }: { label: string; items: string[] }) {
+function DependencyLine({ label, items, max }: { label: string; items: string[]; max?: number }) {
   if (!items.length) return null;
+  const limit = max ?? items.length;
+  const shown = items.slice(0, limit);
+  const overflow = items.length - shown.length;
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
-      <span>{label}</span>
-      {items.map((item) => <Tag key={item}>{item}</Tag>)}
+    <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+      <span className="shrink-0">{label}</span>
+      {shown.map((item) => <Tag key={item}>{item}</Tag>)}
+      {overflow > 0 ? <Tag>+{overflow}</Tag> : null}
     </div>
   );
 }
@@ -1153,6 +1192,6 @@ function csv(value: string) {
 }
 
 const inputClass = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100 disabled:bg-slate-100";
-const outlineButton = "inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50";
+const outlineButton = "inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50";
 const activeSegment = "h-7 rounded-md bg-slate-950 px-2.5 text-[11px] font-semibold text-white shadow-sm transition-all duration-200";
 const inactiveSegment = "h-7 rounded-md px-2.5 text-[11px] font-semibold text-slate-500 transition-all duration-200 hover:bg-slate-50 hover:text-slate-800";

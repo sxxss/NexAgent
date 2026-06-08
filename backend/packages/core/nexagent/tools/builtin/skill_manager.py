@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import asyncio
 import hashlib
 import json
@@ -18,7 +17,6 @@ from pydantic import BaseModel, Field
 
 MAX_RESOURCE_FILES = 60
 MAX_RESOURCE_CHARS = 120_000
-MAX_EXECUTABLE_CODE_CHARS = 50_000
 MAX_READ_SKILL_CHARS = 24_000
 DEFAULT_READ_SKILL_CHARS = 12_000
 HISTORY_DIR_NAME = ".history"
@@ -43,7 +41,7 @@ class ReadSkillInput(BaseModel):
         default="",
         description=(
             "Optional relative file path to read. Empty returns SKILL.md only. "
-            "Use path='skill.py' only when reviewing or improving executable Skill behavior."
+            "Use this for referenced resources such as scripts/, references/, templates/, or examples/."
         ),
     )
     max_chars: int = Field(default=DEFAULT_READ_SKILL_CHARS, ge=1, le=MAX_READ_SKILL_CHARS)
@@ -55,7 +53,7 @@ class ListSkillsInput(BaseModel):
         default=False,
         description=(
             "Include agent-safe file metadata for each matching skill. The manifest excludes local absolute paths "
-            "and skill.py source because executable_tools already summarizes callable tools."
+            "and includes bundled resources such as scripts/ and references/."
         ),
     )
 
@@ -88,13 +86,6 @@ class SkillManageInput(BaseModel):
     required_tools: list[str] = Field(default_factory=list)
     required_mcp_ids: list[str] = Field(default_factory=list)
     files: list[SkillResourceFile] = Field(default_factory=list)
-    executable_code: str = Field(
-        default="",
-        description=(
-            "Optional replacement skill.py code for create/edit. Avoid generating a large executable_code payload "
-            "unless the user explicitly asked to add executable behavior."
-        ),
-    )
     force: bool = Field(
         default=False,
         description="Allow create to replace an existing skill or edit to create if missing.",
@@ -132,8 +123,6 @@ def get_list_skills_tool() -> BaseTool:
                 "tags": skill.tags,
                 "required_tools": skill.required_tools,
                 "required_mcp_ids": skill.required_mcp_ids,
-                "executable": (skill.path.parent / "skill.py").exists(),
-                "executable_tools": _summarize_executable_tools(loader, skill.path.parent.name),
                 "content_hash": skill.content_hash,
             }
             if include_files:
@@ -199,14 +188,11 @@ def get_read_skill_tool() -> BaseTool:
             "storage": "managed",
             "files": _agent_safe_file_manifest(files),
             "content_hash": skill.content_hash,
-            "executable": (root / "skill.py").exists(),
-            "executable_tools": _summarize_executable_tools(loader, skill.path.parent.name),
             "contents": contents,
             "note": (
                 "Default read returns SKILL.md only. Call read_skill with path to inspect supporting resource files. "
-                "Use executable_tools for callable tool capabilities. When executable behavior must be reviewed or "
-                "changed, read skill.py through read_skill path='skill.py' and update it through skill_manage "
-                "executable_code; never read managed Skill files through generic filesystem tools."
+                "At runtime, selected Skills are mirrored read-only to /mnt/skills/<id> for file tools and "
+                "skills/<id>/ for bash script execution."
             ),
         })
 
@@ -231,7 +217,6 @@ def get_skill_manage_tool() -> BaseTool:
         required_tools: list[str] | None = None,
         required_mcp_ids: list[str] | None = None,
         files: list[SkillResourceFile] | None = None,
-        executable_code: str = "",
         force: bool = False,
         preserve_existing_files: bool = True,
     ) -> str:
@@ -255,7 +240,6 @@ def get_skill_manage_tool() -> BaseTool:
             required_tools=required_tools or [],
             required_mcp_ids=required_mcp_ids or [],
             files=files or [],
-            executable_code=executable_code,
             force=force,
             preserve_existing_files=preserve_existing_files,
             source="skill_manage",
@@ -279,7 +263,6 @@ async def _manage_skill_impl(
     required_tools: list[str] | None = None,
     required_mcp_ids: list[str] | None = None,
     files: list[SkillResourceFile] | None = None,
-    executable_code: str = "",
     force: bool = False,
     preserve_existing_files: bool = True,
     source: str = "skill_manage",
@@ -318,7 +301,6 @@ async def _manage_skill_impl(
                 required_tools=required_tools or [],
                 required_mcp_ids=required_mcp_ids or [],
                 files=files or [],
-                executable_code=executable_code,
                 force=True,
                 preserve_existing_files=preserve_existing_files,
             )
@@ -407,7 +389,7 @@ async def _manage_skill_impl(
                 relative = _safe_existing_skill_path(path)
             except ValueError as exc:
                 return f"Error: {exc}"
-            if relative in {"SKILL.md", "skill.py"}:
+            if relative == "SKILL.md":
                 return "Error: remove_file may only remove bundled resource files."
             file_path = (target / relative).resolve()
             root = target.resolve()
@@ -483,16 +465,12 @@ def _write_skill_package(
     required_tools: list[str],
     required_mcp_ids: list[str],
     files: list[SkillResourceFile],
-    executable_code: str,
     force: bool,
     preserve_existing_files: bool,
 ) -> str:
     validation_error = _validate_resource_files(files)
     if validation_error:
         return f"Error: {validation_error}"
-    executable_error = _validate_executable_code(executable_code)
-    if executable_error:
-        return f"Error: {executable_error}"
     scan = _scan_skill_text(content, executable=False, location=f"{skill_id}/SKILL.md")
     if scan["decision"] == "block":
         return f"Error: Security scan blocked SKILL.md: {scan['reason']}"
@@ -508,12 +486,8 @@ def _write_skill_package(
 
     target = loader.public_dir / skill_id
     preserved_files: dict[str, str] = {}
-    preserved_executable_code = ""
     if target.exists() and force and preserve_existing_files:
         preserved_files = _read_existing_resource_files(target)
-        skill_py = target / "skill.py"
-        if skill_py.is_file() and not executable_code.strip():
-            preserved_executable_code = skill_py.read_text(encoding="utf-8", errors="replace")
     if target.exists():
         shutil.rmtree(target)
     target.mkdir(parents=True, exist_ok=False)
@@ -539,36 +513,12 @@ def _write_skill_package(
     for item in files:
         relative = _safe_resource_path(item.path)
         _atomic_write(target / relative, item.content)
-    if executable_code.strip():
-        _atomic_write(target / "skill.py", executable_code.strip() + "\n")
-    elif preserved_executable_code.strip():
-        _atomic_write(target / "skill.py", preserved_executable_code.rstrip() + "\n")
 
     loader.reload()
     skill = loader.load(skill_id)
     if skill is None:
         return f"Error: Skill '{skill_id}' was written but could not be loaded."
-    active_executable_code = executable_code.strip() or preserved_executable_code.strip()
-    has_executable_code = bool(active_executable_code)
-    executable_tools = _summarize_executable_source(active_executable_code) if active_executable_code else []
-    executable_warning = ""
-    if (
-        preserved_executable_code.strip()
-        and not executable_code.strip()
-        and not _looks_like_executable_skill(active_executable_code)
-    ):
-        executable_warning = (
-            "Existing skill.py was preserved but does not appear to define a valid BaseSkill/get_tools contract. "
-            "Update executable_code to repair it; SKILL.md/supporting file edits were still saved."
-        )
     issues = [issue.to_dict() for issue in skill.validation_issues]
-    if executable_warning:
-        issues.append({
-            "severity": "warning",
-            "code": "preserved_executable_import_failed",
-            "message": executable_warning,
-            "fix": "Provide corrected executable_code that imports from nexagent.skills.base.",
-        })
     if scan["decision"] == "warn":
         issues.append({
             "severity": "warning",
@@ -582,11 +532,7 @@ def _write_skill_package(
         "name": skill.name,
         "storage": "managed",
         "files": _agent_safe_file_manifest(skill.files),
-        "executable": has_executable_code,
-        "tools": [tool["name"] for tool in executable_tools],
-        "executable_tools": executable_tools,
         "issues": issues,
-        "warning": executable_warning,
         "message": f"Skill '{skill.id}' saved in managed skill storage.",
     })
 
@@ -595,8 +541,6 @@ def _agent_safe_file_manifest(files: list[dict[str, Any]]) -> list[dict[str, Any
     result: list[dict[str, Any]] = []
     for file in files:
         path = str(file.get("path") or "")
-        if path == "skill.py":
-            continue
         result.append({
             "path": path,
             "size": file.get("size"),
@@ -604,96 +548,6 @@ def _agent_safe_file_manifest(files: list[dict[str, Any]]) -> list[dict[str, Any
             "text": file.get("text"),
         })
     return result
-
-
-def _summarize_executable_tools(loader, skill_id: str) -> list[dict[str, str]]:
-    skill_py = loader.public_dir / skill_id / "skill.py"
-    if not skill_py.is_file():
-        return []
-    try:
-        return _summarize_executable_source(skill_py.read_text(encoding="utf-8", errors="replace"))
-    except OSError:
-        return []
-
-
-def _summarize_tools(tools: list[BaseTool]) -> list[dict[str, str]]:
-    return [
-        {
-            "name": str(tool.name),
-            "description": str(getattr(tool, "description", "") or ""),
-        }
-        for tool in tools
-    ]
-
-
-def _looks_like_executable_skill(code: str) -> bool:
-    if not code.strip():
-        return False
-    try:
-        tree = ast.parse(code)
-    except SyntaxError:
-        return False
-    return any(
-        isinstance(node, ast.ClassDef)
-        and any(_base_name(base) == "BaseSkill" for base in node.bases)
-        and any(isinstance(item, ast.FunctionDef) and item.name == "get_tools" for item in node.body)
-        for node in tree.body
-    )
-
-
-def _summarize_executable_source(code: str) -> list[dict[str, str]]:
-    """Statically summarize @tool functions without importing user skill.py."""
-    if not _looks_like_executable_skill(code):
-        return []
-    try:
-        tree = ast.parse(code)
-    except SyntaxError:
-        return []
-
-    result: list[dict[str, str]] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.FunctionDef):
-            continue
-        tool_name = _decorated_tool_name(node)
-        if not tool_name:
-            continue
-        result.append({
-            "name": tool_name,
-            "description": ast.get_docstring(node) or "",
-        })
-    return result
-
-
-def _decorated_tool_name(node: ast.FunctionDef) -> str:
-    for decorator in node.decorator_list:
-        if isinstance(decorator, ast.Name) and decorator.id == "tool":
-            return node.name
-        if isinstance(decorator, ast.Call) and _base_name(decorator.func) == "tool":
-            if (
-                decorator.args
-                and isinstance(decorator.args[0], ast.Constant)
-                and isinstance(decorator.args[0].value, str)
-            ):
-                return decorator.args[0].value
-            for keyword in decorator.keywords:
-                if (
-                    keyword.arg in {"name", "tool_name"}
-                    and isinstance(keyword.value, ast.Constant)
-                    and isinstance(keyword.value.value, str)
-                ):
-                    return keyword.value.value
-            return node.name
-    return ""
-
-
-def _base_name(node: ast.AST) -> str:
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        return node.attr
-    if isinstance(node, ast.Subscript):
-        return _base_name(node.value)
-    return ""
 
 
 def _validate_resource_files(files: list[SkillResourceFile]) -> str:
@@ -709,24 +563,6 @@ def _validate_resource_files(files: list[SkillResourceFile]) -> str:
             return str(exc)
     return ""
 
-
-def _validate_executable_code(code: str) -> str:
-    if not code.strip():
-        return ""
-    if len(code) > MAX_EXECUTABLE_CODE_CHARS:
-        return f"Executable code is too large: {len(code)} chars > {MAX_EXECUTABLE_CODE_CHARS}."
-    if "BaseSkill" not in code:
-        return "executable_code must define a class that subclasses BaseSkill."
-    if "def get_tools" not in code:
-        return "executable_code must implement get_tools()."
-    forbidden_imports = ("from agent.", "import agent.")
-    if any(token in code for token in forbidden_imports):
-        return "executable_code must not import legacy agent.skills modules; use nexagent.skills.base."
-    if not _looks_like_executable_skill(code):
-        return "executable_code must define a BaseSkill subclass with get_tools()."
-    return ""
-
-
 def _read_existing_resource_files(root) -> dict[str, str]:
     from nexagent.skills.loader import TEXT_RESOURCE_EXTENSIONS
 
@@ -736,7 +572,7 @@ def _read_existing_resource_files(root) -> dict[str, str]:
         if not path.is_file():
             continue
         relative = path.relative_to(root).as_posix()
-        if relative in {"SKILL.md", "skill.py"}:
+        if relative == "SKILL.md":
             continue
         if path.suffix.lower() not in TEXT_RESOURCE_EXTENSIONS:
             continue
@@ -754,8 +590,6 @@ def _safe_resource_path(value: str) -> str:
         raise ValueError(f"Invalid resource path: {value}")
     if path.name == "SKILL.md":
         raise ValueError("Resource files may not overwrite SKILL.md.")
-    if path.name == "skill.py":
-        raise ValueError("Use executable_code to create skill.py; resource files may not overwrite it.")
     if any(part.startswith(".") or part == "__pycache__" for part in path.parts):
         raise ValueError(f"Hidden or cache paths are not allowed: {value}")
     return path.as_posix()

@@ -447,7 +447,6 @@ function describeSkillManage(input: Record<string, unknown>) {
         : action === "delete" || action === "history"
           ? id
           : path || id;
-  const executable = typeof input.executable_code === "string" && input.executable_code.trim().length > 0;
   const files = Array.isArray(input.files) ? input.files.length : 0;
   const actionLabel: Record<string, string> = {
     create: "创建 Skill",
@@ -466,7 +465,6 @@ function describeSkillManage(input: Record<string, unknown>) {
     action === "write_file" ? `写入资源文件：${path || "未指定路径"}` : "",
     action === "remove_file" ? `移除资源文件：${path || "未指定路径"}` : "",
     files > 0 ? `同步 ${files} 个 bundled resource 文件` : "",
-    executable ? "更新可执行入口 skill.py" : "",
     action !== "history" ? "校验内容、记录历史并刷新 Skill 缓存" : "读取最近的变更历史",
   ]);
   return {

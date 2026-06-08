@@ -1,4 +1,4 @@
-"""Skills marketplace, installation, and executable-tool inspection routes."""
+"""Skills marketplace, installation, and package inspection routes."""
 
 from __future__ import annotations
 
@@ -119,27 +119,21 @@ async def registry():
 
 @router.get("/")
 async def list_skills():
-    """List installed skills with executable tool metadata."""
+    """List installed skills with package metadata."""
     from nexagent.skills.loader import SkillLoader
-    from nexagent.skills.validation import dependency_issues, tool_conflicts
+    from nexagent.skills.validation import dependency_issues
 
     loader = SkillLoader()
-    conflicts = tool_conflicts(loader)
     skills = []
     for skill in loader.load_all():
-        executable = loader.load_executable(skill.path.parent.name)
-        tools = executable.get_tools() if executable else []
-        tool_payload = [{"name": tool.name, "description": tool.description or ""} for tool in tools]
         dep_issues = await dependency_issues(skill, loader=loader)
         issues = [
             *[issue.to_dict() for issue in skill.validation_issues],
             *[issue.to_dict() for issue in dep_issues],
-            *_conflict_issues(tool_payload, conflicts),
         ]
         skills.append({
             **skill.to_dict(),
             "content_preview": (skill.content[:300] + "..." if len(skill.content) > 300 else skill.content),
-            "tools": tool_payload,
             "issues": issues,
             "installed": True,
         })
@@ -345,7 +339,7 @@ async def update(skill_id: str, body: SkillUpdateRequest):
 
 @router.post("/{skill_id}/test")
 async def test(skill_id: str):
-    """Check whether a skill can be loaded and whether executable tools import."""
+    """Check whether a skill can be loaded and its declared dependencies resolve."""
     from nexagent.skills.loader import SkillLoader
     from nexagent.skills.validation import dependency_issues
 
@@ -353,8 +347,6 @@ async def test(skill_id: str):
     skill = loader.load(skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill '{skill_id}' not found")
-    executable = loader.load_executable(skill_id)
-    tools = executable.get_tools() if executable else []
     dep_issues = await dependency_issues(skill, loader=loader)
     issues = [
         *[issue.to_dict() for issue in skill.validation_issues],
@@ -363,8 +355,6 @@ async def test(skill_id: str):
     return {
         "ok": not any(issue["severity"] == "error" for issue in issues),
         "message": "Skill loaded successfully" if not issues else "Skill loaded with issues",
-        "executable": executable is not None,
-        "tools": [{"name": tool.name, "description": tool.description or ""} for tool in tools],
         "content_hash": skill.content_hash,
         "issues": issues,
     }
@@ -468,8 +458,8 @@ async def delete_skill_file_content(skill_id: str, path: str):
     if not loader.load(skill_id):
         raise HTTPException(status_code=404, detail=f"Skill '{skill_id}' not found")
     rel_path = _safe_skill_resource_path(path)
-    if rel_path in {"SKILL.md", "skill.py"}:
-        raise HTTPException(status_code=400, detail="SKILL.md and skill.py cannot be deleted from this endpoint")
+    if rel_path == "SKILL.md":
+        raise HTTPException(status_code=400, detail="SKILL.md cannot be deleted from this endpoint")
     root = (loader.public_dir / skill_id).resolve()
     target = (root / rel_path).resolve()
     if not _is_relative_to(target, root) or not target.is_file():
@@ -623,7 +613,6 @@ def _list_skill_candidates_from_zip(payload: bytes) -> list[dict]:
                 "file_count": len(files),
                 "files": files,
                 "content_hash": _zip_skill_hash(zf, skill_dir),
-                "has_executable": any(file["path"] == "skill.py" for file in files),
                 "content_preview": body[:300] + ("..." if len(body) > 300 else ""),
             })
     return candidates
@@ -718,7 +707,7 @@ def _preview_zip_skill_files(zf: zipfile.ZipFile, skill_dir: str) -> list[dict]:
         files.append({
             "path": rel,
             "size": member.file_size,
-            "kind": "entry" if rel == "SKILL.md" else "executable" if rel == "skill.py" else "resource",
+            "kind": _skill_file_kind(rel),
             "text": _is_text_file_path(rel),
         })
     return sorted(files, key=lambda item: item["path"])[:80]
@@ -784,7 +773,6 @@ def _list_skill_candidates(root: Path) -> list[dict]:
             "file_count": len(files),
             "files": files,
             "content_hash": _directory_hash(skill_dir),
-            "has_executable": (skill_dir / "skill.py").exists(),
             "content_preview": body[:300] + ("..." if len(body) > 300 else ""),
         })
     return candidates
@@ -805,7 +793,6 @@ def _preview_markdown_skill(content: str, skill_id: str) -> dict:
         "file_count": 1,
         "files": [{"path": "SKILL.md", "size": len(content.encode("utf-8")), "kind": "entry", "text": True}],
         "content_hash": _bytes_hash(content.encode("utf-8")),
-        "has_executable": False,
         "content_preview": body[:300] + ("..." if len(body) > 300 else ""),
     }
 
@@ -931,7 +918,7 @@ def _preview_files(root: Path) -> list[dict]:
         files.append({
             "path": rel,
             "size": path.stat().st_size,
-            "kind": "entry" if rel == "SKILL.md" else "executable" if rel == "skill.py" else "resource",
+            "kind": _skill_file_kind(rel),
             "text": _is_text_file_path(rel),
         })
     return files[:80]
@@ -954,6 +941,14 @@ def _is_text_file_path(path: str) -> bool:
         ".webp",
         ".zip",
     }
+
+
+def _skill_file_kind(path: str) -> str:
+    if path == "SKILL.md":
+        return "entry"
+    if path.startswith("scripts/"):
+        return "script"
+    return "resource"
 
 
 def _is_probably_binary_file(path: Path) -> bool:
@@ -1035,17 +1030,3 @@ def _skill_response(skill) -> dict:
         "issues": [issue.to_dict() for issue in skill.validation_issues],
         "installed": True,
     }
-
-
-def _conflict_issues(tools: list[dict], conflicts: dict[str, list[str]]) -> list[dict[str, str]]:
-    return [
-        {
-            "severity": "warning",
-            "code": "tool_name_conflict",
-            "message": f"Tool name '{tool['name']}' is exposed by multiple sources: "
-            + ", ".join(conflicts[tool["name"]]),
-            "fix": "Rename one executable tool to avoid ambiguous tool selection.",
-        }
-        for tool in tools
-        if tool.get("name") in conflicts
-    ]
