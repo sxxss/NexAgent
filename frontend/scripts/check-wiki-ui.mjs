@@ -41,6 +41,8 @@ const checks = [
   ["detail", "wikiSidebar"],
   ["page", "wiki-link"],
   ["page", "wiki-new:"],
+  ["page", "urlTransform={preserveWikiUrl}"],
+  ["page", "function preserveWikiUrl"],
   ["page", "crystallizeWikiKbPage"],
   ["page", "export function WikiPageDirectory"],
   ["page", "compactFilterBar"],

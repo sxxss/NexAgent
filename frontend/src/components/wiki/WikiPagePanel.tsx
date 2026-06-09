@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle, Edit3, FileText, Loader2, Save, ShieldAlert, Trash2, X } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   acceptGeneratedWikiKbPage,
@@ -219,6 +219,7 @@ export function WikiPagePanel({
             <div className="markdown-body rounded-xl border border-slate-100 bg-white px-5 py-4 shadow-sm">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
+                urlTransform={preserveWikiUrl}
                 components={{
                   a: ({ href, children }) => {
                     if (href?.startsWith("wiki:")) {
@@ -368,6 +369,11 @@ function renderWikiLinks(content: string, pageLookup: Map<string, string>) {
     const pageId = pageLookup.get(normalizeWikiKey(title));
     return pageId ? `[${title}](wiki:${encodeURIComponent(pageId)})` : `[${title}](wiki-new:${encodeURIComponent(title)})`;
   });
+}
+
+function preserveWikiUrl(value: string) {
+  if (value.startsWith("wiki:") || value.startsWith("wiki-new:")) return value;
+  return defaultUrlTransform(value);
 }
 
 function normalizeWikiKey(value = "") {
