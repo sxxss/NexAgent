@@ -46,10 +46,11 @@ async def test_crystallize_thread_into_wiki_kb_registers_source_and_page(monkeyp
                 "kb_id": kb_id,
                 "title": title,
                 "content": content,
+                "page_type": page_type,
                 "sources": sources,
                 "confidence": confidence,
             }
-            return {"id": "note:decision-log", "title": title, "type": page_type, "sources": sources}
+            return {"id": f"{page_type}:decision-log", "title": title, "type": page_type, "sources": sources}
 
     class FakeManager:
         def get_kb(self, kb_id):
@@ -68,15 +69,36 @@ async def test_crystallize_thread_into_wiki_kb_registers_source_and_page(monkeyp
     monkeypatch.setattr("nexagent.models.factory.load_chat_model_async", lambda model=None: FakeLLM())
     monkeypatch.setattr("nexagent.knowledge.manager.get_manager", lambda: FakeManager())
 
-    result = await wiki_service.crystallize_thread("thread-1", kb_id="wiki-1", model="test/model")
+    result = await wiki_service.crystallize_thread("thread-1", kb_id="wiki-1", model="test/model", page_type="query")
 
-    assert result["id"] == "note:decision-log"
+    assert result["id"] == "query:decision-log"
     assert result["file_id"] == "file-1"
     assert calls["add_file"]["filename"] == "Decision Log.md"
     assert calls["add_file"]["processing_params"]["source_type"] == "conversation_crystallize"
     assert calls["add_file"]["processing_params"]["source_thread_id"] == "thread-1"
+    assert calls["add_file"]["processing_params"]["crystallized_page_type"] == "query"
+    assert calls["crystallize"]["page_type"] == "query"
     assert calls["crystallize"]["sources"] == ["file-1"]
     assert calls["crystallize"]["confidence"] == "UNVERIFIED"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_global_wiki_crystallize_passes_page_type(monkeypatch):
+    from app.gateway.routers import wiki
+
+    calls = {}
+
+    async def fake_crystallize_thread(thread_id, kb_id=None, model=None, page_type="note"):
+        calls["request"] = {"thread_id": thread_id, "kb_id": kb_id, "model": model, "page_type": page_type}
+        return {"id": f"{page_type}:alpha"}
+
+    monkeypatch.setattr("nexagent.services.wiki_service.crystallize_thread", fake_crystallize_thread)
+
+    result = await wiki.crystallize(wiki.CrystallizeRequest(thread_id="thread-1", kb_id="wiki-1", page_type="query"))
+
+    assert result["id"] == "query:alpha"
+    assert calls["request"]["page_type"] == "query"
 
 
 @pytest.mark.unit

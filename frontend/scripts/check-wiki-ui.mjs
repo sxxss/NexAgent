@@ -13,6 +13,7 @@ const files = {
   graphPage: "src/app/knowledge/[id]/wiki/graph/page.tsx",
   lint: "src/components/wiki/WikiLintPanel.tsx",
   crystallize: "src/components/wiki/WikiCrystallizePanel.tsx",
+  chatWikiModal: "src/components/chat/WikiModal.tsx",
   sidebar: "src/components/Sidebar.tsx",
 };
 
@@ -144,6 +145,13 @@ const checks = [
   ["crystallize", "查询结果"],
   ["crystallize", "临时笔记"],
   ["crystallize", "预览确认并生成页面"],
+  ["chatWikiModal", "WikiCrystallizePageType"],
+  ["chatWikiModal", "pageType"],
+  ["chatWikiModal", "page_type"],
+  ["chatWikiModal", "pageHref"],
+  ["chatWikiModal", "打开 Wiki 页面"],
+  ["chatWikiModal", "作为笔记"],
+  ["chatWikiModal", "作为问答"],
   ["detail", "taskKindLabel"],
   ["detail", "wiki_repair"],
   ["detail", "Wiki 编译"],

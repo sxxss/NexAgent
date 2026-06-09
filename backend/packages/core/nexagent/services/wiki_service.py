@@ -27,6 +27,7 @@ WIKI_SYSTEM_PROMPT = """你是一名知识管理专家。请把下面的对话�
 - 结尾加一行：`标签: tag1, tag2, tag3`（3-6 个）。"""
 
 CRYSTALLIZE_SOURCE_TYPE = "conversation_crystallize"
+CRYSTALLIZE_PAGE_TYPES = {"note", "query"}
 
 
 def _extract_title(markdown: str) -> str:
@@ -64,9 +65,17 @@ async def _maybe_await(value):
     return value
 
 
-async def _crystallize_into_wiki_kb(kb_id: str, title: str, markdown: str, *, thread_id: str) -> dict[str, Any]:
+def _normalize_crystallize_page_type(page_type: str | None) -> str:
+    normalized = str(page_type or "note").strip().lower()
+    if normalized not in CRYSTALLIZE_PAGE_TYPES:
+        raise ValueError("对话沉淀页面类型只支持 note 或 query。")
+    return normalized
+
+
+async def _crystallize_into_wiki_kb(kb_id: str, title: str, markdown: str, *, thread_id: str, page_type: str) -> dict[str, Any]:
     from nexagent.knowledge.manager import get_manager
 
+    normalized_page_type = _normalize_crystallize_page_type(page_type)
     manager = get_manager()
     kb = manager.get_kb(kb_id)
     if kb is None:
@@ -82,7 +91,7 @@ async def _crystallize_into_wiki_kb(kb_id: str, title: str, markdown: str, *, th
             "source_type": CRYSTALLIZE_SOURCE_TYPE,
             "source_thread_id": thread_id,
             "crystallized_title": title,
-            "crystallized_page_type": "note",
+            "crystallized_page_type": normalized_page_type,
         },
     )
     file_id = source.file_id
@@ -96,7 +105,7 @@ async def _crystallize_into_wiki_kb(kb_id: str, title: str, markdown: str, *, th
         kb_id,
         title=title,
         content=markdown,
-        page_type="note",
+        page_type=normalized_page_type,
         sources=[file_id],
         confidence="UNVERIFIED",
     )
@@ -108,6 +117,7 @@ async def crystallize_thread(
     *,
     kb_id: str | None = None,
     model: str | None = None,
+    page_type: str = "note",
 ) -> dict[str, Any]:
     """Distill a conversation thread into a wiki page and persist it."""
     from langchain_core.messages import HumanMessage, SystemMessage
@@ -117,6 +127,7 @@ async def crystallize_thread(
 
     if not kb_id:
         raise ValueError("请选择目标 Wiki 知识库后再沉淀。")
+    normalized_page_type = _normalize_crystallize_page_type(page_type)
 
     messages = await list_messages(thread_id)
     transcript = _format_transcript(messages)
@@ -136,7 +147,7 @@ async def crystallize_thread(
     title = _extract_title(markdown)
     tags = _extract_tags(markdown)
 
-    page = await _crystallize_into_wiki_kb(kb_id, title, markdown, thread_id=thread_id)
+    page = await _crystallize_into_wiki_kb(kb_id, title, markdown, thread_id=thread_id, page_type=normalized_page_type)
     return {**page, "tags": tags, "thread_id": thread_id, "char_count": len(markdown)}
 
 

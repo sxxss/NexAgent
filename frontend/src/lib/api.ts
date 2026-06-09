@@ -1654,6 +1654,7 @@ export async function synthesizeSpeech(
 export interface WikiPage {
   id: string;
   title: string;
+  type?: string;
   tags?: string[];
   thread_id?: string;
   kb_id?: string | null;
@@ -1664,7 +1665,7 @@ export interface WikiPage {
   content?: string;
 }
 
-export async function crystallizeWiki(body: { thread_id: string; kb_id: string; model?: string }): Promise<WikiPage> {
+export async function crystallizeWiki(body: { thread_id: string; kb_id: string; model?: string; page_type?: "note" | "query" }): Promise<WikiPage> {
   const res = await fetch(`${BASE}/wiki/crystallize`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

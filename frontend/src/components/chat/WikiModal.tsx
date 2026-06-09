@@ -1,10 +1,12 @@
 "use client";
 
-import { BookOpen, Check, Copy, Loader2, Sparkles, X } from "lucide-react";
+import { BookOpen, Check, Copy, ExternalLink, Loader2, Sparkles, X } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { crystallizeWiki, type KBMeta, type WikiPage } from "@/lib/api";
+
+type WikiCrystallizePageType = "note" | "query";
 
 export function WikiModal({
   open,
@@ -23,11 +25,13 @@ export function WikiModal({
   const [page, setPage] = useState<WikiPage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [kbId, setKbId] = useState("");
+  const [pageType, setPageType] = useState<WikiCrystallizePageType>("note");
   const [copied, setCopied] = useState(false);
 
   if (!open) return null;
 
   const wikiKbs = kbs.filter((kb) => kb.kb_type === "wiki");
+  const pageHref = page?.kb_id && page.id ? `/knowledge/${encodeURIComponent(page.kb_id)}?wikiPage=${encodeURIComponent(page.id)}` : "";
 
   const run = async () => {
     if (!threadId) {
@@ -42,7 +46,7 @@ export function WikiModal({
     setError(null);
     setPage(null);
     try {
-      const result = await crystallizeWiki({ thread_id: threadId, kb_id: kbId, model });
+      const result = await crystallizeWiki({ thread_id: threadId, kb_id: kbId, model, page_type: pageType });
       setPage(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "沉淀失败");
@@ -79,7 +83,7 @@ export function WikiModal({
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-5 py-3">
           <select
             value={kbId}
-            onChange={(e) => setKbId(e.target.value)}
+            onChange={(e) => { setKbId(e.target.value); setPage(null); }}
             className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-indigo-300"
           >
             <option value="">选择 Wiki 知识库</option>
@@ -89,6 +93,22 @@ export function WikiModal({
               </option>
             ))}
           </select>
+          <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+            <button
+              type="button"
+              onClick={() => { setPageType("note"); setPage(null); }}
+              className={pageType === "note" ? activeTypeButton : typeButton}
+            >
+              作为笔记
+            </button>
+            <button
+              type="button"
+              onClick={() => { setPageType("query"); setPage(null); }}
+              className={pageType === "query" ? activeTypeButton : typeButton}
+            >
+              作为问答
+            </button>
+          </div>
           <button
             type="button"
             onClick={() => void run()}
@@ -107,6 +127,15 @@ export function WikiModal({
               {copied ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
               {copied ? "已复制" : "复制"}
             </button>
+          ) : null}
+          {pageHref ? (
+            <a
+              href={pageHref}
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-blue-100 bg-blue-50 px-3 text-xs font-semibold text-blue-700 hover:border-blue-200 hover:bg-blue-100"
+            >
+              <ExternalLink size={14} />
+              打开 Wiki 页面
+            </a>
           ) : null}
         </div>
 
@@ -148,3 +177,6 @@ export function WikiModal({
     </div>
   );
 }
+
+const typeButton = "h-7 rounded-lg px-2.5 text-xs font-semibold text-slate-500 transition hover:text-slate-900";
+const activeTypeButton = "h-7 rounded-lg bg-white px-2.5 text-xs font-semibold text-indigo-700 shadow-sm";
