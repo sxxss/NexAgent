@@ -255,8 +255,8 @@ export function WikiWorkbench({
   }, [candidateCount, needsReviewCount, pageFilters, resources]);
 
   return (
-    <div className="grid h-full min-h-0 gap-3 xl:grid-cols-[minmax(360px,0.82fr)_minmax(640px,1.18fr)]">
-      <aside className="min-h-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <div className="grid h-full min-h-0 gap-3 xl:grid-cols-[minmax(320px,0.72fr)_minmax(680px,1.28fr)]">
+      <aside className="min-h-0 overflow-hidden rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
         <div className="flex h-full min-h-0 flex-col gap-3">
           {sidebar}
           <WikiResourcePane
@@ -356,7 +356,7 @@ export function WikiWorkbench({
 
 function WikiResourcePane({ resources, pageDirectory }: { resources?: React.ReactNode; pageDirectory: React.ReactNode }) {
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
+    <section className={wikiResourcePaneCompact}>
       <div className="flex min-h-0 flex-1 flex-col divide-y divide-slate-100">
         {resources ? <div className="shrink-0">{resources}</div> : null}
         <div className="min-h-0 flex-1">{pageDirectory}</div>
@@ -409,3 +409,4 @@ function wikiPageStatus(page: WikiPageSummary): string {
 const iconButton = "inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 disabled:opacity-40";
 const headerButton = "inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40";
 const wikiWorkbenchTab = "inline-flex h-14 items-center border-b-2 px-0 text-base font-semibold transition";
+const wikiResourcePaneCompact = "flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white";

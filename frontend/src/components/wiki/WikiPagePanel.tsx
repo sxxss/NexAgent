@@ -242,7 +242,7 @@ export function WikiPageDirectory({
 
   return (
     <section className="flex min-h-0 flex-1 flex-col bg-white">
-      <div className="shrink-0 border-b border-slate-100 px-3 py-3">
+      <div className={pageDirectoryCompactHeader}>
         <div className="flex items-center justify-between gap-2">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800"><FileText size={14} />页面</h3>
           <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">
@@ -256,11 +256,11 @@ export function WikiPageDirectory({
             placeholder="搜索页面"
             className={cn(filterInput, "min-w-0 flex-1")}
           />
-          <select value={filters.type} onChange={(event) => updateFilter("type", event.target.value)} className={cn(filterInput, "w-24")}>
+          <select value={filters.type} onChange={(event) => updateFilter("type", event.target.value)} className={cn(filterInput, compactSelectFilter)}>
             <option value="">类型</option>
             {pageTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
           </select>
-          <select value={filters.status} onChange={(event) => updateFilter("status", event.target.value)} className={cn(filterInput, "w-24")}>
+          <select value={filters.status} onChange={(event) => updateFilter("status", event.target.value)} className={cn(filterInput, compactSelectFilter)}>
             <option value="">状态</option>
             {pageStatuses.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
           </select>
@@ -394,7 +394,9 @@ const pageStatuses = [
   { value: "needs_review", label: "需要复核" },
 ];
 
-const compactFilterBar = "mt-3 flex flex-wrap items-center gap-1.5";
+const pageDirectoryCompactHeader = "shrink-0 border-b border-slate-100 px-2.5 py-2";
+const compactFilterBar = "mt-2 flex flex-wrap items-center gap-1.5";
+const compactSelectFilter = "w-[82px] shrink-0";
 const filterInput = "h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100";
 const segmentButton = "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold text-slate-600 transition";
 const actionButton = "inline-flex h-9 items-center gap-2 rounded-lg border bg-white px-3 text-xs font-semibold transition hover:bg-slate-50 disabled:opacity-40";

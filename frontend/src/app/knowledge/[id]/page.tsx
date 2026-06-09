@@ -303,7 +303,7 @@ export default function KBDetailPage() {
           reload={loadData}
           sidebar={
             <div className={wikiSidebar}>
-              <WikiKnowledgeCard
+              <WikiCompactHeader
                 kb={kb}
                 fileCount={files.length}
                 indexedCount={indexedCount}
@@ -326,42 +326,36 @@ export default function KBDetailPage() {
               setFilters({ ...filters, source_file_id: activeSourceFileId === fileId ? "" : fileId });
             };
             return (
-            <>
-              <WikiSourceToolbar
+              <WikiSourceSection
+                files={files}
                 uploading={uploading}
                 pendingCount={pendingCount}
                 inputRef={fileInputRef}
-                onUpload={handleUpload}
-                onProcessAll={handleProcessAll}
+                uploadResults={uploadResults}
+                processingIds={processingIds}
+                activeSourceFileId={activeSourceFileId}
+                preview={preview}
+                previewLoading={previewLoading}
                 jobs={jobs.slice(0, 6)}
-                onRetry={(jobId) => void retryIngestionJob(jobId).then(loadData)}
-                onCancel={(taskId) => void cancelTask(taskId).then(loadData)}
-              />
-              <WikiStatusStrip
                 llmLabel={llmLabel}
                 indexedCount={indexedCount}
-                fileCount={files.length}
                 compileStatus={compileStatus}
                 candidateCount={candidateCount}
                 needsReviewCount={needsReviewCount}
                 failedSourceCount={failedSourceCount}
                 activeStatus={filters.status}
+                onUpload={handleUpload}
+                onProcessAll={handleProcessAll}
                 onStatusFilter={applyWikiStatusFilter}
                 onRetryFailed={handleProcessAll}
-                disabled={uploading}
-              />
-              <UploadResultList results={uploadResults} />
-              <WikiFileList
-                files={files}
-                processingIds={processingIds}
-                activeSourceFileId={activeSourceFileId}
+                onRetry={(jobId) => void retryIngestionJob(jobId).then(loadData)}
+                onCancel={(taskId) => void cancelTask(taskId).then(loadData)}
                 onToggleSourceFilter={onToggleSourceFilter}
                 onProcess={handleProcess}
                 onPreview={handlePreview}
                 onDelete={handleDelete}
+                onClosePreview={() => setPreview(null)}
               />
-              {preview || previewLoading ? <PreviewPanel preview={preview} loading={previewLoading} onClose={() => setPreview(null)} /> : null}
-            </>
             );
           }}
         />
@@ -496,7 +490,7 @@ function UploadResultList({ results }: { results: UploadResult[] }) {
   );
 }
 
-function WikiKnowledgeCard({
+function WikiCompactHeader({
   kb,
   fileCount,
   indexedCount,
@@ -514,8 +508,8 @@ function WikiKnowledgeCard({
   onRefresh: () => void;
 }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
+    <section className={wikiCompactKnowledgeCard}>
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
             <button type="button" onClick={onBack} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800" title="返回知识库">
@@ -523,14 +517,14 @@ function WikiKnowledgeCard({
             </button>
             <h1 className="truncate text-lg font-bold text-slate-950">{kb.name}</h1>
           </div>
-          <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600">{kb.description || "未填写描述"}</p>
+          <p className="mt-1 truncate text-xs text-slate-500">{kb.description || "未填写描述"}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <button type="button" onClick={onOpenGraph} className={wikiIconButton} title="图谱浏览"><Network size={14} /></button>
           <button type="button" onClick={onRefresh} className={wikiIconButton} title="刷新"><RefreshCw size={14} /></button>
         </div>
       </div>
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
         <Badge variant="teal">Wiki 知识库</Badge>
         <Badge variant="secondary">{fileCount} 个文件</Badge>
         <Badge variant="success">{indexedCount} 已编译</Badge>
@@ -567,6 +561,105 @@ function WikiSourceToolbar({
   );
 }
 
+function WikiSourceSection({
+  files,
+  uploading,
+  pendingCount,
+  inputRef,
+  uploadResults,
+  processingIds,
+  activeSourceFileId,
+  preview,
+  previewLoading,
+  jobs,
+  llmLabel,
+  indexedCount,
+  compileStatus,
+  candidateCount,
+  needsReviewCount,
+  failedSourceCount,
+  activeStatus,
+  onUpload,
+  onProcessAll,
+  onStatusFilter,
+  onRetryFailed,
+  onRetry,
+  onCancel,
+  onToggleSourceFilter,
+  onProcess,
+  onPreview,
+  onDelete,
+  onClosePreview,
+}: {
+  files: FileMeta[];
+  uploading: boolean;
+  pendingCount: number;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  uploadResults: UploadResult[];
+  processingIds: Set<string>;
+  activeSourceFileId: string;
+  preview: ParsedFilePreview | null;
+  previewLoading: boolean;
+  jobs: IngestionJob[];
+  llmLabel: string;
+  indexedCount: number;
+  compileStatus: { label: string; variant: "secondary" | "info" | "success" | "warning" | "error" };
+  candidateCount: number;
+  needsReviewCount: number;
+  failedSourceCount: number;
+  activeStatus: string;
+  onUpload: (files: FileList | null) => void;
+  onProcessAll: () => void;
+  onStatusFilter: (status: string) => void;
+  onRetryFailed: () => void;
+  onRetry: (jobId: string) => void;
+  onCancel: (taskId: string) => void;
+  onToggleSourceFilter: (fileId: string) => void;
+  onProcess: (fileId: string) => void;
+  onPreview: (fileId: string) => void;
+  onDelete: (fileId: string, filename: string) => void;
+  onClosePreview: () => void;
+}) {
+  return (
+    <section className="flex min-h-0 flex-col bg-white">
+      <WikiSourceToolbar
+        uploading={uploading}
+        pendingCount={pendingCount}
+        inputRef={inputRef}
+        onUpload={onUpload}
+        onProcessAll={onProcessAll}
+        jobs={jobs}
+        onRetry={onRetry}
+        onCancel={onCancel}
+      />
+      <WikiStatusStrip
+        llmLabel={llmLabel}
+        indexedCount={indexedCount}
+        fileCount={files.length}
+        compileStatus={compileStatus}
+        candidateCount={candidateCount}
+        needsReviewCount={needsReviewCount}
+        failedSourceCount={failedSourceCount}
+        activeStatus={activeStatus}
+        onStatusFilter={onStatusFilter}
+        onRetryFailed={onRetryFailed}
+        disabled={uploading}
+      />
+      <UploadResultList results={uploadResults} />
+      <WikiFileList
+        files={files}
+        processingIds={processingIds}
+        activeSourceFileId={activeSourceFileId}
+        onToggleSourceFilter={onToggleSourceFilter}
+        onProcess={onProcess}
+        onPreview={onPreview}
+        onDelete={onDelete}
+      />
+      {preview || previewLoading ? <PreviewPanel preview={preview} loading={previewLoading} onClose={onClosePreview} /> : null}
+    </section>
+  );
+}
+
 function WikiStatusStrip({
   llmLabel,
   indexedCount,
@@ -594,13 +687,13 @@ function WikiStatusStrip({
 }) {
   return (
     <div className={wikiStatusStrip}>
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
         <Badge variant="info" className="max-w-full truncate">{llmLabel}</Badge>
         <Badge variant="secondary">{indexedCount}/{fileCount} 已编译</Badge>
         <Badge variant={compileStatus.variant}>{compileStatus.label}</Badge>
         {candidateCount ? <Badge variant="warning">{candidateCount} 个候选待处理</Badge> : null}
       </div>
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5">
         <button type="button" onClick={() => onStatusFilter("pending_candidate")} className={cn(wikiQuickFilterButton, activeStatus === "pending_candidate" && wikiQuickFilterActive)}>
           候选 {candidateCount}
         </button>
@@ -704,43 +797,42 @@ function WikiFileList({
     );
   }
   return (
-    <section className="bg-white px-3 pb-3 pt-2">
-      <div className="mb-1 flex items-center justify-between gap-2">
+    <section className="bg-white px-2 pb-2 pt-1.5">
+      <div className={wikiSourcePanelHeader}>
         <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-900"><FileText size={14} />素材</h2>
         <span className="text-xs text-slate-400">{files.length} files</span>
       </div>
-      <div className="max-h-[260px] space-y-1.5 overflow-auto">
+      <div className="max-h-[220px] space-y-1 overflow-auto">
         {files.map((file) => {
           const status = statusMap[file.status];
           const Icon = status.icon;
           const processing = processingIds.has(file.file_id) || file.progress?.is_running;
           const sourceLabel = sourceTypeLabel(file);
+          const metaTitle = `${formatBytes(file.file_size)} · ${file.chunk_count || 0} chunks · ${formatDate(file.updated_at || file.created_at)}`;
           return (
             <div
               key={file.file_id}
               className={cn(
-                "rounded-lg border px-2.5 py-2 transition",
+                "rounded-md border px-1.5 py-1.5 transition",
                 activeSourceFileId === file.file_id ? "border-sky-200 bg-sky-50" : "border-transparent bg-slate-50 hover:border-slate-200",
               )}
             >
-              <div className="flex min-w-0 items-start justify-between gap-2">
-                <button type="button" onClick={() => onToggleSourceFilter(file.file_id)} className="min-w-0 flex-1 text-left">
-                  <p className="truncate text-sm font-medium text-slate-800" title={file.filename}>{file.filename}</p>
-                  <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-slate-400">
-                    <span>{formatBytes(file.file_size)}</span>
-                    <span>·</span>
-                    <span>{file.chunk_count || 0} chunks</span>
-                    <span>·</span>
-                    <span>{formatDate(file.updated_at || file.created_at)}</span>
-                    {sourceLabel ? <Badge variant="info" className="px-2 py-0 text-[11px]">{sourceLabel}</Badge> : null}
-                  </div>
+              <div className="flex min-w-0 items-center gap-1">
+                <button type="button" onClick={() => onToggleSourceFilter(file.file_id)} className={wikiSourceItemMain} title={`${file.filename}\n${metaTitle}`}>
+                  <span className="min-w-0 truncate text-sm font-medium text-slate-800">{file.filename}</span>
+                  <span className="flex shrink-0 items-center gap-1">
+                    {sourceLabel ? <Badge variant="info" className="px-1.5 py-0 text-[10px]">{sourceLabel}</Badge> : null}
+                    <span className={cn(sourceStatusPill, status.variant === "error" && "text-rose-700", status.variant === "success" && "text-emerald-700", status.variant === "warning" && "text-amber-700")}>
+                      <Icon size={11} className={processing ? "animate-spin" : ""} />
+                      {status.label}
+                    </span>
+                  </span>
                 </button>
-                <Badge variant={status.variant}><Icon size={11} className={processing ? "animate-spin" : ""} />{status.label}</Badge>
-              </div>
-              <div className="mt-2 flex items-center justify-end gap-1">
-                <button type="button" onClick={() => onPreview(file.file_id)} className={wikiInlineIconButton} title="预览"><Eye size={13} /></button>
-                <button type="button" onClick={() => onProcess(file.file_id)} disabled={!file.progress?.can_process && !file.progress?.can_index} className={wikiInlineIconButton} title="处理"><Play size={13} /></button>
-                <button type="button" onClick={() => onDelete(file.file_id, file.filename)} className={cn(wikiInlineIconButton, "hover:text-rose-600")} title="删除"><Trash2 size={13} /></button>
+                <div className="flex shrink-0 items-center gap-0.5">
+                  <button type="button" onClick={() => onPreview(file.file_id)} className={wikiInlineIconButton} title="预览"><Eye size={13} /></button>
+                  <button type="button" onClick={() => onProcess(file.file_id)} disabled={!file.progress?.can_process && !file.progress?.can_index} className={wikiInlineIconButton} title="处理"><Play size={13} /></button>
+                  <button type="button" onClick={() => onDelete(file.file_id, file.filename)} className={cn(wikiInlineIconButton, "hover:text-rose-600")} title="删除"><Trash2 size={13} /></button>
+                </div>
               </div>
               {file.error ? <p className="mt-2 break-words rounded-md bg-rose-50 px-2 py-1.5 text-[11px] leading-4 text-rose-700">{file.error}</p> : null}
             </div>
@@ -1355,11 +1447,15 @@ const wikiIconButton = "inline-flex h-8 w-8 items-center justify-center rounded-
 const wikiInlineIconButton = "inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-35";
 const wikiUploadDialogTrigger = "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-slate-950 px-2.5 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50";
 const wikiToolbarIconButton = "inline-flex h-8 items-center justify-center gap-1 rounded-md border bg-white px-2 text-xs font-semibold transition hover:bg-slate-50 disabled:opacity-45";
-const wikiStatusStrip = "grid gap-2 border-t border-slate-100 bg-white px-3 pb-2 pt-1";
+const wikiCompactKnowledgeCard = "rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm";
+const wikiStatusStrip = "flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-t border-slate-100 bg-white px-2.5 py-1.5";
 const wikiQuickFilterButton = "inline-flex h-7 items-center justify-center rounded-md border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-45";
 const wikiQuickFilterActive = "border-sky-200 bg-sky-50 text-sky-700";
 const taskQueueTrigger = "inline-flex h-8 items-center justify-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-45";
-const wikiSidebar = "space-y-3";
+const wikiSidebar = "space-y-2";
 const uploadDialogDropzone = "flex min-h-52 flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-8 text-center transition";
 const taskQueuePopover = "absolute right-0 z-30 mt-2 w-[340px] rounded-xl border border-slate-200 bg-white p-3 shadow-xl";
+const wikiSourcePanelHeader = "mb-1 flex items-center justify-between gap-2 px-0.5";
+const wikiSourceItemMain = "flex min-w-0 flex-1 items-center justify-between gap-2 rounded px-1.5 py-1 text-left";
+const sourceStatusPill = "inline-flex h-5 items-center gap-1 rounded bg-white px-1.5 text-[10px] font-semibold text-slate-500";
 const tinyButton = "rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100";
