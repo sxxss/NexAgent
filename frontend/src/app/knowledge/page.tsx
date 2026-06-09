@@ -186,7 +186,7 @@ export default function KnowledgePage() {
           <Stat label="知识库总数" value={kbs.length} icon={Database} />
           <Stat label="向量 RAG" value={kbs.filter((item) => item.kb_type === "milvus").length} icon={Layers} />
           <Stat label="LightRAG 图谱" value={kbs.filter((item) => item.kb_type === "lightrag").length} icon={Network} />
-          <Stat label="LLM Wiki" value={kbs.filter((item) => item.kb_type === "wiki").length} icon={BookOpen} />
+          <Stat label="Wiki 知识库" value={kbs.filter((item) => item.kb_type === "wiki").length} icon={BookOpen} />
         </div>
 
         <div className="mt-5 flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 shadow-sm">

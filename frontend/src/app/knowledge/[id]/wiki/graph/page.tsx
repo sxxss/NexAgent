@@ -61,7 +61,7 @@ export default function WikiGraphPage() {
             <p className="mt-2 text-xs text-slate-400">图谱说明：左侧筛选关系范围，中间拖拽浏览节点，右侧查看节点详情和关系列表。</p>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="warning">LLM Wiki</Badge>
+            <Badge variant="warning">Wiki 知识库</Badge>
             <button type="button" onClick={() => router.push(`/knowledge/${id}`)} className={headerButton}><ArrowLeft size={14} />返回详情</button>
             <button type="button" onClick={() => void loadData()} className={iconButton} title="重新加载"><RefreshCw size={14} /></button>
           </div>

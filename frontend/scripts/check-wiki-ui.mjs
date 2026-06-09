@@ -190,6 +190,9 @@ const absentChecks = [
   ["sidebar", "no-html-link-for-pages"],
   ["sidebar", "<a\n"],
   ["sidebar", "</a>"],
+  ["list", "LLM Wiki"],
+  ["detail", "LLM Wiki"],
+  ["graphPage", "LLM Wiki"],
 ];
 
 const failures = [];

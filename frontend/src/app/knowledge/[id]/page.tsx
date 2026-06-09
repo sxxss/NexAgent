@@ -531,7 +531,7 @@ function WikiKnowledgeCard({
         </div>
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Badge variant="teal">LLM Wiki</Badge>
+        <Badge variant="teal">Wiki 知识库</Badge>
         <Badge variant="secondary">{fileCount} 个文件</Badge>
         <Badge variant="success">{indexedCount} 已编译</Badge>
         {activeJob ? <Badge variant="info">处理中 {taskCompleted(activeJob) + taskFailed(activeJob)}/{activeJob.total_steps}</Badge> : null}
