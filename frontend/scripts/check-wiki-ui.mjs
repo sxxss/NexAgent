@@ -190,6 +190,7 @@ const checks = [
   ["detail", "hiddenJobCount"],
   ["detail", "showAllJobs"],
   ["detail", "taskTimeValue"],
+  ["detail", "rawTime < 10000000000"],
   ["detail", "活跃"],
   ["detail", "历史任务"],
   ["sidebar", 'import Link from "next/link"'],

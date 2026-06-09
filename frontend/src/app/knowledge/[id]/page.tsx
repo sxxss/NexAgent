@@ -998,7 +998,10 @@ function WikiTaskQueue({ jobs, onRetry, onCancel }: { jobs: IngestionJob[]; onRe
 }
 
 function taskTimeValue(job: IngestionJob): number {
-  const parsed = Date.parse(String(job.updated_at || job.created_at || ""));
+  const value = job.updated_at ?? job.created_at ?? "";
+  const rawTime = typeof value === "number" ? value : Number(value);
+  if (Number.isFinite(rawTime) && rawTime > 0) return rawTime < 10000000000 ? rawTime * 1000 : rawTime;
+  const parsed = Date.parse(String(value || ""));
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
