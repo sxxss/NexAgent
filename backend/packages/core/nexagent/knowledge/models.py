@@ -15,7 +15,7 @@ class KBType(StrEnum):
     """Supported knowledge base backends."""
     MILVUS = "milvus"       # Vector RAG (semantic search)
     LIGHTRAG = "lightrag"   # Knowledge graph (entity + relation)
-    WIKI = "wiki"           # Markdown-first LLM Wiki
+    WIKI = "wiki"           # Markdown-first Wiki knowledge base
 
 
 class FileStatus(StrEnum):

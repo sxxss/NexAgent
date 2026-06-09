@@ -28,7 +28,7 @@ class WikiKB(
     WikiLinksMixin,
     KnowledgeBase,
 ):
-    """Markdown-first LLM Wiki knowledge base."""
+    """Markdown-first Wiki knowledge base."""
 
     @property
     def kb_type(self) -> KBType:

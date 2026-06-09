@@ -143,7 +143,7 @@ class WikiCompileMixin:
         try:
             return await asyncio.wait_for(llm.ainvoke(messages), timeout=timeout_s)
         except TimeoutError as exc:
-            raise TimeoutError(f"LLM Wiki compile timed out after {timeout_s:g}s") from exc
+            raise TimeoutError(f"Wiki 知识库编译超时（{timeout_s:g}s）") from exc
 
     def _wiki_llm_timeout_s(self) -> float:
         raw = os.getenv("NEXAGENT_WIKI_LLM_TIMEOUT_S", "").strip()
@@ -168,7 +168,7 @@ class WikiCompileMixin:
         entities: list[str] | None = None,
     ) -> list[dict]:
         source_text = markdown[:12000]
-        system_prompt = "你是 NexAgent 的 LLM Wiki 编译器。只输出合法 JSON，不要输出 Markdown 代码块或解释。"
+        system_prompt = "你是 NexAgent 的 Wiki 知识库编译器。只输出合法 JSON，不要输出 Markdown 代码块或解释。"
         user_prompt = textwrap.dedent(
             f"""
             Wiki purpose:
@@ -232,7 +232,7 @@ class WikiCompileMixin:
                 raise
             parsed, _ = json.JSONDecoder().raw_decode(raw[start:])
         if not isinstance(parsed, dict):
-            raise ValueError("LLM Wiki compile result must be a JSON object")
+            raise ValueError("Wiki 知识库编译结果必须是 JSON 对象")
         return parsed
 
     def _normalize_compiled_payload(self, payload: dict, file_meta, markdown: str) -> dict:
@@ -294,12 +294,12 @@ class WikiCompileMixin:
 
     def _validate_compiled_payload(self, payload: dict) -> None:
         if not isinstance(payload.get("source"), dict):
-            raise ValueError("LLM Wiki compile result is missing source")
+            raise ValueError("Wiki 知识库编译结果缺少 source")
         if not str(payload["source"].get("title") or "").strip():
-            raise ValueError("LLM Wiki source.title is empty")
+            raise ValueError("Wiki 知识库 source.title 不能为空")
         for section in ("topics", "entities"):
             if payload.get(section) is not None and not isinstance(payload.get(section), list):
-                raise ValueError(f"LLM Wiki {section} must be a list")
+                raise ValueError(f"Wiki 知识库 {section} 必须是列表")
 
     def _clean_page_items(self, items: Any, label: str) -> list[dict]:
         cleaned: list[dict] = []

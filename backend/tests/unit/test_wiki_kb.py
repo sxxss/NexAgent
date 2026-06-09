@@ -25,7 +25,7 @@ async def test_wiki_kb_can_be_created_and_discovered_by_manager():
     try:
         manager = reset_manager(str(work_dir))
 
-        kb = await manager.create_kb(name="LLM Wiki", description="Project memory", kb_type="wiki")
+        kb = await manager.create_kb(name="Wiki 知识库", description="Project memory", kb_type="wiki")
         loaded = manager.get_kb(kb.kb_id)
         all_kbs = manager.list_kbs()
 
@@ -36,7 +36,7 @@ async def test_wiki_kb_can_be_created_and_discovered_by_manager():
         assert (work_dir / "wiki" / kb.kb_id / "wiki" / "sources").exists()
         assert (work_dir / "wiki" / kb.kb_id / "purpose.md").read_text(
             encoding="utf-8"
-        ).startswith("# LLM Wiki")
+        ).startswith("# Wiki 知识库")
     finally:
         reset_manager()
         shutil.rmtree(work_dir, ignore_errors=True)
@@ -157,8 +157,46 @@ async def test_wiki_llm_compile_invocation_times_out(monkeypatch):
         backend = manager._find_backend(kb_meta.kb_id)
         monkeypatch.setenv("NEXAGENT_WIKI_LLM_TIMEOUT_S", "0.01")
 
-        with pytest.raises(TimeoutError, match="LLM Wiki compile timed out after"):
+        with pytest.raises(TimeoutError, match="Wiki 知识库编译超时"):
             await backend._invoke_wiki_llm(SlowLLM(), [])
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_compile_user_facing_text_uses_wiki_knowledge_base_name():
+    from nexagent.knowledge.manager import reset_manager
+
+    work_dir = _work_dir("compile-copy")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+
+        prompt = backend._build_compile_prompt("alpha.md", "", "# Alpha")
+        messages = [item["content"] for item in prompt]
+        with pytest.raises(ValueError) as parse_error:
+            backend._parse_llm_json("[]")
+        with pytest.raises(ValueError) as missing_source:
+            backend._validate_compiled_payload({"topics": [], "entities": []})
+        with pytest.raises(ValueError) as missing_title:
+            backend._validate_compiled_payload({"source": {"title": ""}, "topics": [], "entities": []})
+        with pytest.raises(ValueError) as bad_topics:
+            backend._validate_compiled_payload({"source": {"title": "Alpha"}, "topics": {}, "entities": []})
+
+        user_facing_text = "\n".join(
+            [
+                *messages,
+                str(parse_error.value),
+                str(missing_source.value),
+                str(missing_title.value),
+                str(bad_topics.value),
+            ]
+        )
+        assert "Wiki 知识库" in user_facing_text
+        assert "LLM Wiki" not in user_facing_text
     finally:
         reset_manager()
         shutil.rmtree(work_dir, ignore_errors=True)
