@@ -25,6 +25,7 @@ export interface WikiGraphOptions {
   q: string;
   maxEdges: number;
   includeWeak: boolean;
+  layoutMode?: GraphLayoutMode;
   typeFilters?: string[];
   communityFilters?: string[];
 }
@@ -40,8 +41,14 @@ interface WikiNodeData {
 
 type WikiGraphNode = WikiGraphPayload["nodes"][number];
 type WikiGraphEdge = WikiGraphPayload["edges"][number];
+type GraphLayoutMode = "community" | "ring" | "strength";
 
 const nodeTypes = { wikiNode: WikiNode };
+const graphLayoutModes: { value: GraphLayoutMode; label: string; description: string }[] = [
+  { value: "community", label: "社区布局", description: "同社区节点聚集，适合查看主题簇。" },
+  { value: "ring", label: "环形布局", description: "节点均匀展开，适合浏览完整列表。" },
+  { value: "strength", label: "强度布局", description: "高连接节点靠近中心，适合找枢纽页。" },
+];
 
 export function WikiGraphPanel({
   graph,
@@ -65,7 +72,7 @@ export function WikiGraphPanel({
   const typeFilters = useMemo(() => effectiveOptions.typeFilters ?? [], [effectiveOptions.typeFilters]);
   const communityFilters = useMemo(() => effectiveOptions.communityFilters ?? [], [effectiveOptions.communityFilters]);
   const visibleGraph = useMemo(() => filterGraph(graph, typeFilters, communityFilters), [communityFilters, graph, typeFilters]);
-  const { nodes: builtNodes, edges: builtEdges, degrees } = useMemo(() => buildFlowGraph(visibleGraph), [visibleGraph]);
+  const { nodes: builtNodes, edges: builtEdges, degrees } = useMemo(() => buildFlowGraph(visibleGraph, effectiveOptions.layoutMode), [effectiveOptions.layoutMode, visibleGraph]);
   const [nodes, setNodes, onNodesChange] = useNodesState<WikiNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [flow, setFlow] = useState<ReactFlowInstance | null>(null);
@@ -176,6 +183,11 @@ export function WikiGraphPanel({
     updateOption({ [key]: next } as Partial<WikiGraphOptions>);
   }, [communityFilters, typeFilters, updateOption]);
 
+  const changeLayoutMode = useCallback((layoutMode: GraphLayoutMode) => {
+    updateDraftOption({ layoutMode });
+    updateOption({ layoutMode });
+  }, [updateDraftOption, updateOption]);
+
   const onFitView = useCallback(() => {
     flow?.fitView({ padding: 0.22, duration: 450 });
   }, [flow]);
@@ -248,6 +260,7 @@ export function WikiGraphPanel({
           edges={displayEdges}
           effectiveOptions={effectiveOptions}
           draftOptions={draftOptions}
+          layoutMode={effectiveOptions.layoutMode}
           typeFilters={typeFilters}
           communityFilters={communityFilters}
           typeOptions={typeOptions}
@@ -261,6 +274,7 @@ export function WikiGraphPanel({
           coreNodes={coreNodes}
           pageTitle={pageTitle}
           onDraftOptionsChange={updateDraftOption}
+          onLayoutModeChange={changeLayoutMode}
           onToggleOption={toggleArrayOption}
           onApplyOptions={applyGraphOptions}
           onFitView={onFitView}
@@ -275,7 +289,13 @@ export function WikiGraphPanel({
         />
       ) : (
         <>
-          <CompactGraphControls draftOptions={draftOptions} onDraftOptionsChange={updateDraftOption} onApplyOptions={applyGraphOptions} />
+          <CompactGraphControls
+            draftOptions={draftOptions}
+            layoutMode={effectiveOptions.layoutMode}
+            onDraftOptionsChange={updateDraftOption}
+            onLayoutModeChange={changeLayoutMode}
+            onApplyOptions={applyGraphOptions}
+          />
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
             <GraphCanvas
               nodes={displayNodes}
@@ -309,6 +329,7 @@ function WikiGraphExplorerShell({
   edges,
   effectiveOptions,
   draftOptions,
+  layoutMode,
   typeFilters,
   communityFilters,
   typeOptions,
@@ -322,6 +343,7 @@ function WikiGraphExplorerShell({
   coreNodes,
   pageTitle,
   onDraftOptionsChange,
+  onLayoutModeChange,
   onToggleOption,
   onApplyOptions,
   onFitView,
@@ -339,6 +361,7 @@ function WikiGraphExplorerShell({
   edges: Edge[];
   effectiveOptions: WikiGraphOptions;
   draftOptions: WikiGraphOptions;
+  layoutMode?: GraphLayoutMode;
   typeFilters: string[];
   communityFilters: string[];
   typeOptions: string[];
@@ -352,6 +375,7 @@ function WikiGraphExplorerShell({
   coreNodes: Array<WikiGraphNode & { degree: number }>;
   pageTitle: Map<string, string>;
   onDraftOptionsChange: (patch: Partial<WikiGraphOptions>) => void;
+  onLayoutModeChange: (layoutMode: GraphLayoutMode) => void;
   onToggleOption: (key: "typeFilters" | "communityFilters", value: string) => void;
   onApplyOptions: () => Promise<void>;
   onFitView: () => void;
@@ -397,6 +421,25 @@ function WikiGraphExplorerShell({
             {draftOptions.includeWeak ? "包含弱关系" : "核心关系"}
             <input type="checkbox" checked={draftOptions.includeWeak} onChange={(event) => onDraftOptionsChange({ includeWeak: event.target.checked })} className="h-4 w-4 accent-indigo-600" />
           </label>
+          <div className="space-y-1">
+            <p className="text-xs font-semibold text-slate-600">布局模式</p>
+            <div className="grid gap-1.5">
+              {graphLayoutModes.map((mode) => (
+                <button
+                  key={mode.value}
+                  type="button"
+                  onClick={() => onLayoutModeChange(mode.value)}
+                  className={cn(
+                    "rounded-lg border px-3 py-2 text-left transition",
+                    layoutMode === mode.value ? "border-indigo-200 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
+                  )}
+                >
+                  <span className="block text-xs font-semibold">{mode.label}</span>
+                  <span className="mt-1 block text-[11px] leading-4 text-slate-500">{mode.description}</span>
+                </button>
+              ))}
+            </div>
+          </div>
           <button type="button" onClick={() => void onApplyOptions()} className={primaryButton}><RefreshCw size={14} />刷新图谱</button>
         </section>
 
@@ -521,11 +564,15 @@ function WikiGraphExplorerShell({
 
 function CompactGraphControls({
   draftOptions,
+  layoutMode,
   onDraftOptionsChange,
+  onLayoutModeChange,
   onApplyOptions,
 }: {
   draftOptions: WikiGraphOptions;
+  layoutMode?: GraphLayoutMode;
   onDraftOptionsChange: (patch: Partial<WikiGraphOptions>) => void;
+  onLayoutModeChange: (layoutMode: GraphLayoutMode) => void;
   onApplyOptions: () => Promise<void>;
 }) {
   return (
@@ -555,6 +602,22 @@ function CompactGraphControls({
         <input type="checkbox" checked={draftOptions.includeWeak} onChange={(event) => onDraftOptionsChange({ includeWeak: event.target.checked })} className="h-4 w-4 accent-indigo-600" />
         {draftOptions.includeWeak ? "包含弱关系" : "核心关系"}
       </label>
+      <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+        {graphLayoutModes.map((mode) => (
+          <button
+            key={mode.value}
+            type="button"
+            onClick={() => onLayoutModeChange(mode.value)}
+            title={mode.description}
+            className={cn(
+              "h-7 rounded-md px-2 text-xs font-semibold transition",
+              layoutMode === mode.value ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-900",
+            )}
+          >
+            {mode.label}
+          </button>
+        ))}
+      </div>
       <button type="button" onClick={() => void onApplyOptions()} className={secondaryButton}><RefreshCw size={14} />刷新图谱</button>
     </div>
   );
@@ -786,6 +849,7 @@ function normalizeGraphOptions(options?: WikiGraphOptions): WikiGraphOptions {
     q: options?.q ?? "",
     maxEdges: options?.maxEdges ?? 80,
     includeWeak: options?.includeWeak ?? false,
+    layoutMode: options?.layoutMode ?? "community",
     typeFilters: options?.typeFilters ?? [],
     communityFilters: options?.communityFilters ?? [],
   };
@@ -806,7 +870,7 @@ function filterGraph(graph: WikiGraphPayload | null, typeFilters: string[], comm
   };
 }
 
-function buildFlowGraph(graph: WikiGraphPayload | null): { nodes: Node<WikiNodeData>[]; edges: Edge[]; degrees: Map<string, number> } {
+function buildFlowGraph(graph: WikiGraphPayload | null, layoutMode: GraphLayoutMode = "community"): { nodes: Node<WikiNodeData>[]; edges: Edge[]; degrees: Map<string, number> } {
   const degrees = new Map<string, number>();
   for (const edge of graph?.edges ?? []) {
     degrees.set(edge.source, (degrees.get(edge.source) ?? 0) + 1);
@@ -816,22 +880,33 @@ function buildFlowGraph(graph: WikiGraphPayload | null): { nodes: Node<WikiNodeD
   const byCommunity = new Map<number, number>();
   for (const node of graph.nodes) byCommunity.set(node.community, (byCommunity.get(node.community) ?? 0) + 1);
   const seenCommunity = new Map<number, number>();
+  const rankByDegree = new Map(
+    [...graph.nodes]
+      .sort((left, right) => (degrees.get(right.id) ?? 0) - (degrees.get(left.id) ?? 0) || left.label.localeCompare(right.label))
+      .map((node, index) => [node.id, index]),
+  );
   const total = graph.nodes.length;
   const radius = Math.max(240, Math.min(660, total * 22));
   const nodes: Node<WikiNodeData>[] = graph.nodes.map((node, index) => {
     const communityIndex = seenCommunity.get(node.community) ?? 0;
     seenCommunity.set(node.community, communityIndex + 1);
     const communitySize = byCommunity.get(node.community) || 1;
-    const communityAngle = ((node.community - 1) / Math.max(1, byCommunity.size)) * Math.PI * 2;
-    const localAngle = (communityIndex / communitySize) * Math.PI * 2;
-    const localRadius = Math.max(80, Math.min(180, communitySize * 28));
+    const position = graphNodePosition({
+      node,
+      index,
+      total,
+      layoutMode,
+      radius,
+      communityIndex,
+      communitySize,
+      communityCount: byCommunity.size,
+      degree: degrees.get(node.id) ?? 0,
+      degreeRank: rankByDegree.get(node.id) ?? index,
+    });
     return {
       id: node.id,
       type: "wikiNode",
-      position: {
-        x: Math.cos(communityAngle) * radius + Math.cos(localAngle) * localRadius + radius + 260,
-        y: Math.sin(communityAngle) * radius + Math.sin(localAngle) * localRadius + radius + 180 + index * 0.01,
-      },
+      position,
       data: {
         label: node.label,
         type: node.type,
@@ -855,6 +930,55 @@ function buildFlowGraph(graph: WikiGraphPayload | null): { nodes: Node<WikiNodeD
       labelStyle: { fill: "#4f46e5", fontSize: 10, fontWeight: 700 },
     }));
   return { nodes, edges, degrees };
+}
+
+function graphNodePosition({
+  node,
+  index,
+  total,
+  layoutMode,
+  radius,
+  communityIndex,
+  communitySize,
+  communityCount,
+  degree,
+  degreeRank,
+}: {
+  node: WikiGraphNode;
+  index: number;
+  total: number;
+  layoutMode: GraphLayoutMode;
+  radius: number;
+  communityIndex: number;
+  communitySize: number;
+  communityCount: number;
+  degree: number;
+  degreeRank: number;
+}) {
+  if (layoutMode === "ring") {
+    const angle = (index / Math.max(1, total)) * Math.PI * 2;
+    const ringRadius = Math.max(260, Math.min(760, total * 26));
+    return {
+      x: Math.cos(angle) * ringRadius + ringRadius + 260,
+      y: Math.sin(angle) * ringRadius + ringRadius + 180,
+    };
+  }
+  if (layoutMode === "strength") {
+    const hubBand = degree >= 4 ? 0 : degree >= 2 ? 1 : 2;
+    const bandRadius = [90, 270, 460][hubBand] + (degreeRank % 4) * 18;
+    const angle = (degreeRank / Math.max(1, total)) * Math.PI * 2 + hubBand * 0.28;
+    return {
+      x: Math.cos(angle) * bandRadius + radius + 360,
+      y: Math.sin(angle) * bandRadius + radius + 260,
+    };
+  }
+  const communityAngle = (((node.community ?? 1) - 1) / Math.max(1, communityCount)) * Math.PI * 2;
+  const localAngle = (communityIndex / Math.max(1, communitySize)) * Math.PI * 2;
+  const localRadius = Math.max(80, Math.min(180, communitySize * 28));
+  return {
+    x: Math.cos(communityAngle) * radius + Math.cos(localAngle) * localRadius + radius + 260,
+    y: Math.sin(communityAngle) * radius + Math.sin(localAngle) * localRadius + radius + 180 + index * 0.01,
+  };
 }
 
 function GraphStat({ label, value }: { label: string; value: number }) {
