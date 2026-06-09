@@ -194,6 +194,17 @@ class _FakeWikiBackend:
         self.calls.append(("compile", kb_id, file_ids, force, retry_failed))
         return {"processed": 1, "failed": 0, "items": [{"file_id": "file-1", "status": "indexed"}]}
 
+    async def add_file(self, kb_id, filename, content, processing_params=None):
+        self.calls.append(("add_file", kb_id, filename, content, processing_params or {}))
+        count = len([call for call in self.calls if call[0] == "add_file"])
+        return type("File", (), {"file_id": f"file-{count}"})()
+
+    async def parse_file(self, kb_id, file_id):
+        self.calls.append(("parse_file", kb_id, file_id))
+
+    async def index_file(self, kb_id, file_id):
+        self.calls.append(("index_file", kb_id, file_id))
+
     async def crystallize_wiki_text(
         self,
         kb_id,
@@ -385,6 +396,70 @@ async def test_crystallize_wiki_tool_requires_confirmation_then_creates_page(mon
     ]
     assert "已沉淀 Wiki 页面" in output
     assert "note:alpha-note" in output
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_crystallize_attachments_to_wiki_requires_confirmation_then_registers_files(monkeypatch, tmp_path):
+    from nexagent.tools.builtin.wiki import get_crystallize_attachments_to_wiki_tool
+
+    source = tmp_path / "方案.docx"
+    source.write_bytes(b"docx bytes")
+    backend = _FakeWikiBackend()
+    monkeypatch.setattr("nexagent.knowledge.manager.get_manager", lambda: _FakeWikiManager(backend))
+    monkeypatch.setattr(
+        "nexagent.tools.builtin.wiki._resolve_thread_file",
+        lambda thread_id, path: (source, "/mnt/user-data/uploads/方案.docx"),
+    )
+
+    tool = get_crystallize_attachments_to_wiki_tool(["wiki-1"])
+    preview = await tool.ainvoke(
+        {"kb_id": "wiki-1", "thread_id": "thread-1", "paths": ["/mnt/user-data/uploads/方案.docx"]}
+    )
+
+    assert "需要用户确认" in preview
+    assert backend.calls == []
+
+    output = await tool.ainvoke(
+        {
+            "kb_id": "wiki-1",
+            "thread_id": "thread-1",
+            "paths": ["/mnt/user-data/uploads/方案.docx"],
+            "compile_after": True,
+            "confirmed": True,
+        }
+    )
+
+    assert backend.calls[0][0:4] == ("add_file", "wiki-1", "方案.docx", b"docx bytes")
+    assert backend.calls[0][4]["source_type"] == "conversation_attachment"
+    assert backend.calls[0][4]["source_thread_id"] == "thread-1"
+    assert backend.calls[0][4]["source_virtual_path"] == "/mnt/user-data/uploads/方案.docx"
+    assert ("parse_file", "wiki-1", "file-1") in backend.calls
+    assert ("index_file", "wiki-1", "file-1") in backend.calls
+    assert "file-1" in output
+
+
+@pytest.mark.unit
+def test_crystallize_attachments_resolver_only_allows_thread_uploads_and_outputs(monkeypatch, tmp_path):
+    from nexagent.sandbox.sandbox import VirtualPathTranslator
+    from nexagent.tools.builtin import wiki
+
+    config = type("Config", (), {"sandbox": type("SandboxConfig", (), {"base_dir": str(tmp_path)})()})()
+    monkeypatch.setattr("nexagent.config.get_config", lambda: config)
+    translator = VirtualPathTranslator(tmp_path)
+    translator.ensure_thread_dirs("thread-1")
+    upload = translator.to_real("/mnt/user-data/uploads/附件.pdf", "thread-1")
+    upload.write_bytes(b"pdf bytes")
+    workspace_file = translator.to_real("/mnt/user-data/workspace/private.txt", "thread-1")
+    workspace_file.parent.mkdir(parents=True, exist_ok=True)
+    workspace_file.write_text("secret", encoding="utf-8")
+
+    real_path, virtual_path = wiki._resolve_thread_file("thread-1", "附件.pdf")
+
+    assert real_path == upload
+    assert virtual_path == "/mnt/user-data/uploads/附件.pdf"
+    with pytest.raises(ValueError):
+        wiki._resolve_thread_file("thread-1", "/mnt/user-data/workspace/private.txt")
 
 
 @pytest.mark.unit

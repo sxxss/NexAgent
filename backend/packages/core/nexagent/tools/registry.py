@@ -72,6 +72,13 @@ _BUILTIN_SPECS: dict[str, ToolSpec] = {
         module="nexagent.tools.builtin.wiki",
         factory="get_crystallize_wiki_tool",
     ),
+    "crystallize_attachments_to_wiki": ToolSpec(
+        name="crystallize_attachments_to_wiki",
+        description="Register conversation upload/output files as LLM Wiki source materials after confirmation.",
+        category="knowledge",
+        module="nexagent.tools.builtin.wiki",
+        factory="get_crystallize_attachments_to_wiki_tool",
+    ),
     "handle_wiki_candidate": ToolSpec(
         name="handle_wiki_candidate",
         description="Accept or discard a generated Wiki candidate after explicit confirmation.",
@@ -246,6 +253,7 @@ class ToolRegistry:
                 "get_wiki_graph",
                 "compile_wiki",
                 "crystallize_wiki",
+                "crystallize_attachments_to_wiki",
                 "handle_wiki_candidate",
             }:
                 return factory(kb_ids=kwargs.get("kb_ids") or None)

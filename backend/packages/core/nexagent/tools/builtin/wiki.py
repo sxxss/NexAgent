@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from langchain_core.tools import tool
@@ -224,6 +225,91 @@ def get_crystallize_wiki_tool(kb_ids: list[str] | None = None):
     return crystallize_wiki
 
 
+def get_crystallize_attachments_to_wiki_tool(kb_ids: list[str] | None = None):
+    """Return a write tool that registers thread files as Wiki source materials."""
+
+    target_kb_ids = list(kb_ids or [])
+
+    @tool
+    async def crystallize_attachments_to_wiki(
+        kb_id: str,
+        thread_id: str,
+        paths: list[str] | None = None,
+        filenames: list[str] | None = None,
+        compile_after: bool = True,
+        confirmed: bool = False,
+    ) -> str:
+        """Register conversation upload/output files as Wiki materials after confirmation.
+
+        Use this for PDF/DOCX/XLSX/images or other attachments that should keep their original
+        file format. Do not read the file text and call crystallize_wiki for attachment ingestion.
+        `paths` accepts /mnt/user-data/uploads/... or /mnt/user-data/outputs/... virtual paths.
+        `filenames` may be used for exact filenames inside the current thread uploads/outputs.
+        """
+
+        thread_id_text = str(thread_id or "").strip()
+        requested = _clean_list(paths) + _clean_list(filenames)
+        if not thread_id_text:
+            return "thread_id 不能为空。"
+        if not requested:
+            return "请提供 paths 或 filenames。"
+
+        try:
+            target = _resolve_wiki_target(kb_id, target_kb_ids)
+            if not confirmed:
+                return (
+                    f"需要用户确认：将把 {len(requested)} 个对话附件/产物登记到 Wiki 知识库 "
+                    f"'{target.kb_name}' 作为素材"
+                    f"{'，并立即编译' if compile_after else ''}。"
+                    "确认后请再次调用并设置 confirmed=true。"
+                )
+
+            registered: list[dict[str, Any]] = []
+            failed: list[dict[str, str]] = []
+            for requested_path in requested:
+                try:
+                    real_path, virtual_path = _resolve_thread_file(thread_id_text, requested_path)
+                    file_meta = await target.backend.add_file(
+                        target.kb_id,
+                        real_path.name,
+                        real_path.read_bytes(),
+                        processing_params={
+                            "source_type": "conversation_attachment",
+                            "source_thread_id": thread_id_text,
+                            "source_virtual_path": virtual_path,
+                            "source_filename": real_path.name,
+                        },
+                    )
+                    file_id = str(getattr(file_meta, "file_id", "") or "")
+                    item: dict[str, Any] = {
+                        "path": virtual_path,
+                        "filename": real_path.name,
+                        "file_id": file_id,
+                        "status": "uploaded",
+                    }
+                    if compile_after and file_id:
+                        await target.backend.parse_file(target.kb_id, file_id)
+                        await target.backend.index_file(target.kb_id, file_id)
+                        item["status"] = "compiled"
+                    registered.append(item)
+                except Exception as exc:  # noqa: BLE001
+                    failed.append({"path": str(requested_path), "error": str(exc)})
+
+            return _json_payload({
+                "message": "Wiki 附件素材登记完成",
+                "kb_id": target.kb_id,
+                "registered": registered,
+                "failed": failed,
+            })
+        except _WikiToolError as exc:
+            return str(exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("crystallize_attachments_to_wiki tool error: %s", exc)
+            return f"Crystallize attachments to Wiki failed: {exc}"
+
+    return crystallize_attachments_to_wiki
+
+
 def get_handle_wiki_candidate_tool(kb_ids: list[str] | None = None):
     """Return a write tool that accepts or discards generated Wiki candidates."""
 
@@ -293,6 +379,59 @@ def _resolve_wiki_target(kb_id: str, allowed_kb_ids: list[str]) -> _WikiTarget:
         kb_name=str(getattr(kb, "name", "") or normalized_kb_id),
         backend=backend,
     )
+
+
+def _resolve_thread_file(thread_id: str, path_or_filename: str) -> tuple[Path, str]:
+    from nexagent.config import get_config
+    from nexagent.sandbox.sandbox import VirtualPathTranslator
+
+    requested = str(path_or_filename or "").strip()
+    if not requested:
+        raise ValueError("文件路径不能为空。")
+    translator = VirtualPathTranslator(get_config().sandbox.base_dir)
+    translator.ensure_thread_dirs(thread_id)
+    allowed_roots = [
+        translator.to_real(VirtualPathTranslator.UPLOADS, thread_id),
+        translator.to_real(VirtualPathTranslator.OUTPUTS, thread_id),
+    ]
+
+    if requested.startswith("/"):
+        real_path = translator.to_real(requested, thread_id)
+        if not _inside_any(real_path, allowed_roots):
+            raise ValueError("只允许导入当前线程 uploads/outputs 下的文件。")
+        if not real_path.is_file():
+            raise FileNotFoundError(requested)
+        return real_path, translator.to_virtual(real_path, thread_id)
+
+    matches: list[Path] = []
+    for root in allowed_roots:
+        if not root.exists():
+            continue
+        direct = (root / requested).resolve()
+        if _inside_any(direct, [root]) and direct.is_file():
+            matches.append(direct)
+        matches.extend(path for path in root.rglob("*") if path.is_file() and path.name == requested)
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for path in matches:
+        resolved = path.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            unique.append(resolved)
+    if not unique:
+        raise FileNotFoundError(requested)
+    if len(unique) > 1:
+        raise ValueError(f"文件名 {requested} 匹配到多个文件，请传入完整虚拟路径。")
+    return unique[0], translator.to_virtual(unique[0], thread_id)
+
+
+def _inside_any(path: Path, roots: list[Path]) -> bool:
+    resolved = path.resolve()
+    for root in roots:
+        base = root.resolve()
+        if resolved == base or base in resolved.parents:
+            return True
+    return False
 
 
 def _find_backend(mgr: Any, kb_id: str, *, raise_on_missing: bool = False) -> Any | None:

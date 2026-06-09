@@ -36,6 +36,7 @@ class ChatbotAgent(BaseAgent):
         "get_wiki_graph",
         "compile_wiki",
         "crystallize_wiki",
+        "crystallize_attachments_to_wiki",
         "handle_wiki_candidate",
         "web_search",
         "execute_python",
@@ -105,6 +106,7 @@ async def _load_context_tools(context: BaseContext):
         "get_wiki_graph",
         "compile_wiki",
         "crystallize_wiki",
+        "crystallize_attachments_to_wiki",
         "handle_wiki_candidate",
         "web_search",
         "web_fetch",
@@ -210,9 +212,11 @@ def _build_system_prompt(context: BaseContext) -> str:
         "use list_wiki_pages to inspect the page catalog, read_wiki_page to read canonical page content, "
         "wiki_lint to check health issues and repair suggestions, and get_wiki_graph to inspect Wiki page "
         "relationships. Use knowledge_search mode=wiki for semantic retrieval over Wiki content. Treat the Wiki "
-        "relationship graph as page-level knowledge links, not as a Neo4j system graph. Wiki write tools "
-        "(compile_wiki, crystallize_wiki, handle_wiki_candidate) must only be called with confirmed=true after "
-        "the user explicitly confirms the write."
+        "relationship graph as page-level knowledge links, not as a Neo4j system graph. For PDF/DOCX/XLSX/images "
+        "or other conversation upload/output files that should become Wiki materials, use "
+        "crystallize_attachments_to_wiki instead of reading the file text and calling crystallize_wiki. Wiki write "
+        "tools (compile_wiki, crystallize_wiki, crystallize_attachments_to_wiki, handle_wiki_candidate) must only "
+        "be called with confirmed=true after the user explicitly confirms the write."
     )
     base += (
         "\n\n## Skill Lifecycle Policy"
