@@ -48,9 +48,13 @@ export function WikiWorkbench({
   const selectedPageIdRef = useRef("");
   const [selectedPage, setSelectedPage] = useState<WikiPageDetail | null>(null);
   const [graph, setGraph] = useState<WikiGraphPayload | null>(null);
+  const graphRef = useRef<WikiGraphPayload | null>(null);
+  const graphLoadedKeyRef = useRef("");
   const [lint, setLint] = useState<WikiLintPayload | null>(null);
+  const lintRef = useRef<WikiLintPayload | null>(null);
   const [pageFilters, setPageFilters] = useState<WikiPageFilters>(() => emptyFilters());
   const [graphOptions, setGraphOptions] = useState<WikiGraphOptions>(defaultGraphOptions);
+  const graphQueryKey = useMemo(() => JSON.stringify(graphParams(graphOptions)), [graphOptions]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [compiling, setCompiling] = useState(false);
@@ -59,6 +63,12 @@ export function WikiWorkbench({
   useEffect(() => {
     selectedPageIdRef.current = selectedPageId;
   }, [selectedPageId]);
+  useEffect(() => {
+    graphRef.current = graph;
+  }, [graph]);
+  useEffect(() => {
+    lintRef.current = lint;
+  }, [lint]);
 
   const loadSelectedPage = useCallback(async (pageId: string) => {
     setSelectedPageId(pageId);
@@ -66,27 +76,52 @@ export function WikiWorkbench({
     setSelectedPage(pageId ? await fetchWikiKbPage(kb.kb_id, pageId) : null);
   }, [kb.kb_id]);
 
-  const loadWiki = useCallback(async (preferredPageId?: string) => {
+  const loadWikiPages = useCallback(async (preferredPageId?: string) => {
     setError("");
-    const [nextPages, nextGraph, nextLint] = await Promise.all([
-      fetchWikiKbPages(kb.kb_id, compactParams(pageFilters)),
-      fetchWikiKbGraph(kb.kb_id, graphParams(graphOptions)),
-      fetchWikiKbLint(kb.kb_id),
-    ]);
+    const nextPages = await fetchWikiKbPages(kb.kb_id, compactParams(pageFilters));
     setPages(nextPages);
-    setGraph(nextGraph);
-    setLint(nextLint);
-
     const urlPageId = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("wikiPage") ?? "" : "";
     const currentId = (preferredPageId ?? selectedPageIdRef.current) || urlPageId;
     const nextPageId = currentId && nextPages.some((page) => page.id === currentId) ? currentId : nextPages[0]?.id ?? "";
     await loadSelectedPage(nextPageId);
-  }, [graphOptions, kb.kb_id, loadSelectedPage, pageFilters]);
+  }, [kb.kb_id, loadSelectedPage, pageFilters]);
+
+  const loadWikiGraph = useCallback(async () => {
+    const nextGraph = await fetchWikiKbGraph(kb.kb_id, graphParams(graphOptions));
+    setGraph(nextGraph);
+    graphRef.current = nextGraph;
+    graphLoadedKeyRef.current = graphQueryKey;
+    return nextGraph;
+  }, [graphOptions, graphQueryKey, kb.kb_id]);
+
+  const loadWikiLint = useCallback(async () => {
+    const nextLint = await fetchWikiKbLint(kb.kb_id);
+    setLint(nextLint);
+    lintRef.current = nextLint;
+    return nextLint;
+  }, [kb.kb_id]);
+
+  const invalidateDerivedWikiData = useCallback(() => {
+    setGraph(null);
+    graphRef.current = null;
+    graphLoadedKeyRef.current = "";
+    setLint(null);
+    lintRef.current = null;
+  }, []);
+
+  const ensureTabData = useCallback(async (targetTab: WikiTab, force = false) => {
+    if (targetTab === "graph" && (force || !graphRef.current || graphLoadedKeyRef.current !== graphQueryKey)) {
+      await loadWikiGraph();
+    }
+    if (targetTab === "lint" && (force || !lintRef.current)) {
+      await loadWikiLint();
+    }
+  }, [graphQueryKey, loadWikiGraph, loadWikiLint]);
 
   useEffect(() => {
     let mounted = true;
     setLoading(true);
-    loadWiki()
+    loadWikiPages()
       .catch((err) => {
         if (mounted) setError(err instanceof Error ? err.message : "Wiki 加载失败");
       })
@@ -94,19 +129,35 @@ export function WikiWorkbench({
         if (mounted) setLoading(false);
       });
     return () => { mounted = false; };
-  }, [loadWiki]);
+  }, [loadWikiPages]);
+
+  useEffect(() => {
+    if (tab !== "graph" && tab !== "lint") return;
+    let mounted = true;
+    setRefreshing(true);
+    ensureTabData(tab)
+      .catch((err) => {
+        if (mounted) setError(err instanceof Error ? err.message : "Wiki 标签数据加载失败");
+      })
+      .finally(() => {
+        if (mounted) setRefreshing(false);
+      });
+    return () => { mounted = false; };
+  }, [ensureTabData, tab]);
 
   const refresh = useCallback(async (pageId?: string) => {
     setRefreshing(true);
     try {
-      await loadWiki(pageId);
+      await loadWikiPages(pageId);
+      invalidateDerivedWikiData();
+      await ensureTabData(tab, true);
       await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Wiki 刷新失败");
     } finally {
       setRefreshing(false);
     }
-  }, [loadWiki, reload]);
+  }, [ensureTabData, invalidateDerivedWikiData, loadWikiPages, reload, tab]);
 
   const selectPage = useCallback(async (pageId: string) => {
     setError("");
@@ -131,6 +182,7 @@ export function WikiWorkbench({
           force: true,
           file_ids: issue.source_file_id ? [issue.source_file_id] : undefined,
         });
+        invalidateDerivedWikiData();
         await refresh(issue.page_id?.includes(":") ? issue.page_id : undefined);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Wiki 重新编译失败");
@@ -142,13 +194,14 @@ export function WikiWorkbench({
     if (issue.page_id?.includes(":")) {
       await selectPage(issue.page_id);
     }
-  }, [kb.kb_id, refresh, selectPage]);
+  }, [invalidateDerivedWikiData, kb.kb_id, refresh, selectPage]);
 
   const recompileAll = async () => {
     setCompiling(true);
     setError("");
     try {
       await compileWikiKb(kb.kb_id, { force: true });
+      invalidateDerivedWikiData();
       await refresh(selectedPageIdRef.current);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Wiki 重新编译失败");

@@ -29,6 +29,10 @@ const checks = [
   ["workbench", "resources"],
   ["workbench", "WikiResourcePane"],
   ["workbench", "wikiWorkbenchTab"],
+  ["workbench", "loadWikiPages"],
+  ["workbench", "loadWikiGraph"],
+  ["workbench", "loadWikiLint"],
+  ["workbench", "ensureTabData"],
   ["list", "ModelSettingsDialog"],
   ["list", "onSettings"],
   ["detail", "WikiKnowledgeCard"],
@@ -94,6 +98,7 @@ const absentChecks = [
   ["detail", "<WikiModelPanel"],
   ["detail", "Wiki LLM 配置"],
   ["detail", "任务{jobs.length"],
+  ["workbench", "const [nextPages, nextGraph, nextLint] = await Promise.all"],
 ];
 
 const failures = [];
