@@ -56,6 +56,7 @@ export function WikiWorkbench({
   const [selectedPageId, setSelectedPageId] = useState("");
   const selectedPageIdRef = useRef("");
   const [selectedPage, setSelectedPage] = useState<WikiPageDetail | null>(null);
+  const [pageLoading, setPageLoading] = useState(false);
   const [graph, setGraph] = useState<WikiGraphPayload | null>(null);
   const graphRef = useRef<WikiGraphPayload | null>(null);
   const graphLoadedKeyRef = useRef("");
@@ -85,12 +86,35 @@ export function WikiWorkbench({
     lintRef.current = lint;
   }, [lint]);
 
-  const loadSelectedPage = useCallback(async (pageId: string) => {
+  const loadSelectedPageDetail = useCallback(async (pageId: string) => {
+    if (!pageId) {
+      setSelectedPage(null);
+      setPageLoading(false);
+      return null;
+    }
+    setPageLoading(true);
+    try {
+      const nextPage = await fetchWikiKbPage(kb.kb_id, pageId);
+      if (selectedPageIdRef.current === pageId) {
+        setSelectedPage(nextPage);
+      }
+      return nextPage;
+    } finally {
+      if (selectedPageIdRef.current === pageId) {
+        setPageLoading(false);
+      }
+    }
+  }, [kb.kb_id]);
+
+  const loadSelectedPage = useCallback((pageId: string) => {
     setSelectedPageId(pageId);
     selectedPageIdRef.current = pageId;
     replaceWikiPageUrl(pageId);
-    setSelectedPage(pageId ? await fetchWikiKbPage(kb.kb_id, pageId) : null);
-  }, [kb.kb_id]);
+    setSelectedPage(null);
+    void loadSelectedPageDetail(pageId).catch((err) => {
+      setError(err instanceof Error ? err.message : "Wiki 页面加载失败");
+    });
+  }, [loadSelectedPageDetail]);
 
   const loadWikiPages = useCallback(async (preferredPageId?: string) => {
     setError("");
@@ -99,7 +123,7 @@ export function WikiWorkbench({
     const urlPageId = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("wikiPage") ?? "" : "";
     const currentId = (preferredPageId ?? selectedPageIdRef.current) || urlPageId;
     const nextPageId = currentId && nextPages.some((page) => page.id === currentId) ? currentId : nextPages[0]?.id ?? "";
-    await loadSelectedPage(nextPageId);
+    loadSelectedPage(nextPageId);
   }, [kb.kb_id, loadSelectedPage]);
 
   const loadWikiGraph = useCallback(async (nextOptions?: WikiGraphOptions) => {
@@ -317,6 +341,7 @@ export function WikiWorkbench({
               pages={pages}
               files={files}
               selectedPage={selectedPage}
+              loading={pageLoading}
               onSelect={(pageId) => void selectPage(pageId)}
               onReload={refresh}
             />

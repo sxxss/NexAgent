@@ -31,6 +31,7 @@ export function WikiPagePanel({
   pages,
   files,
   selectedPage,
+  loading = false,
   onSelect,
   onReload,
 }: {
@@ -38,6 +39,7 @@ export function WikiPagePanel({
   pages: WikiPageSummary[];
   files: FileMeta[];
   selectedPage: WikiPageDetail | null;
+  loading?: boolean;
   onSelect: (pageId: string) => void;
   onReload: (pageId?: string) => Promise<void>;
 }) {
@@ -127,7 +129,7 @@ export function WikiPagePanel({
       <section className="min-w-0">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
           <div className="min-w-0">
-            <h3 className="truncate text-sm font-semibold text-slate-900">{selectedPage?.title ?? "选择页面"}</h3>
+            <h3 className="truncate text-sm font-semibold text-slate-900">{selectedPage?.title ?? (loading ? "加载页面..." : "选择页面")}</h3>
             {selectedPage ? <p className="mt-1 truncate text-xs text-slate-400">{selectedPage.path}</p> : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -147,7 +149,13 @@ export function WikiPagePanel({
         </div>
 
         {error ? <div className="mx-4 mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</div> : null}
-        {selectedPage ? (
+        {loading ? (
+          <div className="mx-4 mt-4 flex min-h-80 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-400">
+            <Loader2 size={18} className="mr-2 animate-spin text-sky-600" />
+            加载页面...
+          </div>
+        ) : null}
+        {!loading && selectedPage ? (
           <div className="mx-4 mt-4 grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 sm:grid-cols-3">
             <MetaItem label="类型" value={pageTypeLabel(selectedPage.type)} />
             <MetaItem label="置信度" value={selectedPage.confidence} />
@@ -157,7 +165,7 @@ export function WikiPagePanel({
           </div>
         ) : null}
 
-        {selectedPage?.candidate ? (
+        {!loading && selectedPage?.candidate ? (
           <div className="mx-4 mt-4 rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-800">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 font-semibold"><ShieldAlert size={14} />存在待确认候选</span>
@@ -178,21 +186,21 @@ export function WikiPagePanel({
               <CandidateBlock title="候选版本" content={selectedPage.candidate.content} />
             </div>
           </div>
-        ) : selectedPage ? (
+        ) : !loading && selectedPage ? (
           <div className="mx-4 mt-4 flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
             <CheckCircle size={14} />
             页面内容可用于 Wiki 检索。
           </div>
         ) : null}
 
-        {mode === "edit" ? (
+        {!loading && mode === "edit" ? (
           <textarea
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             className="m-4 min-h-[500px] w-[calc(100%-2rem)] resize-y rounded-xl border border-slate-200 bg-slate-950 px-4 py-3 font-mono text-xs leading-6 text-slate-50 outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-100"
             spellCheck={false}
           />
-        ) : (
+        ) : !loading ? (
           <div className="overflow-auto bg-white px-5 py-5">
             <article className={cn("markdown-body", wikiDocumentBody)}>
               <ReactMarkdown
@@ -212,7 +220,7 @@ export function WikiPagePanel({
               </ReactMarkdown>
             </article>
           </div>
-        )}
+        ) : null}
       </section>
   );
 }
