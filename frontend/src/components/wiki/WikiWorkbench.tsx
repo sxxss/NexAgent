@@ -93,13 +93,15 @@ export function WikiWorkbench({
     await loadSelectedPage(nextPageId);
   }, [kb.kb_id, loadSelectedPage, pageFilters]);
 
-  const loadWikiGraph = useCallback(async () => {
-    const nextGraph = await fetchWikiKbGraph(kb.kb_id, graphParams(graphOptions));
+  const loadWikiGraph = useCallback(async (nextOptions?: WikiGraphOptions) => {
+    const requestOptions = nextOptions ?? graphOptions;
+    const requestKey = JSON.stringify(graphParams(requestOptions));
+    const nextGraph = await fetchWikiKbGraph(kb.kb_id, graphParams(requestOptions));
     setGraph(nextGraph);
     graphRef.current = nextGraph;
-    graphLoadedKeyRef.current = graphQueryKey;
+    graphLoadedKeyRef.current = requestKey;
     return nextGraph;
-  }, [graphOptions, graphQueryKey, kb.kb_id]);
+  }, [graphOptions, kb.kb_id]);
 
   const loadWikiLint = useCallback(async () => {
     const nextLint = await fetchWikiKbLint(kb.kb_id);
@@ -165,6 +167,18 @@ export function WikiWorkbench({
       setRefreshing(false);
     }
   }, [ensureTabData, invalidateDerivedWikiData, loadWikiPages, reload, tab]);
+
+  const refreshGraph = useCallback(async (nextOptions?: WikiGraphOptions) => {
+    setRefreshing(true);
+    setError("");
+    try {
+      await loadWikiGraph(nextOptions);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Wiki 图谱刷新失败");
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadWikiGraph]);
 
   const selectPage = useCallback(async (pageId: string) => {
     setError("");
@@ -305,7 +319,7 @@ export function WikiWorkbench({
                 onOptionsChange={setGraphOptions}
                 onNodeSelect={(pageId) => void handleGraphNodeSelect(pageId)}
                 onOpenPage={() => router.push(`/knowledge/${kb.kb_id}/wiki/graph`)}
-                onReload={refresh}
+                onReload={refreshGraph}
               />
             </div>
           ) : null}

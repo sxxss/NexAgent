@@ -1,7 +1,7 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, BookOpen, Loader2, RefreshCw } from "lucide-react";
 import { fetchKBs, fetchWikiKbGraph, type KBMeta, type WikiGraphPayload } from "@/lib/api";
@@ -17,14 +17,20 @@ export default function WikiGraphPage() {
   const [kb, setKb] = useState<KBMeta | null>(null);
   const [graph, setGraph] = useState<WikiGraphPayload | null>(null);
   const [graphOptions, setGraphOptions] = useState<WikiGraphOptions>({ q: "", maxEdges: 240, includeWeak: true });
+  const graphOptionsRef = useRef(graphOptions);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const loadData = useCallback(async () => {
+  useEffect(() => {
+    graphOptionsRef.current = graphOptions;
+  }, [graphOptions]);
+
+  const loadData = useCallback(async (nextOptions?: WikiGraphOptions) => {
+    const requestOptions = nextOptions ?? graphOptionsRef.current;
     setError("");
     setLoading(true);
     try {
-      const [kbs, nextGraph] = await Promise.all([fetchKBs(), fetchWikiKbGraph(id, graphParams(graphOptions))]);
+      const [kbs, nextGraph] = await Promise.all([fetchKBs(), fetchWikiKbGraph(id, graphParams(requestOptions))]);
       setKb(kbs.find((item) => item.kb_id === id) ?? null);
       setGraph(nextGraph);
     } catch (err) {
@@ -32,7 +38,7 @@ export default function WikiGraphPage() {
     } finally {
       setLoading(false);
     }
-  }, [graphOptions, id]);
+  }, [id]);
 
   useEffect(() => { void loadData(); }, [loadData]);
 

@@ -58,9 +58,10 @@ export function WikiGraphPanel({
   onOptionsChange?: (options: WikiGraphOptions) => void;
   onNodeSelect?: (pageId: string) => void;
   onOpenPage?: () => void;
-  onReload: () => Promise<void>;
+  onReload: (options?: WikiGraphOptions) => Promise<void>;
 }) {
   const effectiveOptions = useMemo(() => normalizeGraphOptions(options), [options]);
+  const [draftOptions, setDraftOptions] = useState<WikiGraphOptions>(effectiveOptions);
   const typeFilters = useMemo(() => effectiveOptions.typeFilters ?? [], [effectiveOptions.typeFilters]);
   const communityFilters = useMemo(() => effectiveOptions.communityFilters ?? [], [effectiveOptions.communityFilters]);
   const visibleGraph = useMemo(() => filterGraph(graph, typeFilters, communityFilters), [communityFilters, graph, typeFilters]);
@@ -110,6 +111,21 @@ export function WikiGraphPanel({
   const updateOption = useCallback((patch: Partial<WikiGraphOptions>) => {
     onOptionsChange?.({ ...effectiveOptions, ...patch });
   }, [effectiveOptions, onOptionsChange]);
+
+  const updateDraftOption = useCallback((patch: Partial<WikiGraphOptions>) => {
+    setDraftOptions((current) => ({ ...current, ...patch }));
+  }, []);
+
+  const applyGraphOptions = useCallback(async () => {
+    const nextOptions = {
+      ...effectiveOptions,
+      q: draftOptions.q,
+      maxEdges: draftOptions.maxEdges,
+      includeWeak: draftOptions.includeWeak,
+    };
+    onOptionsChange?.(nextOptions);
+    await onReload(nextOptions);
+  }, [draftOptions.includeWeak, draftOptions.maxEdges, draftOptions.q, effectiveOptions, onOptionsChange, onReload]);
 
   const toggleArrayOption = useCallback((key: "typeFilters" | "communityFilters", value: string) => {
     const current = key === "typeFilters" ? typeFilters : communityFilters;
@@ -166,7 +182,7 @@ export function WikiGraphPanel({
           <GraphStat label="原始关系" value={Number(stats.raw_edge_count ?? stats.edges ?? graph?.edges?.length ?? edges.length)} />
           <GraphStat label="社区" value={Number(stats.communities ?? communityOptions.length)} />
           {onOpenPage ? <button type="button" onClick={onOpenPage} className={iconButton} title="打开图谱详细页"><ExternalLink size={14} /></button> : null}
-          <button type="button" onClick={() => void onReload()} className={iconButton} title="刷新图谱"><RefreshCw size={14} /></button>
+          <button type="button" onClick={() => void applyGraphOptions()} className={iconButton} title="刷新图谱"><RefreshCw size={14} /></button>
         </div>
       </div>
 
@@ -176,6 +192,7 @@ export function WikiGraphPanel({
           displayNodes={displayNodes}
           edges={edges}
           effectiveOptions={effectiveOptions}
+          draftOptions={draftOptions}
           typeFilters={typeFilters}
           communityFilters={communityFilters}
           typeOptions={typeOptions}
@@ -185,13 +202,13 @@ export function WikiGraphPanel({
           selectedEdges={selectedEdges}
           coreNodes={coreNodes}
           pageTitle={pageTitle}
-          onOptionsChange={updateOption}
+          onDraftOptionsChange={updateDraftOption}
           onToggleOption={toggleArrayOption}
+          onApplyOptions={applyGraphOptions}
           onFitView={onFitView}
           onResetView={resetView}
           onFocusNode={focusNode}
           onOpenNode={onNodeSelect}
-          onReload={onReload}
           setFlow={setFlow}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
@@ -199,7 +216,7 @@ export function WikiGraphPanel({
         />
       ) : (
         <>
-          <CompactGraphControls effectiveOptions={effectiveOptions} onOptionsChange={updateOption} />
+          <CompactGraphControls draftOptions={draftOptions} onDraftOptionsChange={updateDraftOption} onApplyOptions={applyGraphOptions} />
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
             <GraphCanvas
               nodes={displayNodes}
@@ -224,6 +241,7 @@ function WikiGraphExplorerShell({
   displayNodes,
   edges,
   effectiveOptions,
+  draftOptions,
   typeFilters,
   communityFilters,
   typeOptions,
@@ -233,13 +251,13 @@ function WikiGraphExplorerShell({
   selectedEdges,
   coreNodes,
   pageTitle,
-  onOptionsChange,
+  onDraftOptionsChange,
   onToggleOption,
+  onApplyOptions,
   onFitView,
   onResetView,
   onFocusNode,
   onOpenNode,
-  onReload,
   setFlow,
   onNodesChange,
   onEdgesChange,
@@ -249,6 +267,7 @@ function WikiGraphExplorerShell({
   displayNodes: Node<WikiNodeData>[];
   edges: Edge[];
   effectiveOptions: WikiGraphOptions;
+  draftOptions: WikiGraphOptions;
   typeFilters: string[];
   communityFilters: string[];
   typeOptions: string[];
@@ -258,13 +277,13 @@ function WikiGraphExplorerShell({
   selectedEdges: WikiGraphEdge[];
   coreNodes: Array<WikiGraphNode & { degree: number }>;
   pageTitle: Map<string, string>;
-  onOptionsChange: (patch: Partial<WikiGraphOptions>) => void;
+  onDraftOptionsChange: (patch: Partial<WikiGraphOptions>) => void;
   onToggleOption: (key: "typeFilters" | "communityFilters", value: string) => void;
+  onApplyOptions: () => Promise<void>;
   onFitView: () => void;
   onResetView: () => void;
   onFocusNode: (nodeId: string) => void;
   onOpenNode?: (nodeId: string) => void;
-  onReload: () => Promise<void>;
   setFlow: (flow: ReactFlowInstance) => void;
   onNodesChange: ReturnType<typeof useNodesState<WikiNodeData>>[2];
   onEdgesChange: ReturnType<typeof useEdgesState>[2];
@@ -281,8 +300,9 @@ function WikiGraphExplorerShell({
           <div className="relative">
             <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
-              value={effectiveOptions.q}
-              onChange={(event) => onOptionsChange({ q: event.target.value })}
+              value={draftOptions.q}
+              onChange={(event) => onDraftOptionsChange({ q: event.target.value })}
+              onKeyDown={(event) => { if (event.key === "Enter") void onApplyOptions(); }}
               placeholder="搜索页面或主题"
               className={filterInput}
             />
@@ -293,16 +313,16 @@ function WikiGraphExplorerShell({
               type="number"
               min={20}
               max={300}
-              value={effectiveOptions.maxEdges}
-              onChange={(event) => onOptionsChange({ maxEdges: Number(event.target.value) || 80 })}
+              value={draftOptions.maxEdges}
+              onChange={(event) => onDraftOptionsChange({ maxEdges: Number(event.target.value) || 80 })}
               className={numberInput}
             />
           </label>
           <label className="flex h-9 items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600">
-            {effectiveOptions.includeWeak ? "包含弱关系" : "核心关系"}
-            <input type="checkbox" checked={effectiveOptions.includeWeak} onChange={(event) => onOptionsChange({ includeWeak: event.target.checked })} className="h-4 w-4 accent-indigo-600" />
+            {draftOptions.includeWeak ? "包含弱关系" : "核心关系"}
+            <input type="checkbox" checked={draftOptions.includeWeak} onChange={(event) => onDraftOptionsChange({ includeWeak: event.target.checked })} className="h-4 w-4 accent-indigo-600" />
           </label>
-          <button type="button" onClick={() => void onReload()} className={primaryButton}><RefreshCw size={14} />刷新图谱</button>
+          <button type="button" onClick={() => void onApplyOptions()} className={primaryButton}><RefreshCw size={14} />刷新图谱</button>
         </section>
 
         <FilterGroup title="页面类型" values={typeOptions} selected={typeFilters} labelFor={pageTypeLabel} onToggle={(value) => onToggleOption("typeFilters", value)} />
@@ -387,14 +407,23 @@ function WikiGraphExplorerShell({
   );
 }
 
-function CompactGraphControls({ effectiveOptions, onOptionsChange }: { effectiveOptions: WikiGraphOptions; onOptionsChange: (patch: Partial<WikiGraphOptions>) => void }) {
+function CompactGraphControls({
+  draftOptions,
+  onDraftOptionsChange,
+  onApplyOptions,
+}: {
+  draftOptions: WikiGraphOptions;
+  onDraftOptionsChange: (patch: Partial<WikiGraphOptions>) => void;
+  onApplyOptions: () => Promise<void>;
+}) {
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3">
       <div className="relative min-w-56 flex-1">
         <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
         <input
-          value={effectiveOptions.q}
-          onChange={(event) => onOptionsChange({ q: event.target.value })}
+          value={draftOptions.q}
+          onChange={(event) => onDraftOptionsChange({ q: event.target.value })}
+          onKeyDown={(event) => { if (event.key === "Enter") void onApplyOptions(); }}
           placeholder="聚焦关键词"
           className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-700 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
         />
@@ -405,15 +434,16 @@ function CompactGraphControls({ effectiveOptions, onOptionsChange }: { effective
           type="number"
           min={20}
           max={300}
-          value={effectiveOptions.maxEdges}
-          onChange={(event) => onOptionsChange({ maxEdges: Number(event.target.value) || 80 })}
+          value={draftOptions.maxEdges}
+          onChange={(event) => onDraftOptionsChange({ maxEdges: Number(event.target.value) || 80 })}
           className="h-6 w-16 rounded border border-slate-200 px-1.5 text-xs outline-none"
         />
       </label>
       <label className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600">
-        <input type="checkbox" checked={effectiveOptions.includeWeak} onChange={(event) => onOptionsChange({ includeWeak: event.target.checked })} className="h-4 w-4 accent-indigo-600" />
-        {effectiveOptions.includeWeak ? "包含弱关系" : "核心关系"}
+        <input type="checkbox" checked={draftOptions.includeWeak} onChange={(event) => onDraftOptionsChange({ includeWeak: event.target.checked })} className="h-4 w-4 accent-indigo-600" />
+        {draftOptions.includeWeak ? "包含弱关系" : "核心关系"}
       </label>
+      <button type="button" onClick={() => void onApplyOptions()} className={secondaryButton}><RefreshCw size={14} />刷新图谱</button>
     </div>
   );
 }
