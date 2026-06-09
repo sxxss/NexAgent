@@ -20,6 +20,7 @@ const files = {
 const read = (key) => fs.readFileSync(path.join(root, files[key]), "utf8");
 const checks = [
   ["api", "repairWikiKbIssues"],
+  ["api", "cancelTask"],
   ["api", "acceptGeneratedWikiKbPage"],
   ["api", "discardGeneratedWikiKbPage"],
   ["api", "deleteWikiKbPage"],
@@ -145,6 +146,10 @@ const checks = [
   ["lint", "WikiRepairResultCard"],
   ["lint", "repairResult"],
   ["lint", "lastRepairItems"],
+  ["lint", "cancelTask"],
+  ["lint", "cancelRepairTask"],
+  ["lint", "取消修复"],
+  ["lint", "cancel_requested"],
   ["lint", "force"],
   ["lint", "skipped_issues"],
   ["lint", "处理候选"],

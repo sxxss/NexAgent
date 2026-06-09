@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertCircle, CheckCircle, ExternalLink, Loader2, RefreshCw, RotateCcw, WandSparkles, Wrench } from "lucide-react";
-import { fetchIngestionJobs, repairWikiKbIssues, type IngestionJob, type WikiLintPayload, type WikiRepairResult } from "@/lib/api";
+import { cancelTask, fetchIngestionJobs, repairWikiKbIssues, type IngestionJob, type WikiLintPayload, type WikiRepairResult } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -134,6 +134,22 @@ export function WikiLintPanel({
     await onIssueAction?.(issue);
   };
 
+  const cancelRepairTask = async (taskId: string) => {
+    setError("");
+    try {
+      await cancelTask(taskId);
+      setRepairTask((current) =>
+        current?.task_id === taskId
+          ? { ...current, cancel_requested: true, current_step: "已请求取消修复" }
+          : current,
+      );
+      setMessage("已请求取消 Wiki AI 修复任务，等待后台确认。");
+      await onReload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "取消 Wiki AI 修复失败");
+    }
+  };
+
   const openCandidatePage = async (pageId: string) => {
     await onIssueAction?.({
       id: `repair-result:${pageId}`,
@@ -184,6 +200,7 @@ export function WikiLintPanel({
         repairing={Boolean(repairing) || repairTaskActive}
         onOpenPage={(pageId) => void openCandidatePage(pageId)}
         onForce={() => void repairIssues(lastRepairItems, true)}
+        onCancel={(taskId) => void cancelRepairTask(taskId)}
       />
 
       {!issues.length ? (
@@ -236,6 +253,7 @@ function WikiRepairResultCard({
   repairing,
   onOpenPage,
   onForce,
+  onCancel,
 }: {
   result: WikiRepairResult | null;
   repairTask: IngestionJob | null;
@@ -243,6 +261,7 @@ function WikiRepairResultCard({
   repairing: boolean;
   onOpenPage: (pageId: string) => void;
   onForce: () => void;
+  onCancel: (taskId: string) => void;
 }) {
   if (!result) return null;
   const queued = result.status === "queued" || result.status === "running" || (Boolean(result.task_id) && !result.status);
@@ -291,6 +310,11 @@ function WikiRepairResultCard({
             <button type="button" onClick={onForce} disabled={repairing} className={cn(actionButton, "border-amber-200 text-amber-800")}>
               {repairing ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
               强制重新生成候选
+            </button>
+          ) : null}
+          {activeTask && isActiveRepairTask(activeTask) && !activeTask.cancel_requested ? (
+            <button type="button" onClick={() => onCancel(activeTask.task_id)} className={cn(actionButton, "border-rose-200 text-rose-700")}>
+              取消修复
             </button>
           ) : null}
         </div>
