@@ -44,9 +44,12 @@ export function WikiLintPanel({
     setRepairing("");
     if (nextTask.status === "completed") {
       const candidateCount = result.candidate_count ?? 0;
+      const appliedCount = result.applied_count ?? 0;
       const failedCount = result.failed_issues?.length ?? 0;
       setMessage(
-        candidateCount
+        appliedCount
+          ? `AI 修复任务完成，已直接修复 ${appliedCount} 个页面。任务完成后已自动刷新。`
+          : candidateCount
           ? `AI 修复任务完成，生成 ${candidateCount} 个候选。任务完成后已自动刷新，请在页面中处理候选。`
           : failedCount
             ? `AI 修复任务完成，但 ${failedCount} 个问题未生成候选。任务完成后已自动刷新。`
@@ -91,9 +94,10 @@ export function WikiLintPanel({
     setRepairTask(null);
     setLastRepairItems(items);
     try {
-      const result = await repairWikiKbIssues(kbId, { issue_ids: items.map((item) => item.id), force });
+      const result = await repairWikiKbIssues(kbId, { issue_ids: items.map((item) => item.id), force, apply: true });
       const failed = result.failed_issues?.length ?? 0;
       const skipped = result.skipped_issues?.length ?? 0;
+      const applied = result.applied_count ?? 0;
       const queued = result.status === "queued" || Boolean(result.task_id);
       const queuedTask = createQueuedRepairTask(result, items.length);
       if (queuedTask?.task_id) {
@@ -103,7 +107,9 @@ export function WikiLintPanel({
       setRepairResult(result);
       setMessage(
         queued
-          ? `AI 修复已加入任务队列（${result.queued ?? items.length} 项），完成后会自动刷新候选状态。`
+          ? `AI 修复已加入任务队列（${result.queued ?? items.length} 项），完成后会自动刷新页面。`
+          : applied
+          ? `AI 修复已直接更新 ${applied} 个页面。`
           : result.candidate_count
           ? `AI 修复已生成 ${result.candidate_count} 个候选，请到页面中接受或丢弃。`
           : skipped
@@ -173,7 +179,7 @@ export function WikiLintPanel({
             <div>
               <h3 className="text-sm font-semibold text-slate-900">Wiki 健康检查</h3>
               <p className="text-xs text-slate-500">{pageCount} pages · {issues.length} issues · 可 AI 修复 {repairableAiIssues.length} 项</p>
-              <p className="mt-0.5 text-[11px] text-slate-500">AI 修复只生成候选版本，不会直接覆盖页面正文。</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">AI 修复会直接更新可修复页面，失败项会保留在检查列表中。</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -184,7 +190,7 @@ export function WikiLintPanel({
               className="inline-flex h-9 items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 text-xs font-semibold text-amber-800 transition hover:bg-amber-50 disabled:opacity-40"
             >
               {repairing === "all" ? <Loader2 size={14} className="animate-spin" /> : <WandSparkles size={14} />}
-              一键 AI 生成修复候选
+              一键 AI 修复
             </button>
             <button type="button" onClick={() => void onReload()} className={iconButton} title="刷新检查"><RefreshCw size={14} /></button>
           </div>
@@ -291,7 +297,7 @@ function WikiRepairResultCard({
           <p className="mt-1 text-xs text-slate-500">
             {queued
               ? `任务 ${result.task_id ? result.task_id.slice(0, 8) : ""} 已进入队列 · 待处理 ${result.queued ?? issues.length} 项${activeTask?.current_step ? ` · ${activeTask.current_step}` : ""}`
-              : `生成候选 ${result.candidate_count} 个 · 修复问题 ${result.repaired_count} 个 · 跳过 ${skippedIssues.length} 个 · 失败 ${failedIssues.length} 个`}
+              : `已应用 ${result.applied_count ?? 0} 个 · 生成候选 ${result.candidate_count} 个 · 修复问题 ${result.repaired_count} 个 · 跳过 ${skippedIssues.length} 个 · 失败 ${failedIssues.length} 个`}
           </p>
           {activeTask && isActiveRepairTask(activeTask) ? (
             <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
@@ -309,7 +315,7 @@ function WikiRepairResultCard({
           {!queued && skippedIssues.length ? (
             <button type="button" onClick={onForce} disabled={repairing} className={cn(actionButton, "border-amber-200 text-amber-800")}>
               {repairing ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
-              强制重新生成候选
+              强制重新修复
             </button>
           ) : null}
           {activeTask && isActiveRepairTask(activeTask) && !activeTask.cancel_requested ? (
@@ -392,6 +398,7 @@ function repairResultFromTask(task: IngestionJob): WikiRepairResult {
   return {
     repaired_count: Number(payload.repaired_count ?? payload.completed ?? 0),
     candidate_count: Number(payload.candidate_count ?? 0),
+    applied_count: Number(payload.applied_count ?? 0),
     skipped_issues: Array.isArray(payload.skipped_issues) ? payload.skipped_issues : [],
     failed_issues: Array.isArray(payload.failed_issues) ? payload.failed_issues : [],
     completed: Number(payload.completed ?? payload.repaired_count ?? 0),
@@ -460,7 +467,7 @@ function actionAdvice(issue: WikiIssue) {
     recompile: "重新编译相关素材，刷新综合页和图谱",
     review: "跳转到相关页面人工复核",
     accept_candidate: "打开页面候选区，选择接受或丢弃",
-    ai_candidate: "由 AI 生成候选版本，人工确认后再覆盖",
+    ai_candidate: "由 AI 直接修复页面内容",
     handle_candidate: "打开页面候选区，选择接受或丢弃",
   }[issue.repair_action || issue.action || "review"] ?? "查看问题对象";
 }

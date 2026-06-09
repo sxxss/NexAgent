@@ -183,6 +183,7 @@ async def test_wiki_compile_clears_stale_reindex_flag(monkeypatch):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_wiki_llm_compile_invocation_times_out(monkeypatch):
+    from nexagent.knowledge.implementations.wiki import compile as compile_module
     from nexagent.knowledge.manager import reset_manager
 
     class SlowLLM:
@@ -194,10 +195,31 @@ async def test_wiki_llm_compile_invocation_times_out(monkeypatch):
         manager = reset_manager(str(work_dir))
         kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
         backend = manager._find_backend(kb_meta.kb_id)
-        monkeypatch.setenv("NEXAGENT_WIKI_LLM_TIMEOUT_S", "0.01")
+        monkeypatch.delenv("NEXAGENT_WIKI_LLM_TIMEOUT_S", raising=False)
+        monkeypatch.setattr(compile_module, "DEFAULT_WIKI_LLM_TIMEOUT_S", 0.01)
 
         with pytest.raises(TimeoutError, match="Wiki 知识库编译超时"):
             await backend._invoke_wiki_llm(SlowLLM(), [])
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_llm_timeout_env_cannot_lower_default(monkeypatch):
+    from nexagent.knowledge.implementations.wiki import compile as compile_module
+    from nexagent.knowledge.manager import reset_manager
+
+    work_dir = _work_dir("compile-timeout-floor")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+        monkeypatch.setattr(compile_module, "DEFAULT_WIKI_LLM_TIMEOUT_S", 90.0)
+        monkeypatch.setenv("NEXAGENT_WIKI_LLM_TIMEOUT_S", "30")
+
+        assert backend._wiki_llm_timeout_s() == 90.0
     finally:
         reset_manager()
         shutil.rmtree(work_dir, ignore_errors=True)
@@ -484,6 +506,251 @@ async def test_wiki_compile_creates_fallback_entities_for_linked_source_terms(mo
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_wiki_compile_falls_back_to_local_pages_when_llm_times_out(monkeypatch):
+    from nexagent.knowledge.manager import reset_manager
+
+    async def fake_compile(_kb_id, _file_id, _file_meta, _markdown):
+        raise TimeoutError("Wiki 知识库编译超时（90s）")
+
+    work_dir = _work_dir("compile-local-fallback")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+        monkeypatch.setattr(backend, "_compile_markdown_with_llm", fake_compile)
+
+        pages = await backend._compile_markdown_file(
+            kb_meta.kb_id,
+            "file-1",
+            SimpleNamespace(filename="NexAgent 开源产品开发计划.md"),
+            "# NexAgent 开源产品开发计划\n\n## MVP\n\nNexAgent 采用 MVP 策略。",
+        )
+
+        page_ids = {page["id"] for page in pages}
+        source = backend.get_wiki_page(kb_meta.kb_id, "source:nexagent-开源产品开发计划")
+        topic = backend.get_wiki_page(kb_meta.kb_id, "topic:mvp")
+
+        assert "source:nexagent-开源产品开发计划" in page_ids
+        assert "topic:mvp" in page_ids
+        assert source["confidence"] == "UNVERIFIED"
+        assert topic["confidence"] == "UNVERIFIED"
+        assert "本地降级" in source["content"]
+        assert "NexAgent 采用 MVP 策略" in topic["content"]
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_compile_creates_placeholder_pages_for_unresolved_llm_links(monkeypatch):
+    from nexagent.knowledge.manager import reset_manager
+
+    async def fake_compile(_kb_id, _file_id, _file_meta, _markdown):
+        return {
+            "source": {"title": "暑期留宿知情同意书", "summary": "导师管理职责", "key_points": []},
+            "topics": [
+                {
+                    "title": "暑期留宿管理规定",
+                    "summary": "管理流程",
+                    "content": "相关责任见 [[导师职责]]。",
+                    "confidence": "INFERRED",
+                }
+            ],
+            "entities": [],
+        }
+
+    work_dir = _work_dir("compile-link-placeholder")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+        monkeypatch.setattr(backend, "_compile_markdown_with_llm", fake_compile)
+
+        await backend._compile_markdown_file(
+            kb_meta.kb_id,
+            "file-1",
+            SimpleNamespace(filename="导师知情同意书(2).docx"),
+            "学生暑期留宿，导师负责管理。",
+        )
+
+        placeholder = backend.get_wiki_page(kb_meta.kb_id, "entity:导师职责")
+        lint = backend.lint_wiki(kb_meta.kb_id)
+
+        assert placeholder["title"] == "导师职责"
+        assert placeholder["confidence"] == "UNVERIFIED"
+        assert "自动补全" in placeholder["content"]
+        assert not any(issue.get("target") == "导师职责" for issue in lint["issues"])
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_compile_removes_stale_generated_pages_for_same_file(monkeypatch):
+    from nexagent.knowledge.manager import reset_manager
+
+    calls = 0
+
+    async def fake_compile(_kb_id, _file_id, _file_meta, _markdown):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return {
+                "source": {"title": "Project Plan", "summary": "Old run", "key_points": []},
+                "topics": [{"title": "Old Topic", "summary": "Old", "content": "Old content"}],
+                "entities": [],
+            }
+        return {
+            "source": {"title": "Project Plan", "summary": "New run", "key_points": []},
+            "topics": [{"title": "New Topic", "summary": "New", "content": "New content"}],
+            "entities": [],
+        }
+
+    work_dir = _work_dir("compile-stale-pages")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+        monkeypatch.setattr(backend, "_compile_markdown_with_llm", fake_compile)
+
+        await backend._compile_markdown_file(
+            kb_meta.kb_id,
+            "file-1",
+            SimpleNamespace(filename="project.md"),
+            "# Project Plan",
+        )
+        await backend._compile_markdown_file(
+            kb_meta.kb_id,
+            "file-1",
+            SimpleNamespace(filename="project.md"),
+            "# Project Plan",
+        )
+
+        pages = backend.list_wiki_pages(kb_meta.kb_id)["pages"]
+        page_ids = {page["id"] for page in pages}
+
+        assert "topic:new-topic" in page_ids
+        assert "topic:old-topic" not in page_ids
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_source_suggested_links_only_include_generated_pages(monkeypatch):
+    from nexagent.knowledge.manager import reset_manager
+
+    async def fake_compile(_kb_id, _file_id, _file_meta, _markdown):
+        return {
+            "source": {
+                "title": "NexAgent 开源产品开发计划",
+                "summary": "开源产品开发计划",
+                "key_points": [],
+            },
+            "topics": [
+                {
+                    "title": "关键要点",
+                    "summary": "任务拆解和优先级",
+                    "content": "核心工作涉及 [[MVP]]。",
+                }
+            ],
+            "entities": [
+                {
+                    "title": "MVP",
+                    "summary": "最小可行产品",
+                    "content": "MVP 与项目路线图相关。",
+                }
+            ],
+        }
+
+    work_dir = _work_dir("compile-source-links")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+        monkeypatch.setattr(backend, "_compile_markdown_with_llm", fake_compile)
+
+        await backend._compile_markdown_file(
+            kb_meta.kb_id,
+            "file-1",
+            SimpleNamespace(filename="NexAgent 开源产品开发计划.md"),
+            "\n".join(
+                [
+                    "# NexAgent 开源产品开发计划",
+                    "",
+                    "## 摘要",
+                    "本文档提供开发计划。",
+                    "",
+                    "## 关键要点",
+                    "### 1. 基础设施搭建 (P0)",
+                    "- 搭建 Github 组织账号",
+                    "MVP 是核心策略。",
+                ]
+            ),
+        )
+
+        source = backend.get_wiki_page(kb_meta.kb_id, "source:nexagent-开源产品开发计划")
+        lint = backend.lint_wiki(kb_meta.kb_id)
+
+        assert "[[关键要点]]" in source["content"]
+        assert "[[MVP]]" in source["content"]
+        assert "[[摘要]]" not in source["content"]
+        assert "[[1. 基础设施搭建 (P0)]]" not in source["content"]
+        assert not any(issue["type"] == "broken_link" for issue in lint["issues"])
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_compile_removes_uncached_stale_generated_pages_for_same_file(monkeypatch):
+    from nexagent.knowledge.manager import reset_manager
+
+    async def fake_compile(_kb_id, _file_id, _file_meta, _markdown):
+        return {
+            "source": {"title": "Project Plan", "summary": "New run", "key_points": []},
+            "topics": [{"title": "New Topic", "summary": "New", "content": "New content"}],
+            "entities": [],
+        }
+
+    work_dir = _work_dir("compile-uncached-stale-pages")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+        await backend.create_or_update_wiki_page(
+            kb_meta.kb_id,
+            page_type="topic",
+            title="Old Topic",
+            content="# Old Topic\n\nOld generated content.",
+            sources=["file-1"],
+            confidence="INFERRED",
+        )
+        monkeypatch.setattr(backend, "_compile_markdown_with_llm", fake_compile)
+
+        await backend._compile_markdown_file(
+            kb_meta.kb_id,
+            "file-1",
+            SimpleNamespace(filename="project.md"),
+            "# Project Plan",
+        )
+
+        pages = backend.list_wiki_pages(kb_meta.kb_id)["pages"]
+        page_ids = {page["id"] for page in pages}
+
+        assert "topic:new-topic" in page_ids
+        assert "topic:old-topic" not in page_ids
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_wiki_refresh_corpus_synthesis_creates_summary_page():
     from nexagent.knowledge.manager import reset_manager
 
@@ -585,7 +852,7 @@ async def test_wiki_ai_repair_uses_llm_and_creates_candidate(monkeypatch):
             {
               "page_id": "topic:alpha",
               "content": "# Alpha\\n\\nAI repaired content with [[Beta]].",
-              "confidence": "INFERRED",
+              "confidence": "UNVERIFIED",
               "reason": "补全断链和复核内容"
             }
           ]
@@ -623,8 +890,64 @@ async def test_wiki_ai_repair_uses_llm_and_creates_candidate(monkeypatch):
         assert result["candidate_count"] == 1
         assert result["repaired_count"] == 1
         assert detail["content"] == "# Alpha\n\nBroken link [[Missing]]."
-        assert detail["candidate"]["content"] == "# Alpha\n\nAI repaired content with [[Beta]]."
+        assert detail["candidate"]["content"] == "# Alpha\n\nAI repaired content with Beta."
         assert detail["candidate"]["reason"] == "补全断链和复核内容"
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_ai_repair_can_apply_candidate_directly(monkeypatch):
+    from nexagent.knowledge.manager import reset_manager
+
+    class FakeResponse:
+        content = """
+        {
+          "repairs": [
+            {
+              "page_id": "topic:alpha",
+              "content": "# Alpha\\n\\nAI repaired content with [[Beta]].",
+              "confidence": "UNVERIFIED",
+              "reason": "补全断链和复核内容"
+            }
+          ]
+        }
+        """
+
+    class FakeLLM:
+        async def ainvoke(self, _messages):
+            return FakeResponse()
+
+    async def fake_load_chat_model_async(model_name=None, **kwargs):
+        return FakeLLM()
+
+    work_dir = _work_dir("ai-repair-apply")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+        await backend.create_or_update_wiki_page(
+            kb_meta.kb_id,
+            page_type="topic",
+            title="Alpha",
+            content="# Alpha\n\nBroken link [[Missing]].",
+            sources=[],
+            confidence="UNVERIFIED",
+        )
+        monkeypatch.setattr("nexagent.models.factory.load_chat_model_async", fake_load_chat_model_async)
+
+        result = await backend.repair_wiki(kb_meta.kb_id, issue_types=["needs_review"], apply=True)
+        detail = backend.get_wiki_page(kb_meta.kb_id, "topic:alpha")
+
+        assert result["candidate_count"] == 0
+        assert result["applied_count"] == 1
+        assert result["repaired_count"] == 1
+        assert detail["content"] == "# Alpha\n\nAI repaired content with Beta."
+        assert detail["confidence"] == "INFERRED"
+        assert detail["candidate"] is None
+        assert not any(issue.get("type") == "broken_link" for issue in backend.lint_wiki(kb_meta.kb_id)["issues"])
     finally:
         reset_manager()
         shutil.rmtree(work_dir, ignore_errors=True)

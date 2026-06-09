@@ -13,6 +13,7 @@ class WikiRepairMixin:
         issue_types: list[str] | None = None,
         page_ids: list[str] | None = None,
         force: bool = False,
+        apply: bool = False,
         context: Any | None = None,
     ) -> dict:
         selected = self._select_ai_repair_issues(kb_id, issue_ids, issue_types, page_ids)
@@ -53,6 +54,7 @@ class WikiRepairMixin:
 
         failed_issues = []
         candidate_pages = set()
+        applied_pages = set()
         repaired_count = 0
         for page_id, page_issues in issues_by_page.items():
             repair = repairs_by_page.get(page_id)
@@ -65,6 +67,7 @@ class WikiRepairMixin:
             if not content:
                 failed_issues.extend({"id": issue["id"], "error": "AI 修复候选正文为空"} for issue in page_issues)
                 continue
+            content = self._safe_repair_content(kb_id, content)
             try:
                 detail = self.get_wiki_page(kb_id, page_id)
             except Exception as exc:  # noqa: BLE001
@@ -77,24 +80,41 @@ class WikiRepairMixin:
                 repair.get("confidence"),
                 frontmatter.get("confidence") or "UNVERIFIED",
             )
+            if apply and frontmatter["confidence"] == "UNVERIFIED":
+                frontmatter["confidence"] = "INFERRED"
             frontmatter["updated_at"] = _utc_now()
-            candidates[page_id] = {
-                "frontmatter": frontmatter,
-                "content": content,
-                "created_at": _utc_now(),
-                "repair": True,
-                "issue_ids": [issue["id"] for issue in page_issues],
-                "reason": str(repair.get("reason") or "AI 生成修复候选").strip(),
-            }
-            candidate_pages.add(page_id)
+            if apply:
+                path = self._find_page_path(kb_id, page_id)
+                if path is None:
+                    failed_issues.extend({"id": issue["id"], "error": "Wiki 页面文件不存在"} for issue in page_issues)
+                    continue
+                self._write_page(path, frontmatter, content)
+                candidates.pop(page_id, None)
+                applied_pages.add(page_id)
+            else:
+                candidates[page_id] = {
+                    "frontmatter": frontmatter,
+                    "content": content,
+                    "created_at": _utc_now(),
+                    "repair": True,
+                    "issue_ids": [issue["id"] for issue in page_issues],
+                    "reason": str(repair.get("reason") or "AI 生成修复候选").strip(),
+                }
+                candidate_pages.add(page_id)
             repaired_count += len(page_issues)
 
         self._save_state(kb_id, state)
+        if applied_pages:
+            self._refresh_index(kb_id)
         if context is not None and hasattr(context, "set_progress"):
-            await context.set_progress(100.0, f"Wiki AI 修复完成，生成 {len(candidate_pages)} 个候选")
+            if apply:
+                await context.set_progress(100.0, f"Wiki AI 修复完成，已应用 {len(applied_pages)} 个页面")
+            else:
+                await context.set_progress(100.0, f"Wiki AI 修复完成，生成 {len(candidate_pages)} 个候选")
         return {
             "repaired_count": repaired_count,
             "candidate_count": len(candidate_pages),
+            "applied_count": len(applied_pages),
             "skipped_issues": skipped_issues,
             "failed_issues": failed_issues,
         }
@@ -151,6 +171,12 @@ class WikiRepairMixin:
             raise ValueError("Wiki AI 修复结果缺少 repairs 数组")
         return [item for item in repairs if isinstance(item, dict)]
 
+    def _safe_repair_content(self, kb_id: str, content: str) -> str:
+        title_index = self._title_index_from_titles(
+            [page["title"] for page in self.list_wiki_pages(kb_id).get("pages", [])]
+        )
+        return self._normalize_wikilinks(content, title_index, keep_unknown=False)
+
     def _build_repair_wiki_prompt(self, kb_id: str, issues: list[dict]) -> list[dict]:
         page_ids = sorted({str(issue["page_id"]) for issue in issues})
         pages = []
@@ -181,10 +207,10 @@ class WikiRepairMixin:
         )
         user_prompt = textwrap.dedent(
             f"""
-            请为下面 NexAgent Wiki 页面生成修复候选版本。
+            请为下面 NexAgent Wiki 页面生成修复版本。
             要求：
             - 只返回合法 JSON，不要输出 Markdown 代码块或解释。
-            - 不要直接覆盖页面，候选正文必须是完整 Markdown。
+            - 修复正文必须是完整 Markdown。
             - 不要编造来源；无法确定时使用 UNVERIFIED 或 INFERRED。
             - 可以用 [[页面标题]] 保留或补充明确的 Wiki 关联。
             - confidence 只能是 EXTRACTED、INFERRED、AMBIGUOUS、UNVERIFIED。

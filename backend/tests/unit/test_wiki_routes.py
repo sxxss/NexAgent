@@ -502,7 +502,16 @@ async def test_wiki_repair_route_enqueues_task(monkeypatch, tmp_path):
                 ]
             }
 
-        async def repair_wiki(self, kb_id, issue_ids=None, issue_types=None, page_ids=None, force=False, context=None):
+        async def repair_wiki(
+            self,
+            kb_id,
+            issue_ids=None,
+            issue_types=None,
+            page_ids=None,
+            force=False,
+            context=None,
+            apply=False,
+        ):
             await context.set_progress(20, "fake repair")
             calls.update(
                 {
@@ -511,10 +520,17 @@ async def test_wiki_repair_route_enqueues_task(monkeypatch, tmp_path):
                     "issue_types": issue_types,
                     "page_ids": page_ids,
                     "force": force,
+                    "apply": apply,
                     "context": context,
                 }
             )
-            return {"repaired_count": 1, "candidate_count": 1, "skipped_issues": [], "failed_issues": []}
+            return {
+                "repaired_count": 1,
+                "candidate_count": 0,
+                "applied_count": 1,
+                "skipped_issues": [],
+                "failed_issues": [],
+            }
 
     class FakeManager:
         backend = FakeBackend()
@@ -542,6 +558,7 @@ async def test_wiki_repair_route_enqueues_task(monkeypatch, tmp_path):
                 "issue_types": ["needs_review"],
                 "page_ids": ["topic:alpha"],
                 "force": True,
+                "apply": True,
             },
         )
         await scheduled.pop(0)
@@ -556,12 +573,14 @@ async def test_wiki_repair_route_enqueues_task(monkeypatch, tmp_path):
         "issue_types": ["needs_review"],
         "page_ids": ["topic:alpha"],
         "force": True,
+        "apply": True,
     }
     assert calls["kb_id"] == "wiki-1"
     assert calls["issue_ids"] == ["issue-a"]
     assert calls["issue_types"] == ["needs_review"]
     assert calls["page_ids"] == ["topic:alpha"]
     assert calls["force"] is True
+    assert calls["apply"] is True
     assert calls["context"] is not None
 
 

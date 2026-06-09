@@ -1060,6 +1060,7 @@ async def _run_wiki_repair_task(task_id: str) -> None:
     issue_types = task.metadata.get("issue_types")
     page_ids = task.metadata.get("page_ids")
     force = bool(task.metadata.get("force"))
+    apply = bool(task.metadata.get("apply"))
     issue_ids = [str(item) for item in issue_ids] if isinstance(issue_ids, list) else None
     issue_types = [str(item) for item in issue_types] if isinstance(issue_types, list) else None
     page_ids = [str(item) for item in page_ids] if isinstance(page_ids, list) else None
@@ -1080,12 +1081,17 @@ async def _run_wiki_repair_task(task_id: str) -> None:
             page_ids=page_ids,
             force=force,
             context=context,
+            apply=apply,
         )
         result = _wiki_repair_task_result(raw)
         failed = int(result["failed"])
         completed = int(result["completed"])
         total = max(task.total_steps, completed + failed + len(result.get("skipped_issues", [])))
-        status = "failed" if failed and completed == 0 and not result.get("candidate_count") else "completed"
+        status = (
+            "failed"
+            if failed and completed == 0 and not result.get("candidate_count") and not result.get("applied_count")
+            else "completed"
+        )
         update_progress(
             task_id,
             completed_steps=total,
@@ -1120,6 +1126,7 @@ def _queue_wiki_repair(
     issue_types: list[str] | None,
     page_ids: list[str] | None,
     force: bool,
+    apply: bool = False,
 ):
     from nexagent.services.task_service import create_task
 
@@ -1133,6 +1140,7 @@ def _queue_wiki_repair(
             "issue_types": issue_types or [],
             "page_ids": page_ids or [],
             "force": force,
+            "apply": apply,
         },
         total_steps=total_steps,
         current_step="queued",
@@ -1177,6 +1185,7 @@ def _retry_wiki_repair_task(task):
         [str(item) for item in issue_types] if isinstance(issue_types, list) else None,
         [str(item) for item in page_ids] if isinstance(page_ids, list) else None,
         bool(metadata.get("force")),
+        bool(metadata.get("apply")),
     )
 
 
@@ -1488,6 +1497,7 @@ async def repair_wiki(kb_id: str, body: dict[str, Any] | None = None):
     issue_types = [str(item) for item in payload.get("issue_types")] if payload.get("issue_types") else None
     page_ids = [str(item) for item in payload.get("page_ids")] if payload.get("page_ids") else None
     force = bool(payload.get("force"))
+    apply = bool(payload.get("apply"))
     total_steps = _wiki_repair_total_steps(backend, kb_id, issue_ids, issue_types, page_ids)
     if total_steps == 0:
         return {
@@ -1503,7 +1513,7 @@ async def repair_wiki(kb_id: str, body: dict[str, Any] | None = None):
                 "failed_issues": [],
             }),
         }
-    task = _queue_wiki_repair(kb_id, issue_ids, issue_types, page_ids, force)
+    task = _queue_wiki_repair(kb_id, issue_ids, issue_types, page_ids, force, apply)
     task_payload = task.to_dict()
     return {
         "status": "queued",

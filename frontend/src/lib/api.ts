@@ -226,6 +226,7 @@ export interface WikiLintPayload {
 export interface WikiRepairResult {
   repaired_count: number;
   candidate_count: number;
+  applied_count?: number;
   skipped_issues: Array<{ id: string; reason: string }>;
   failed_issues: Array<{ id: string; error: string }>;
   completed?: number;
@@ -1297,7 +1298,7 @@ export async function fetchWikiKbLint(kbId: string): Promise<WikiLintPayload> {
 
 export async function repairWikiKbIssues(
   kbId: string,
-  body: { issue_ids?: string[]; issue_types?: string[]; page_ids?: string[]; force?: boolean } = {},
+  body: { issue_ids?: string[]; issue_types?: string[]; page_ids?: string[]; force?: boolean; apply?: boolean } = {},
 ): Promise<WikiRepairResult> {
   const res = await fetch(`${BASE}/knowledge/${kbId}/wiki/repair`, {
     method: "POST",

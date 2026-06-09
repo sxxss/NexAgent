@@ -5,6 +5,7 @@ import json
 import os
 import re
 import textwrap
+from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -26,7 +27,10 @@ class WikiCompileMixin:
         file_meta,
         markdown: str,
     ) -> list[dict]:
-        compiled = await self._compile_markdown_with_llm(kb_id, file_id, file_meta, markdown)
+        try:
+            compiled = await self._compile_markdown_with_llm(kb_id, file_id, file_meta, markdown)
+        except TimeoutError as exc:
+            compiled = self._local_compiled_payload(file_meta, markdown, str(exc))
         source = compiled.get("source") or {}
         title = self._clean_wiki_title(source.get("title") or Path(file_meta.filename).stem or file_id)
         topics = self._clean_page_items(compiled.get("topics"), "topics")[:8]
@@ -43,7 +47,12 @@ class WikiCompileMixin:
                 kb_id,
                 page_type="source",
                 title=title,
-                content=self._source_page_content(file_meta.filename, markdown, source),
+                content=self._source_page_content(
+                    file_meta.filename,
+                    markdown,
+                    source,
+                    known_titles=planned_titles,
+                ),
                 sources=[file_id],
                 confidence=self._normalize_confidence(source.get("confidence"), "EXTRACTED"),
             )
@@ -85,12 +94,15 @@ class WikiCompileMixin:
                 )
             )
         cache = self._load_cache(kb_id)
+        page_ids = [page["id"] for page in pages]
+        self._cleanup_stale_generated_pages(kb_id, file_id, set(page_ids))
+        cache = self._load_cache(kb_id)
         cache[file_id] = {
             "filename": file_meta.filename,
             "content_hash": self._content_hash(markdown),
             "prompt_version": WIKI_PROMPT_VERSION,
             "status": "compiled",
-            "page_ids": [page["id"] for page in pages],
+            "page_ids": page_ids,
         }
         self._save_cache(kb_id, cache)
         return pages
@@ -163,7 +175,7 @@ class WikiCompileMixin:
             value = float(raw)
         except ValueError:
             return DEFAULT_WIKI_LLM_TIMEOUT_S
-        return value if value > 0 else DEFAULT_WIKI_LLM_TIMEOUT_S
+        return max(value, DEFAULT_WIKI_LLM_TIMEOUT_S) if value > 0 else DEFAULT_WIKI_LLM_TIMEOUT_S
 
     def _read_purpose(self, kb_id: str) -> str:
         path = self._db_root(kb_id) / "purpose.md"
@@ -222,6 +234,63 @@ class WikiCompileMixin:
             """
         ).strip()
         return [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+
+    def _local_compiled_payload(self, file_meta, markdown: str, reason: str) -> dict:
+        filename = str(getattr(file_meta, "filename", "") or "")
+        headings = self._extract_headings(markdown)
+        source_title = self._clean_wiki_title(headings[0] if headings else Path(filename).stem)
+        summary = self._summarize(markdown)
+        topic_titles = [
+            heading
+            for heading in headings
+            if self._normalize_link_key(heading) != self._normalize_link_key(source_title)
+        ][:8]
+        topics = [
+            {
+                "title": title,
+                "summary": self._section_excerpt(markdown, title),
+                "content": (
+                    f"本页由本地降级生成，原因：{reason}\n\n"
+                    f"{self._section_excerpt(markdown, title)}"
+                ),
+                "confidence": "UNVERIFIED",
+            }
+            for title in topic_titles
+        ]
+        known_keys = {
+            self._normalize_link_key(source_title),
+            *(self._normalize_link_key(title) for title in topic_titles),
+        }
+        entities = []
+        for entity in self._extract_entities(markdown):
+            key = self._normalize_link_key(entity)
+            if not key or key in known_keys:
+                continue
+            known_keys.add(key)
+            entities.append(
+                {
+                    "title": entity,
+                    "summary": f"源文档中出现的实体：{entity}",
+                    "content": (
+                        f"本页由本地降级生成，原因：{reason}\n\n"
+                        f"{entity} 与 [[{source_title}]] 相关。"
+                    ),
+                    "confidence": "UNVERIFIED",
+                }
+            )
+            if len(entities) >= 12:
+                break
+        return {
+            "source": {
+                "title": source_title,
+                "summary": f"本地降级生成：{summary}",
+                "key_points": topic_titles or [summary[:120]],
+                "claims": [],
+                "confidence": "UNVERIFIED",
+            },
+            "topics": topics,
+            "entities": entities,
+        }
 
     def _build_repair_prompt(self, bad_output: str, error: str) -> list[dict]:
         return [
@@ -347,7 +416,13 @@ class WikiCompileMixin:
         confidence = str(value or default).strip().upper()
         return confidence if confidence in CONFIDENCE_VALUES else default
 
-    def _source_page_content(self, filename: str, markdown: str, source: dict) -> str:
+    def _source_page_content(
+        self,
+        filename: str,
+        markdown: str,
+        source: dict,
+        known_titles: list[str] | None = None,
+    ) -> str:
         title = self._clean_wiki_title(source.get("title") or Path(filename).stem)
         summary = str(source.get("summary") or "").strip()
         key_points = self._clean_string_list(source.get("key_points"))[:8]
@@ -359,7 +434,7 @@ class WikiCompileMixin:
             f"## LLM Summary\n\n{summary}\n\n"
             f"## Key Points\n\n{self._bullet_list(key_points)}\n\n"
             f"## Claims\n\n{self._bullet_list(claims)}\n\n"
-            f"## Suggested Links\n\n{self._links_section(markdown)}"
+            f"## Suggested Links\n\n{self._links_section(markdown, known_titles, exclude_titles=[title])}"
         )
 
     def _page_content_from_llm(
@@ -461,11 +536,29 @@ class WikiCompileMixin:
             entities.append(clean_item)
         return entities
 
-    def _links_section(self, markdown: str) -> str:
+    def _links_section(
+        self,
+        markdown: str,
+        known_titles: list[str] | None = None,
+        exclude_titles: list[str] | None = None,
+    ) -> str:
         links = []
-        for item in self._extract_headings(markdown)[:5] + self._extract_entities(markdown)[:5]:
-            if item not in links:
-                links.append(item)
+        title_index = self._title_index_from_titles(known_titles or [])
+        exclude_keys = {
+            self._normalize_link_key(title)
+            for title in (exclude_titles or [])
+            if self._normalize_link_key(title)
+        }
+        for item in self._extract_headings(markdown)[:8] + self._extract_entities(markdown)[:20]:
+            clean_item = self._clean_wiki_title(item)
+            key = self._normalize_link_key(clean_item)
+            if not key or key in NOISE_WIKILINKS or key in exclude_keys:
+                continue
+            link_title = title_index.get(key) if title_index else clean_item
+            if not link_title:
+                continue
+            if link_title not in links:
+                links.append(link_title)
         return ", ".join(f"[[{item}]]" for item in links) if links else "No candidate links extracted."
 
     def _title_index_from_titles(self, titles: list[str]) -> dict[str, str]:
@@ -492,6 +585,48 @@ class WikiCompileMixin:
             for alias in aliases
             if alias and self._normalize_link_key(alias) != canonical_key
         }
+
+    def _cleanup_stale_generated_pages(self, kb_id: str, file_id: str, keep_page_ids: set[str]) -> None:
+        cache = self._load_cache(kb_id)
+        stale_page_ids = set(cache.get(file_id, {}).get("page_ids") or [])
+        for page in self._iter_page_details(kb_id):
+            page_id = page.get("id")
+            frontmatter = page.get("frontmatter") or {}
+            if not page_id or page_id in keep_page_ids:
+                continue
+            if frontmatter.get("type") not in {"source", "topic", "entity"}:
+                continue
+            if frontmatter.get("manual_edited"):
+                continue
+            if file_id in (frontmatter.get("sources") or []):
+                stale_page_ids.add(page_id)
+        stale_page_ids -= keep_page_ids
+        if not stale_page_ids:
+            return
+        state = self._load_state(kb_id)
+        changed = False
+        for page_id in sorted(stale_page_ids):
+            path = self._find_page_path(kb_id, page_id)
+            if path is None:
+                continue
+            frontmatter, content = self._read_page(path)
+            sources = list(frontmatter.get("sources") or [])
+            if frontmatter.get("manual_edited"):
+                continue
+            if file_id not in sources:
+                continue
+            if len(sources) <= 1 or frontmatter.get("type") == "source":
+                path.unlink(missing_ok=True)
+                state.get("candidates", {}).pop(page_id, None)
+                changed = True
+                continue
+            frontmatter["sources"] = [source for source in sources if source != file_id]
+            frontmatter["updated_at"] = datetime.now(UTC).isoformat()
+            self._write_page(path, frontmatter, content)
+            changed = True
+        if changed:
+            self._save_state(kb_id, state)
+            self._refresh_index(kb_id)
 
     def _fallback_link_entities(
         self,
@@ -523,28 +658,53 @@ class WikiCompileMixin:
             key = self._normalize_link_key(link)
             if not key or key in seen or key in source_alias_keys or key in NOISE_WIKILINKS:
                 continue
-            title = extracted_entities.get(key)
+            title = extracted_entities.get(key) or self._clean_wiki_title(link)
             if not title:
                 continue
             seen.add(key)
             fallback.append(
                 {
                     "title": self._clean_wiki_title(title),
-                    "summary": f"源文档中提到的实体：{title}",
-                    "content": f"{title} 与 [[{source_title}]] 相关，编译时由源文档实体候选自动补全。",
-                    "confidence": "INFERRED",
+                    "summary": f"编译输出引用但未生成的页面：{title}",
+                    "content": f"{title} 与 [[{source_title}]] 相关，编译时根据 wikilink 自动补全。",
+                    "confidence": "INFERRED" if key in extracted_entities else "UNVERIFIED",
                 }
             )
         return fallback
 
-    def _normalize_wikilinks(self, markdown: str, title_index: dict[str, str]) -> str:
+    def _section_excerpt(self, markdown: str, title: str) -> str:
+        title_key = self._normalize_link_key(title)
+        lines = (markdown or "").splitlines()
+        collecting = False
+        collected: list[str] = []
+        for line in lines:
+            match = re.match(r"^#{1,6}\s+(.+)$", line.strip())
+            if match:
+                current_key = self._normalize_link_key(match.group(1).strip(" #"))
+                if collecting and current_key != title_key:
+                    break
+                collecting = current_key == title_key
+                continue
+            if collecting:
+                collected.append(line)
+        excerpt = "\n".join(collected).strip()
+        return excerpt[:1200] if excerpt else self._summarize(markdown)
+
+    def _normalize_wikilinks(
+        self,
+        markdown: str,
+        title_index: dict[str, str],
+        keep_unknown: bool = True,
+    ) -> str:
         if not markdown or not title_index:
             return markdown
 
         def replace(match: re.Match[str]) -> str:
             raw_title = self._clean_wiki_title(match.group(1))
             canonical = title_index.get(self._normalize_link_key(raw_title))
-            return f"[[{canonical or raw_title}]]"
+            if canonical:
+                return f"[[{canonical}]]"
+            return f"[[{raw_title}]]" if keep_unknown else raw_title
 
         return re.sub(r"\[\[([^\]]+)\]\]", replace, markdown)
 
