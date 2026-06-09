@@ -1,4 +1,4 @@
-"""LLM Wiki — crystallize a conversation thread into a structured wiki page.
+"""Conversation-to-Wiki service.
 
 Pipeline:
   1. Load the conversation's messages.
@@ -13,11 +13,8 @@ factory and knowledge stack.
 
 from __future__ import annotations
 
-import json
-import os
 import re
 from inspect import isawaitable
-from pathlib import Path
 from typing import Any
 
 WIKI_SYSTEM_PROMPT = """你是一名知识管理专家。请把下面的对话沉淀成一篇结构化、可复用的中文 Wiki 知识页面。
@@ -28,30 +25,6 @@ WIKI_SYSTEM_PROMPT = """你是一名知识管理专家。请把下面的对话�
 - 只保留有长期价值的事实、结论、方法与定义；剔除寒暄、口语和重复内容。
 - 客观、第三人称、条理清晰；不要编造对话中不存在的信息。
 - 结尾加一行：`标签: tag1, tag2, tag3`（3-6 个）。"""
-
-
-def _wiki_dir() -> Path:
-    path = Path(os.environ.get("NEXAGENT_DATA_DIR", ".nexagent")) / "wiki"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def _index_path() -> Path:
-    return _wiki_dir() / "index.json"
-
-
-def _load_index() -> list[dict[str, Any]]:
-    p = _index_path()
-    if not p.exists():
-        return []
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
-        return []
-
-
-def _save_index(items: list[dict[str, Any]]) -> None:
-    _index_path().write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _extract_title(markdown: str) -> str:
@@ -81,28 +54,6 @@ def _format_transcript(messages: list[dict[str, Any]]) -> str:
             continue
         lines.append(f"{role}：{content}")
     return "\n\n".join(lines)
-
-
-async def _push_to_kb(kb_id: str, title: str, markdown: str) -> dict[str, Any]:
-    """Best-effort: add the page to a KB and trigger processing. Never raises."""
-    result: dict[str, Any] = {"kb_id": kb_id, "file_id": None, "warning": None}
-    try:
-        from nexagent.knowledge.manager import get_manager
-
-        manager = get_manager()
-        safe = re.sub(r"[^0-9A-Za-z一-鿿]+", "_", title).strip("_")[:60] or "wiki"
-        meta = await manager.add_file(kb_id, f"{safe}.md", markdown.encode("utf-8"))
-        file_id = getattr(meta, "id", None) or (meta.get("id") if isinstance(meta, dict) else None)
-        result["file_id"] = file_id
-        # Kick off parse + index in the background; ignore failures (infra may be down).
-        try:
-            await manager.parse_file(kb_id, file_id)
-            await manager.index_file(kb_id, file_id)
-        except Exception as exc:  # noqa: BLE001
-            result["warning"] = f"已存入知识库，但解析/索引未完成：{exc}"
-    except Exception as exc:  # noqa: BLE001
-        result["warning"] = f"未能写入知识库（{kb_id}）：{exc}"
-    return result
 
 
 async def _maybe_await(value):
@@ -191,28 +142,3 @@ def _model_ref_for_wiki_kb(kb_id: str) -> str | None:
     if llm.provider and "::" not in llm.model:
         return f"{llm.provider}::{llm.model}"
     return llm.model
-
-
-def list_pages() -> list[dict[str, Any]]:
-    return _load_index()
-
-
-def get_page(page_id: str) -> dict[str, Any] | None:
-    entry = next((item for item in _load_index() if item.get("id") == page_id), None)
-    if not entry:
-        return None
-    md_path = _wiki_dir() / f"{page_id}.md"
-    content = md_path.read_text(encoding="utf-8") if md_path.exists() else ""
-    return {**entry, "content": content}
-
-
-def delete_page(page_id: str) -> bool:
-    index = _load_index()
-    remaining = [item for item in index if item.get("id") != page_id]
-    if len(remaining) == len(index):
-        return False
-    _save_index(remaining)
-    md_path = _wiki_dir() / f"{page_id}.md"
-    if md_path.exists():
-        md_path.unlink()
-    return True

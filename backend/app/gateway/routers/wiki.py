@@ -1,4 +1,4 @@
-"""LLM Wiki router — crystallize conversations into reusable knowledge pages."""
+"""Conversation-to-Wiki router."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ class CrystallizeRequest(BaseModel):
     model: str | None = None
 
 
-@router.post("/crystallize", summary="Distill a conversation thread into a wiki page")
+@router.post("/crystallize", summary="Distill a conversation thread into a selected Wiki knowledge base")
 async def crystallize(req: CrystallizeRequest):
     from nexagent.services.wiki_service import crystallize_thread
 
@@ -26,28 +26,3 @@ async def crystallize(req: CrystallizeRequest):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"沉淀失败：{exc}") from exc
-
-
-@router.get("/pages", summary="List saved wiki pages")
-async def list_wiki_pages():
-    from nexagent.services.wiki_service import list_pages
-
-    return {"pages": list_pages()}
-
-
-@router.get("/pages/{page_id}", summary="Get a wiki page with content")
-async def get_wiki_page(page_id: str):
-    from nexagent.services.wiki_service import get_page
-
-    page = get_page(page_id)
-    if not page:
-        raise HTTPException(status_code=404, detail="Wiki page not found")
-    return page
-
-
-@router.delete("/pages/{page_id}", status_code=204, summary="Delete a wiki page")
-async def delete_wiki_page(page_id: str):
-    from nexagent.services.wiki_service import delete_page
-
-    if not delete_page(page_id):
-        raise HTTPException(status_code=404, detail="Wiki page not found")

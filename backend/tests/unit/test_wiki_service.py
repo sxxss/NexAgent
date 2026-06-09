@@ -96,3 +96,12 @@ async def test_global_wiki_crystallize_requires_target_kb(monkeypatch):
     assert exc.value.status_code == 400
     assert "Wiki 知识库" in str(exc.value.detail)
     assert called is False
+
+
+def test_global_wiki_router_does_not_expose_legacy_page_store():
+    from app.gateway.routers import wiki
+
+    paths = {getattr(route, "path", "") for route in wiki.router.routes}
+
+    assert "/crystallize" in paths
+    assert not any(path.startswith("/pages") for path in paths)

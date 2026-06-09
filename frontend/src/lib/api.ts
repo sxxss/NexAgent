@@ -1649,7 +1649,7 @@ export async function synthesizeSpeech(
   return { url: URL.createObjectURL(buf), mime };
 }
 
-// ── LLM Wiki ────────────────────────────────────────────────────────────────
+// ── Conversation Wiki crystallization ───────────────────────────────────────
 
 export interface WikiPage {
   id: string;
@@ -1672,22 +1672,6 @@ export async function crystallizeWiki(body: { thread_id: string; kb_id: string; 
   });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`);
   return res.json();
-}
-
-export async function fetchWikiPages(): Promise<WikiPage[]> {
-  const res = await fetch(`${BASE}/wiki/pages`);
-  if (!res.ok) return [];
-  return (await res.json()).pages ?? [];
-}
-
-export async function fetchWikiPage(id: string): Promise<WikiPage | null> {
-  const res = await fetch(`${BASE}/wiki/pages/${id}`);
-  if (!res.ok) return null;
-  return res.json();
-}
-
-export async function deleteWikiPage(id: string): Promise<void> {
-  await fetch(`${BASE}/wiki/pages/${id}`, { method: "DELETE" });
 }
 
 // ── Realtime voice call ─────────────────────────────────────────────────────
