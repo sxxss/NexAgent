@@ -81,6 +81,7 @@ export function WikiWorkbench({
   const loadSelectedPage = useCallback(async (pageId: string) => {
     setSelectedPageId(pageId);
     selectedPageIdRef.current = pageId;
+    replaceWikiPageUrl(pageId);
     setSelectedPage(pageId ? await fetchWikiKbPage(kb.kb_id, pageId) : null);
   }, [kb.kb_id]);
 
@@ -363,6 +364,18 @@ function graphParams(options: WikiGraphOptions): Record<string, string> {
     include_weak: String(Boolean(options.includeWeak)),
     ...(options.q.trim() ? { q: options.q.trim() } : {}),
   };
+}
+
+function replaceWikiPageUrl(pageId: string) {
+  if (typeof window === "undefined") return;
+  const nextUrl = new URL(window.location.href);
+  if (pageId) {
+    nextUrl.searchParams.set("wikiPage", pageId);
+  } else {
+    nextUrl.searchParams.delete("wikiPage");
+  }
+  const nextPath = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
+  window.history.replaceState(window.history.state, "", nextPath);
 }
 
 function filterWikiPages(pages: WikiPageSummary[], filters: WikiPageFilters): WikiPageSummary[] {
