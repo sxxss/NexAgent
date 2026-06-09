@@ -208,8 +208,8 @@ export function WikiPagePanel({
                 urlTransform={preserveWikiUrl}
                 components={{
                   a: ({ href, children }) => {
-                    if (href?.startsWith("wiki:")) {
-                      const pageId = decodeURIComponent(href.slice(5));
+                    const pageId = resolveWikiHref(href, pageLookup);
+                    if (pageId) {
                       return <button type="button" className="wiki-link font-semibold text-blue-700 underline decoration-blue-300 underline-offset-2 transition hover:text-blue-800" onClick={() => onSelect(pageId)}>{children}</button>;
                     }
                     return <a href={href} target="_blank" rel="noreferrer" className="font-medium text-blue-700 underline decoration-blue-200 underline-offset-2 hover:text-blue-800">{children}</a>;
@@ -335,22 +335,31 @@ export function emptyFilters(): WikiPageFilters {
 }
 
 function buildPageLookup(pages: WikiPageSummary[]) {
-  const lookup = new Map<string, string>();
+  const keyLookup = new Map<string, string>();
+  const pathLookup = new Map<string, string>();
   for (const page of pages) {
     for (const key of [page.title, page.id, page.path?.split("/").pop()?.replace(/\.md$/, "")]) {
       const normalized = normalizeWikiKey(key);
-      if (normalized && !lookup.has(normalized)) lookup.set(normalized, page.id);
+      if (normalized && !keyLookup.has(normalized)) keyLookup.set(normalized, page.id);
     }
+    const normalizedPath = normalizeWikiPath(page.path);
+    if (normalizedPath && !pathLookup.has(normalizedPath)) pathLookup.set(normalizedPath, page.id);
   }
-  return lookup;
+  return { keyLookup, pathLookup };
 }
 
-function renderWikiLinks(content: string, pageLookup: Map<string, string>) {
+function renderWikiLinks(content: string, pageLookup: ReturnType<typeof buildPageLookup>) {
   return content.replace(/\[\[([^\]#|]+)(?:[|#][^\]]*)?\]\]/g, (_match, rawTitle: string) => {
     const title = String(rawTitle || "").trim();
-    const pageId = pageLookup.get(normalizeWikiKey(title));
+    const pageId = pageLookup.keyLookup.get(normalizeWikiKey(title));
     return pageId ? `[${title}](wiki:${encodeURIComponent(pageId)})` : title;
   });
+}
+
+function resolveWikiHref(href: string | undefined, pageLookup: ReturnType<typeof buildPageLookup>) {
+  if (href?.startsWith("wiki:")) return safeDecodeURIComponent(href.slice(5));
+  if (!href?.startsWith("wiki/") && !href?.startsWith("/wiki/")) return "";
+  return pageLookup.pathLookup.get(normalizeWikiPath(href)) ?? "";
 }
 
 function preserveWikiUrl(value: string) {
@@ -367,6 +376,23 @@ function normalizeWikiKey(value = "") {
     .replace(/[《》]/g, "")
     .replace(/[\s\-_/\\、，,。.!?！？:：;；()[\]{}<>`]+/g, "")
     .toLowerCase();
+}
+
+function normalizeWikiPath(value = "") {
+  return safeDecodeURIComponent(String(value).trim())
+    .replace(/^https?:\/\/[^/]+/i, "")
+    .replace(/^\/+/, "")
+    .replace(/[?#].*$/, "")
+    .replace(/\.md$/, "")
+    .toLowerCase();
+}
+
+function safeDecodeURIComponent(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 function sourceNames(sourceIds: string[], files: FileMeta[]) {
