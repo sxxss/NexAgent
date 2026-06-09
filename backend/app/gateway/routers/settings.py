@@ -91,7 +91,7 @@ class SearchTestRequest(BaseModel):
 class ModelProbeRequest(BaseModel):
     provider_id: str
     model_id: str
-    capability: Literal["embedding", "rerank"]
+    capability: Literal["chat", "embedding", "rerank"]
     sample_text: str = "NexAgent model connectivity test"
 
 
@@ -788,7 +788,7 @@ async def test_provider_capabilities(provider_id: str):
 
 @router.post("/models/test")
 async def test_provider_model(req: ModelProbeRequest):
-    """Probe a concrete embedding or rerank model from the configured providers."""
+    """Probe a concrete chat, embedding, or rerank model from the configured providers."""
     from nexagent.db.crypto import decrypt_key
     from nexagent.db.models import ModelProvider
     from nexagent.db.session import AsyncSessionLocal
@@ -818,7 +818,10 @@ async def test_provider_model(req: ModelProbeRequest):
 
     start = time.monotonic()
     try:
-        if req.capability == "embedding":
+        if req.capability == "chat":
+            content = await _probe_model(provider_type, model_id, api_key, base_url)
+            result = {"message": content}
+        elif req.capability == "embedding":
             result = await _probe_embedding_model(provider_type, model_id, api_key, base_url, req.sample_text)
         else:
             result = await _probe_rerank_model(provider_type, model_id, api_key, base_url, req.sample_text)

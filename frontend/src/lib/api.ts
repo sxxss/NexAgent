@@ -1501,7 +1501,7 @@ export async function testProviderCapabilities(id: string): Promise<{
 export async function testProviderModel(body: {
   provider_id: string;
   model_id: string;
-  capability: "embedding" | "rerank";
+  capability: ProviderCapability;
   sample_text?: string;
 }): Promise<ModelProbeResult> {
   const res = await fetch(`${BASE}/settings/models/test`, {

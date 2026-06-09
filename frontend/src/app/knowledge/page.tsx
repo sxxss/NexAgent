@@ -76,6 +76,7 @@ export default function KnowledgePage() {
   const [form, setForm] = useState(initialForm);
   const [probeResult, setProbeResult] = useState<ModelProbeResult | null>(null);
   const [probeError, setProbeError] = useState("");
+  const [probeCapability, setProbeCapability] = useState<ProviderCapability | null>(null);
 
   const kbsQuery = useQuery({ queryKey: ["kbs"], queryFn: fetchKBs });
   const providersQuery = useQuery({ queryKey: ["providers"], queryFn: fetchProviders });
@@ -120,18 +121,24 @@ export default function KnowledgePage() {
       setForm(initialForm);
       setProbeResult(null);
       setProbeError("");
+      setProbeCapability(null);
       await queryClient.invalidateQueries({ queryKey: ["kbs"] });
     },
   });
 
   const testModelMutation = useMutation({
-    mutationFn: ({ option, capability }: { option: ProviderModelOption; capability: "embedding" | "rerank" }) =>
+    mutationFn: ({ option, capability }: { option: ProviderModelOption; capability: ProviderCapability }) =>
       testProviderModel({
         provider_id: option.providerId,
         model_id: option.modelId,
         capability,
         sample_text: "NexAgent knowledge base model test",
       }),
+    onMutate: ({ capability }) => {
+      setProbeCapability(capability);
+      setProbeResult(null);
+      setProbeError("");
+    },
     onSuccess: (result) => {
       setProbeResult(result);
       setProbeError("");
@@ -149,6 +156,7 @@ export default function KnowledgePage() {
     setShowCreate(false);
     setProbeResult(null);
     setProbeError("");
+    setProbeCapability(null);
   };
 
   const submitDisabled = !form.name.trim() || (requiresEmbedding && !form.embed_model) || (requiresLLM && !form.llm_model) || createMutation.isPending;
@@ -266,6 +274,7 @@ export default function KnowledgePage() {
                       setForm({ ...form, embed_model: option.value, embed_dimension: option.dimension || form.embed_dimension });
                       setProbeResult(null);
                       setProbeError("");
+                      setProbeCapability(null);
                     }}
                   />
                 </Field>
@@ -283,20 +292,37 @@ export default function KnowledgePage() {
                     检测模型
                   </button>
                 </div>
-                <ProbeNotice result={probeResult} error={probeError} />
+                <ProbeNotice result={probeCapability === "embedding" ? probeResult : null} error={probeCapability === "embedding" ? probeError : ""} />
               </FormSection>
             ) : null}
 
             {requiresLLM ? (
               <FormSection title="LLM 配置" description="Wiki 用 LLM 编译页面；LightRAG 用 LLM 抽取实体和关系。">
-                <Field label="LLM 模型" required hint="只显示已启用供应商中标记为 chat 的模型。">
-                  <ModelPicker
-                    value={form.llm_model}
-                    options={chatModels}
-                    placeholder={providersQuery.isLoading ? "加载模型中..." : "选择 LLM 模型"}
-                    onChange={(option) => setForm({ ...form, llm_model: option.value })}
-                  />
-                </Field>
+                <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                  <Field label="LLM 模型" required hint="只显示已启用供应商中标记为 chat 的模型。">
+                    <ModelPicker
+                      value={form.llm_model}
+                      options={chatModels}
+                      placeholder={providersQuery.isLoading ? "加载模型中..." : "选择 LLM 模型"}
+                      onChange={(option) => {
+                        setForm({ ...form, llm_model: option.value });
+                        setProbeResult(null);
+                        setProbeError("");
+                        setProbeCapability(null);
+                      }}
+                    />
+                  </Field>
+                  <button
+                    type="button"
+                    className={cn(outlineButton, "mt-6 justify-center")}
+                    disabled={!selectedLLM || testModelMutation.isPending}
+                    onClick={() => selectedLLM && testModelMutation.mutate({ option: selectedLLM, capability: "chat" })}
+                  >
+                    {testModelMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                    检测模型
+                  </button>
+                </div>
+                <ProbeNotice result={probeCapability === "chat" ? probeResult : null} error={probeCapability === "chat" ? probeError : ""} />
                 <Field label="处理语言">
                   <select className={inputClass} value={form.language} onChange={(event) => setForm({ ...form, language: event.target.value })}>
                     <option value="Chinese">中文</option>
@@ -486,10 +512,35 @@ function ModelSettingsDialogContent({
   const [rerankerModel, setRerankerModel] = useState(() => String(modelConfig.reranker_model ?? ""));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [settingsProbeResult, setSettingsProbeResult] = useState<ModelProbeResult | null>(null);
+  const [settingsProbeError, setSettingsProbeError] = useState("");
   const isWiki = kb.kb_type === "wiki";
   const needsLLM = kb.kb_type === "wiki" || kb.kb_type === "lightrag";
   const needsEmbedding = kb.kb_type !== "wiki";
+  const selectedSettingsLLM = chatModels.find((item) => item.value === llmModel);
   const selectedEmbedding = embeddingModels.find((item) => item.value === embedModel);
+
+  const settingsTestModelMutation = useMutation({
+    mutationFn: (option: ProviderModelOption) =>
+      testProviderModel({
+        provider_id: option.providerId,
+        model_id: option.modelId,
+        capability: "chat",
+        sample_text: "NexAgent wiki model test",
+      }),
+    onMutate: () => {
+      setSettingsProbeResult(null);
+      setSettingsProbeError("");
+    },
+    onSuccess: (result) => {
+      setSettingsProbeResult(result);
+      setSettingsProbeError("");
+    },
+    onError: (err) => {
+      setSettingsProbeResult(null);
+      setSettingsProbeError(err instanceof Error ? err.message : "模型检测失败");
+    },
+  });
 
   const save = async () => {
     setSaving(true);
@@ -519,9 +570,30 @@ function ModelSettingsDialogContent({
         </div>
         {needsLLM ? (
           <FormSection title="LLM 配置" description={isWiki ? "用于 Wiki 编译页面、抽取主题和对话沉淀。" : "用于 LightRAG 抽取实体关系。"}>
-            <Field label="LLM 模型" required>
-              <ModelPicker value={llmModel} options={chatModels} placeholder={kb.llm_info?.model || "选择 LLM 模型"} onChange={(option) => setLlmModel(option.value)} />
-            </Field>
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+              <Field label="LLM 模型" required>
+                <ModelPicker
+                  value={llmModel}
+                  options={chatModels}
+                  placeholder={kb.llm_info?.model || "选择 LLM 模型"}
+                  onChange={(option) => {
+                    setLlmModel(option.value);
+                    setSettingsProbeResult(null);
+                    setSettingsProbeError("");
+                  }}
+                />
+              </Field>
+              <button
+                type="button"
+                className={cn(outlineButton, "mt-6 justify-center")}
+                disabled={!selectedSettingsLLM || settingsTestModelMutation.isPending}
+                onClick={() => selectedSettingsLLM && settingsTestModelMutation.mutate(selectedSettingsLLM)}
+              >
+                {settingsTestModelMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                检测模型
+              </button>
+            </div>
+            <ProbeNotice result={settingsProbeResult} error={settingsProbeError} />
           </FormSection>
         ) : null}
         {needsEmbedding ? (
