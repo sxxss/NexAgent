@@ -218,7 +218,7 @@ class ProductionKnowledgeService:
                 "requires_reindex": True,
             }
 
-    async def add_file(self, kb_id: str, filename: str, content: bytes) -> FileMeta:
+    async def add_file(self, kb_id: str, filename: str, content: bytes, processing_params: dict | None = None) -> FileMeta:
         safe_name = _sanitize_upload_filename(filename)
         _validate_upload_content(content, safe_name)
         checksum = hashlib.sha256(content).hexdigest()
@@ -249,7 +249,8 @@ class ProductionKnowledgeService:
                     "chunk_parser_config": kb.chunk_parser_config or {},
                     "chunk_size": kb.chunk_size,
                     "chunk_overlap": kb.chunk_overlap,
-                }
+                },
+                processing_params,
             )
             record.parse_metadata = {"object_store_degraded": write.degraded}
             session.add(record)

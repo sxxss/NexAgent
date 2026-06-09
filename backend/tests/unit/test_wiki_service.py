@@ -18,11 +18,12 @@ async def test_crystallize_thread_into_wiki_kb_registers_source_and_page(monkeyp
             return SimpleNamespace(content="# Decision Log\n\n## Summary\n\nUse Wiki KB.\n\n标签: wiki, decision")
 
     class FakeBackend:
-        async def add_file(self, kb_id, filename, content):
+        async def add_file(self, kb_id, filename, content, processing_params=None):
             calls["add_file"] = {
                 "kb_id": kb_id,
                 "filename": filename,
                 "content": content.decode("utf-8"),
+                "processing_params": processing_params or {},
             }
             return SimpleNamespace(file_id="file-1")
 
@@ -72,6 +73,8 @@ async def test_crystallize_thread_into_wiki_kb_registers_source_and_page(monkeyp
     assert result["id"] == "note:decision-log"
     assert result["file_id"] == "file-1"
     assert calls["add_file"]["filename"] == "Decision Log.md"
+    assert calls["add_file"]["processing_params"]["source_type"] == "conversation_crystallize"
+    assert calls["add_file"]["processing_params"]["source_thread_id"] == "thread-1"
     assert calls["crystallize"]["sources"] == ["file-1"]
     assert calls["crystallize"]["confidence"] == "UNVERIFIED"
 

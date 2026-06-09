@@ -647,6 +647,7 @@ function WikiFileList({
           const status = statusMap[file.status];
           const Icon = status.icon;
           const processing = processingIds.has(file.file_id) || file.progress?.is_running;
+          const sourceLabel = sourceTypeLabel(file);
           return (
             <div
               key={file.file_id}
@@ -658,7 +659,14 @@ function WikiFileList({
               <div className="flex min-w-0 items-start justify-between gap-2">
                 <button type="button" onClick={() => onToggleSourceFilter(file.file_id)} className="min-w-0 flex-1 text-left">
                   <p className="truncate text-sm font-medium text-slate-800" title={file.filename}>{file.filename}</p>
-                  <p className="mt-1 truncate text-xs text-slate-400">{formatBytes(file.file_size)} · {file.chunk_count || 0} chunks · {formatDate(file.updated_at || file.created_at)}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-slate-400">
+                    <span>{formatBytes(file.file_size)}</span>
+                    <span>·</span>
+                    <span>{file.chunk_count || 0} chunks</span>
+                    <span>·</span>
+                    <span>{formatDate(file.updated_at || file.created_at)}</span>
+                    {sourceLabel ? <Badge variant="info" className="px-2 py-0 text-[11px]">{sourceLabel}</Badge> : null}
+                  </div>
                 </button>
                 <Badge variant={status.variant}><Icon size={11} className={processing ? "animate-spin" : ""} />{status.label}</Badge>
               </div>
@@ -674,6 +682,13 @@ function WikiFileList({
       </div>
     </section>
   );
+}
+
+function sourceTypeLabel(file: FileMeta) {
+  const sourceType = String(file.processing_params?.source_type || "");
+  if (sourceType === "conversation_crystallize") return "沉淀";
+  if (sourceType === "conversation_attachment") return "附件沉淀";
+  return "";
 }
 
 function WikiTaskQueue({ jobs, onRetry, onCancel }: { jobs: IngestionJob[]; onRetry: (jobId: string) => void; onCancel: (taskId: string) => void }) {

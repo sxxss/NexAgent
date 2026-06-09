@@ -139,8 +139,14 @@ class KnowledgeBaseManager:
 
     # ── File management ───────────────────────────────────────────────────────
 
-    async def add_file(self, kb_id: str, filename: str, content: bytes) -> FileMeta:
-        return await self._find_backend(kb_id).add_file(kb_id, filename, content)
+    async def add_file(
+        self,
+        kb_id: str,
+        filename: str,
+        content: bytes,
+        processing_params: dict | None = None,
+    ) -> FileMeta:
+        return await self._find_backend(kb_id).add_file(kb_id, filename, content, processing_params=processing_params)
 
     async def parse_file(self, kb_id: str, file_id: str) -> FileMeta:
         return await self._find_backend(kb_id).parse_file(kb_id, file_id)

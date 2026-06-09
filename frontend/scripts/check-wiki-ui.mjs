@@ -42,6 +42,7 @@ const checks = [
   ["detail", "WikiSourceToolbar"],
   ["detail", "WikiQuickUpload"],
   ["detail", "WikiFileList"],
+  ["detail", "sourceTypeLabel"],
   ["detail", "WikiTaskQueue"],
   ["detail", "showUpload"],
   ["detail", "uploadDialogDropzone"],

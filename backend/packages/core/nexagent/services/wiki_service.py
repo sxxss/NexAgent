@@ -26,6 +26,8 @@ WIKI_SYSTEM_PROMPT = """你是一名知识管理专家。请把下面的对话�
 - 客观、第三人称、条理清晰；不要编造对话中不存在的信息。
 - 结尾加一行：`标签: tag1, tag2, tag3`（3-6 个）。"""
 
+CRYSTALLIZE_SOURCE_TYPE = "conversation_crystallize"
+
 
 def _extract_title(markdown: str) -> str:
     for line in markdown.splitlines():
@@ -62,7 +64,7 @@ async def _maybe_await(value):
     return value
 
 
-async def _crystallize_into_wiki_kb(kb_id: str, title: str, markdown: str) -> dict[str, Any]:
+async def _crystallize_into_wiki_kb(kb_id: str, title: str, markdown: str, *, thread_id: str) -> dict[str, Any]:
     from nexagent.knowledge.manager import get_manager
 
     manager = get_manager()
@@ -72,7 +74,17 @@ async def _crystallize_into_wiki_kb(kb_id: str, title: str, markdown: str) -> di
     if getattr(kb.kb_type, "value", kb.kb_type) != "wiki":
         raise ValueError(f"知识库 {kb_id} 不是 Wiki 类型。")
     backend = manager._find_backend(kb_id)
-    source = await backend.add_file(kb_id, f"{title}.md", markdown.encode("utf-8"))
+    source = await backend.add_file(
+        kb_id,
+        f"{title}.md",
+        markdown.encode("utf-8"),
+        processing_params={
+            "source_type": CRYSTALLIZE_SOURCE_TYPE,
+            "source_thread_id": thread_id,
+            "crystallized_title": title,
+            "crystallized_page_type": "note",
+        },
+    )
     file_id = source.file_id
     warning = ""
     try:
@@ -124,7 +136,7 @@ async def crystallize_thread(
     title = _extract_title(markdown)
     tags = _extract_tags(markdown)
 
-    page = await _crystallize_into_wiki_kb(kb_id, title, markdown)
+    page = await _crystallize_into_wiki_kb(kb_id, title, markdown, thread_id=thread_id)
     return {**page, "tags": tags, "thread_id": thread_id, "char_count": len(markdown)}
 
 

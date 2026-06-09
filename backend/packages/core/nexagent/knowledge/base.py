@@ -280,6 +280,7 @@ class KnowledgeBase(ABC):
         kb_id: str,
         filename: str,
         content: bytes,
+        processing_params: dict | None = None,
     ) -> FileMeta:
         """Save an uploaded file and return its metadata (not yet indexed)."""
         from nexagent.knowledge.chunking import resolve_chunk_processing_params
@@ -306,7 +307,8 @@ class KnowledgeBase(ABC):
                     "chunk_parser_config": kb_meta.chunk_parser_config,
                     "chunk_size": kb_meta.chunk_size,
                     "chunk_overlap": kb_meta.chunk_overlap,
-                }
+                },
+                processing_params,
             ),
         )
         try:
