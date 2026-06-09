@@ -1,4 +1,4 @@
-"""Read-only tools for LLM Wiki knowledge bases."""
+"""Read-only tools for Wiki knowledge bases."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ def get_list_wiki_pages_tool(kb_ids: list[str] | None = None):
         q: str | None = None,
         source_file_id: str | None = None,
     ) -> str:
-        """List pages in an enabled LLM Wiki knowledge base with optional filters."""
+        """List pages in an enabled Wiki knowledge base with optional filters."""
 
         try:
             target = _resolve_wiki_target(kb_id, target_kb_ids)
@@ -65,7 +65,7 @@ def get_read_wiki_page_tool(kb_ids: list[str] | None = None):
 
     @tool
     async def read_wiki_page(kb_id: str, page_id: str) -> str:
-        """Read a page from an enabled LLM Wiki knowledge base."""
+        """Read a page from an enabled Wiki knowledge base."""
 
         try:
             target = _resolve_wiki_target(kb_id, target_kb_ids)
@@ -87,7 +87,7 @@ def get_wiki_lint_tool(kb_ids: list[str] | None = None):
 
     @tool
     async def wiki_lint(kb_id: str) -> str:
-        """Inspect health issues for an enabled LLM Wiki knowledge base."""
+        """Inspect health issues for an enabled Wiki knowledge base."""
 
         try:
             target = _resolve_wiki_target(kb_id, target_kb_ids)
@@ -109,7 +109,7 @@ def get_wiki_graph_tool(kb_ids: list[str] | None = None):
 
     @tool
     async def get_wiki_graph(kb_id: str, q: str | None = None, max_edges: int = 80) -> str:
-        """Read a relationship graph summary for an enabled LLM Wiki knowledge base."""
+        """Read a relationship graph summary for an enabled Wiki knowledge base."""
 
         try:
             target = _resolve_wiki_target(kb_id, target_kb_ids)
@@ -143,7 +143,7 @@ def get_compile_wiki_tool(kb_ids: list[str] | None = None):
         retry_failed: bool = False,
         confirmed: bool = False,
     ) -> str:
-        """Compile an enabled LLM Wiki knowledge base after explicit user confirmation."""
+        """Compile an enabled Wiki knowledge base after explicit user confirmation."""
 
         try:
             target = _resolve_wiki_target(kb_id, target_kb_ids)
@@ -369,7 +369,7 @@ def _resolve_wiki_target(kb_id: str, allowed_kb_ids: list[str]) -> _WikiTarget:
     if kb is None:
         raise _WikiToolError(f"Wiki knowledge base '{normalized_kb_id}' was not found.")
     if _kb_type(kb) != "wiki":
-        raise _WikiToolError(f"Knowledge base '{normalized_kb_id}' is not an LLM Wiki knowledge base.")
+        raise _WikiToolError(f"Knowledge base '{normalized_kb_id}' is not a Wiki knowledge base.")
     if backend is None:
         backend = _find_backend(mgr, normalized_kb_id, raise_on_missing=True)
     if backend is None:

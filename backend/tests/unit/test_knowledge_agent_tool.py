@@ -267,6 +267,31 @@ async def test_list_wiki_pages_tool_scopes_and_formats_pages(monkeypatch):
 
 
 @pytest.mark.unit
+def test_wiki_tool_descriptions_use_wiki_knowledge_base_name():
+    from nexagent.tools import registry
+    from nexagent.tools.builtin import wiki
+
+    user_facing_text = "\n".join(
+        [
+            *(
+                spec.description
+                for spec in registry._BUILTIN_SPECS.values()
+                if spec.module == "nexagent.tools.builtin.wiki"
+            ),
+            wiki.__doc__ or "",
+            wiki.get_list_wiki_pages_tool().__doc__ or "",
+            wiki.get_read_wiki_page_tool().__doc__ or "",
+            wiki.get_wiki_lint_tool().__doc__ or "",
+            wiki.get_wiki_graph_tool().__doc__ or "",
+            wiki.get_compile_wiki_tool().__doc__ or "",
+        ]
+    )
+
+    assert "Wiki knowledge base" in user_facing_text
+    assert "LLM Wiki" not in user_facing_text
+
+
+@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_read_wiki_page_tool_includes_content_metadata_and_candidate(monkeypatch):
     from nexagent.tools.builtin.wiki import get_read_wiki_page_tool

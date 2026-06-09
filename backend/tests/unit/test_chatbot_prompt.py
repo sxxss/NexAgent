@@ -59,6 +59,17 @@ def test_chatbot_prompt_enforces_managed_skill_lifecycle_tools():
 
 
 @pytest.mark.unit
+def test_chatbot_prompt_uses_wiki_knowledge_base_name():
+    from nexagent.agents.builtin.chatbot.agent import _build_system_prompt
+    from nexagent.agents.context import BaseContext
+
+    prompt = _build_system_prompt(BaseContext(user_id=""))
+
+    assert "Wiki 知识库" in prompt
+    assert "LLM Wiki" not in prompt
+
+
+@pytest.mark.unit
 def test_chatbot_prompt_does_not_auto_discover_enabled_skills(monkeypatch, tmp_path):
     from nexagent.agents.builtin.chatbot.agent import _build_system_prompt
     from nexagent.agents.context import BaseContext

@@ -208,7 +208,7 @@ def _build_system_prompt(context: BaseContext) -> str:
     )
     base += (
         "\n\n## Wiki Knowledge Policy"
-        "\nWhen an enabled knowledge base is an LLM Wiki, prefer Wiki-specific tools for structural questions: "
+        "\n当启用的知识库是 Wiki 知识库时，结构性问题优先使用 Wiki 专用工具："
         "use list_wiki_pages to inspect the page catalog, read_wiki_page to read canonical page content, "
         "wiki_lint to check health issues and repair suggestions, and get_wiki_graph to inspect Wiki page "
         "relationships. Use knowledge_search mode=wiki for semantic retrieval over Wiki content. Treat the Wiki "
