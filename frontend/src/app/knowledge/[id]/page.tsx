@@ -317,7 +317,8 @@ export default function KBDetailPage() {
           resources={({ filters, setFilters, candidateCount, needsReviewCount }: WikiResourceContext) => {
             const activeSourceFileId = filters.source_file_id;
             const failedSourceCount = files.filter(isFailedWikiSource).length;
-            const llmLabel = wikiLlmLabel(kb);
+            const llmLabel = wikiLlmStatusLabel(kb);
+            const llmTitle = wikiFullLlmLabel(kb);
             const compileStatus = wikiCompileStatus(files, activeJob, candidateCount);
             const applyWikiStatusFilter = (status: string) => {
               setFilters({ ...filters, status: filters.status === status ? "" : status });
@@ -344,6 +345,7 @@ export default function KBDetailPage() {
                 needsReviewCount={needsReviewCount}
                 failedSourceCount={failedSourceCount}
                 activeStatus={filters.status}
+                llmTitle={llmTitle}
                 onUpload={handleUpload}
                 onProcessAll={handleProcessAll}
                 onStatusFilter={applyWikiStatusFilter}
@@ -573,6 +575,7 @@ function WikiSourceSection({
   previewLoading,
   jobs,
   llmLabel,
+  llmTitle,
   indexedCount,
   compileStatus,
   candidateCount,
@@ -602,6 +605,7 @@ function WikiSourceSection({
   previewLoading: boolean;
   jobs: IngestionJob[];
   llmLabel: string;
+  llmTitle: string;
   indexedCount: number;
   compileStatus: { label: string; variant: "secondary" | "info" | "success" | "warning" | "error" };
   candidateCount: number;
@@ -634,6 +638,7 @@ function WikiSourceSection({
       />
       <WikiStatusStrip
         llmLabel={llmLabel}
+        llmTitle={llmTitle}
         indexedCount={indexedCount}
         fileCount={files.length}
         compileStatus={compileStatus}
@@ -662,6 +667,7 @@ function WikiSourceSection({
 
 function WikiStatusStrip({
   llmLabel,
+  llmTitle,
   indexedCount,
   fileCount,
   compileStatus,
@@ -674,6 +680,7 @@ function WikiStatusStrip({
   disabled,
 }: {
   llmLabel: string;
+  llmTitle: string;
   indexedCount: number;
   fileCount: number;
   compileStatus: { label: string; variant: "secondary" | "info" | "success" | "warning" | "error" };
@@ -688,7 +695,9 @@ function WikiStatusStrip({
   return (
     <div className={wikiStatusStrip}>
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-        <Badge variant="info" className="max-w-full truncate">{llmLabel}</Badge>
+        <span className="min-w-0 shrink-0 max-w-full" title={llmTitle || llmLabel}>
+          <Badge variant="info" className={wikiLlmStatusBadge}>{llmLabel}</Badge>
+        </span>
         <Badge variant="secondary">{indexedCount}/{fileCount} 已编译</Badge>
         <Badge variant={compileStatus.variant}>{compileStatus.label}</Badge>
         {candidateCount ? <Badge variant="warning">{candidateCount} 个候选待处理</Badge> : null}
@@ -813,14 +822,15 @@ function WikiFileList({
             <div
               key={file.file_id}
               className={cn(
-                "rounded-md border px-1.5 py-1.5 transition",
+                wikiFileRow,
                 activeSourceFileId === file.file_id ? "border-sky-200 bg-sky-50" : "border-transparent bg-slate-50 hover:border-slate-200",
               )}
             >
-              <div className="flex min-w-0 items-center gap-1">
+              <div className="flex min-w-0 items-start gap-1.5">
                 <button type="button" onClick={() => onToggleSourceFilter(file.file_id)} className={wikiSourceItemMain} title={`${file.filename}\n${metaTitle}`}>
-                  <span className="min-w-0 truncate text-sm font-medium text-slate-800">{file.filename}</span>
-                  <span className="flex shrink-0 items-center gap-1">
+                  <span className={wikiSourceFileNameLine}>{file.filename}</span>
+                  <span className={wikiSourceFileMetaLine}>
+                    <span className="min-w-0 truncate">{formatBytes(file.file_size)} · {file.chunk_count || 0} chunks</span>
                     {sourceLabel ? <Badge variant="info" className="px-1.5 py-0 text-[10px]">{sourceLabel}</Badge> : null}
                     <span className={cn(sourceStatusPill, status.variant === "error" && "text-rose-700", status.variant === "success" && "text-emerald-700", status.variant === "warning" && "text-amber-700")}>
                       <Icon size={11} className={processing ? "animate-spin" : ""} />
@@ -828,7 +838,7 @@ function WikiFileList({
                     </span>
                   </span>
                 </button>
-                <div className="flex shrink-0 items-center gap-0.5">
+                <div className="flex shrink-0 items-center gap-0.5 pt-0.5">
                   <button type="button" onClick={() => onPreview(file.file_id)} className={wikiInlineIconButton} title="预览"><Eye size={13} /></button>
                   <button type="button" onClick={() => onProcess(file.file_id)} disabled={!file.progress?.can_process && !file.progress?.can_index} className={wikiInlineIconButton} title="处理"><Play size={13} /></button>
                   <button type="button" onClick={() => onDelete(file.file_id, file.filename)} className={cn(wikiInlineIconButton, "hover:text-rose-600")} title="删除"><Trash2 size={13} /></button>
@@ -1386,12 +1396,27 @@ function providerModelOptions(providers: ModelProvider[], capability: ProviderCa
     });
 }
 
-function wikiLlmLabel(kb: KBMeta) {
-  const model = kb.llm_info?.model || "";
-  const provider = kb.llm_info?.provider || "";
-  if (model && provider) return `LLM ${provider}/${model}`;
-  if (model) return `LLM ${model}`;
+function wikiLlmStatusLabel(kb: KBMeta) {
+  const model = kb.llm_info?.model?.trim() || "";
+  const provider = kb.llm_info?.provider?.trim() || "";
+  const shortModel = compactModelName(model);
+  if (shortModel && provider && !provider.startsWith("config-")) return `LLM ${shortModel} · ${provider}`;
+  if (shortModel) return `LLM ${shortModel}`;
+  if (provider && !provider.startsWith("config-")) return `LLM ${provider}`;
   return "LLM 未配置";
+}
+
+function wikiFullLlmLabel(kb: KBMeta) {
+  const model = kb.llm_info?.model?.trim() || "";
+  const provider = kb.llm_info?.provider?.trim() || "";
+  if (model && provider) return ["LLM", `${provider}/${model}`].join(" ");
+  if (model) return `LLM ${model}`;
+  if (provider) return `LLM ${provider}`;
+  return "";
+}
+
+function compactModelName(model: string) {
+  return model.split("/").filter(Boolean).pop() || model;
 }
 
 function isFailedWikiSource(file: FileMeta) {
@@ -1449,6 +1474,7 @@ const wikiUploadDialogTrigger = "inline-flex h-8 items-center justify-center gap
 const wikiToolbarIconButton = "inline-flex h-8 items-center justify-center gap-1 rounded-md border bg-white px-2 text-xs font-semibold transition hover:bg-slate-50 disabled:opacity-45";
 const wikiCompactKnowledgeCard = "rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm";
 const wikiStatusStrip = "flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-t border-slate-100 bg-white px-2.5 py-1.5";
+const wikiLlmStatusBadge = "max-w-[160px] truncate";
 const wikiQuickFilterButton = "inline-flex h-7 items-center justify-center rounded-md border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-45";
 const wikiQuickFilterActive = "border-sky-200 bg-sky-50 text-sky-700";
 const taskQueueTrigger = "inline-flex h-8 items-center justify-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-45";
@@ -1456,6 +1482,9 @@ const wikiSidebar = "space-y-2";
 const uploadDialogDropzone = "flex min-h-52 flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-8 text-center transition";
 const taskQueuePopover = "absolute right-0 z-30 mt-2 w-[340px] rounded-xl border border-slate-200 bg-white p-3 shadow-xl";
 const wikiSourcePanelHeader = "mb-1 flex items-center justify-between gap-2 px-0.5";
-const wikiSourceItemMain = "flex min-w-0 flex-1 items-center justify-between gap-2 rounded px-1.5 py-1 text-left";
+const wikiFileRow = "rounded-md border px-1.5 py-1.5 transition";
+const wikiSourceItemMain = "flex min-w-0 flex-1 flex-col items-start gap-1 rounded px-1.5 py-1 text-left";
+const wikiSourceFileNameLine = "block w-full min-w-0 truncate text-sm font-medium text-slate-800";
+const wikiSourceFileMetaLine = "flex w-full min-w-0 flex-wrap items-center gap-1 text-[11px] text-slate-400";
 const sourceStatusPill = "inline-flex h-5 items-center gap-1 rounded bg-white px-1.5 text-[10px] font-semibold text-slate-500";
 const tinyButton = "rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100";
