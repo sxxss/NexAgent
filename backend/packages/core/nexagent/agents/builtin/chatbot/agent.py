@@ -28,7 +28,17 @@ class ChatbotAgent(BaseAgent):
 
     name = "chatbot"
     description = "General-purpose conversational AI assistant."
-    capabilities = ["knowledge_search", "web_search", "execute_python", "skills", "subagents"]
+    capabilities = [
+        "knowledge_search",
+        "list_wiki_pages",
+        "read_wiki_page",
+        "wiki_lint",
+        "get_wiki_graph",
+        "web_search",
+        "execute_python",
+        "skills",
+        "subagents",
+    ]
 
     async def get_graph(self, context: BaseContext | None = None, **kwargs):
         context = context or self.context_schema()
@@ -86,6 +96,10 @@ async def _load_context_tools(context: BaseContext):
         return []
     default_tools = [
         "knowledge_search",
+        "list_wiki_pages",
+        "read_wiki_page",
+        "wiki_lint",
+        "get_wiki_graph",
         "web_search",
         "web_fetch",
         # Basic sandbox workspace tools — let the model inspect and edit files.
@@ -183,6 +197,14 @@ def _build_system_prompt(context: BaseContext) -> str:
         "\n\nIf the user asks which model or Agent you are currently using, answer from this Runtime Metadata. "
         "Do not claim that you cannot see the model configuration. "
         "Do not reveal API keys, secrets, or provider credentials."
+    )
+    base += (
+        "\n\n## Wiki Knowledge Policy"
+        "\nWhen an enabled knowledge base is an LLM Wiki, prefer Wiki-specific tools for structural questions: "
+        "use list_wiki_pages to inspect the page catalog, read_wiki_page to read canonical page content, "
+        "wiki_lint to check health issues and repair suggestions, and get_wiki_graph to inspect Wiki page "
+        "relationships. Use knowledge_search mode=wiki for semantic retrieval over Wiki content. Treat the Wiki "
+        "relationship graph as page-level knowledge links, not as a Neo4j system graph."
     )
     base += (
         "\n\n## Skill Lifecycle Policy"

@@ -30,6 +30,34 @@ _BUILTIN_SPECS: dict[str, ToolSpec] = {
         module="nexagent.tools.builtin.knowledge_search",
         factory="get_knowledge_search_tool",
     ),
+    "list_wiki_pages": ToolSpec(
+        name="list_wiki_pages",
+        description="List pages in an enabled LLM Wiki knowledge base with filters.",
+        category="knowledge",
+        module="nexagent.tools.builtin.wiki",
+        factory="get_list_wiki_pages_tool",
+    ),
+    "read_wiki_page": ToolSpec(
+        name="read_wiki_page",
+        description="Read a page body and metadata from an enabled LLM Wiki knowledge base.",
+        category="knowledge",
+        module="nexagent.tools.builtin.wiki",
+        factory="get_read_wiki_page_tool",
+    ),
+    "wiki_lint": ToolSpec(
+        name="wiki_lint",
+        description="Inspect health issues for an enabled LLM Wiki knowledge base.",
+        category="knowledge",
+        module="nexagent.tools.builtin.wiki",
+        factory="get_wiki_lint_tool",
+    ),
+    "get_wiki_graph": ToolSpec(
+        name="get_wiki_graph",
+        description="Summarize the relationship graph of an enabled LLM Wiki knowledge base.",
+        category="knowledge",
+        module="nexagent.tools.builtin.wiki",
+        factory="get_wiki_graph_tool",
+    ),
     "web_search": ToolSpec(
         name="web_search",
         description="Search the web for current information via Tavily or DuckDuckGo/DDGS.",
@@ -189,7 +217,7 @@ class ToolRegistry:
         try:
             module = import_module(spec.module)
             factory: Callable = getattr(module, spec.factory)
-            if name == "knowledge_search":
+            if name in {"knowledge_search", "list_wiki_pages", "read_wiki_page", "wiki_lint", "get_wiki_graph"}:
                 return factory(kb_ids=kwargs.get("kb_ids") or None)
             if name == "delegate_subagents":
                 return factory(
