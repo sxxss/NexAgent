@@ -189,6 +189,7 @@ const checks = [
   ["detail", "visibleJobs"],
   ["detail", "hiddenJobCount"],
   ["detail", "showAllJobs"],
+  ["detail", "taskTimeValue"],
   ["detail", "活跃"],
   ["detail", "历史任务"],
   ["sidebar", 'import Link from "next/link"'],
@@ -228,6 +229,7 @@ const absentChecks = [
   ["detail", "LLM Wiki"],
   ["detail", "return `LLM ${provider}/${model}`;"],
   ["detail", "onRetryFailed={handleProcessAll}"],
+  ["detail", "Number(right.updated_at || right.created_at || 0)"],
   ["graphPage", "LLM Wiki"],
 ];
 

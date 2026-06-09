@@ -934,7 +934,7 @@ function WikiTaskQueue({ jobs, onRetry, onCancel }: { jobs: IngestionJob[]; onRe
   const [open, setOpen] = useState(false);
   const [showAllJobs, setShowAllJobs] = useState(false);
   const activeJobs = jobs.filter(isActiveTask);
-  const historyJobs = jobs.filter((job) => !isActiveTask(job)).sort((left, right) => Number(right.updated_at || right.created_at || 0) - Number(left.updated_at || left.created_at || 0));
+  const historyJobs = jobs.filter((job) => !isActiveTask(job)).sort((left, right) => taskTimeValue(right) - taskTimeValue(left));
   const priorityHistoryJobs = historyJobs.filter((job) => job.status !== "completed").slice(0, 3);
   const visibleJobs = showAllJobs ? [...activeJobs, ...historyJobs] : [...activeJobs, ...priorityHistoryJobs];
   const hiddenJobCount = Math.max(0, jobs.length - visibleJobs.length);
@@ -995,6 +995,11 @@ function WikiTaskQueue({ jobs, onRetry, onCancel }: { jobs: IngestionJob[]; onRe
       ) : null}
       </div>
   );
+}
+
+function taskTimeValue(job: IngestionJob): number {
+  const parsed = Date.parse(String(job.updated_at || job.created_at || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function FileList({ files, processingIds, onProcess, onPreview, onDelete }: { files: FileMeta[]; processingIds: Set<string>; onProcess: (fileId: string) => void; onPreview: (fileId: string) => void; onDelete: (fileId: string, filename: string) => void }) {
