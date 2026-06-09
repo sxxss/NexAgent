@@ -9,7 +9,11 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-from nexagent.knowledge.implementations.wiki.constants import CONFIDENCE_VALUES, WIKI_PROMPT_VERSION
+from nexagent.knowledge.implementations.wiki.constants import (
+    CONFIDENCE_VALUES,
+    NOISE_WIKILINKS,
+    WIKI_PROMPT_VERSION,
+)
 
 DEFAULT_WIKI_LLM_TIMEOUT_S = 90.0
 
@@ -27,6 +31,10 @@ class WikiCompileMixin:
         title = self._clean_wiki_title(source.get("title") or Path(file_meta.filename).stem or file_id)
         topics = self._clean_page_items(compiled.get("topics"), "topics")[:8]
         entities = self._clean_page_items(compiled.get("entities"), "entities")[:12]
+        source_title_aliases = self._source_title_aliases(file_meta.filename, title)
+        entities.extend(
+            self._fallback_link_entities(markdown, title, topics, entities, source_title_aliases)
+        )
         planned_titles = [title]
         planned_titles.extend(item["title"] for item in topics)
         planned_titles.extend(item["title"] for item in entities)
@@ -52,6 +60,7 @@ class WikiCompileMixin:
                         item.get("content"),
                         title,
                         known_titles=planned_titles,
+                        known_title_aliases=source_title_aliases,
                     ),
                     sources=[file_id],
                     confidence=self._normalize_confidence(item.get("confidence"), "EXTRACTED"),
@@ -69,6 +78,7 @@ class WikiCompileMixin:
                         item.get("content"),
                         title,
                         known_titles=planned_titles,
+                        known_title_aliases=source_title_aliases,
                     ),
                     sources=[file_id],
                     confidence=self._normalize_confidence(item.get("confidence"), "EXTRACTED"),
@@ -189,9 +199,18 @@ class WikiCompileMixin:
                 "claims": ["重要结论"],
                 "confidence": "EXTRACTED"
               }},
-              "topics": [{{"title": "主题", "summary": "摘要", "content": "Markdown 正文", "confidence": "INFERRED"}}],
-              "entities": [{{"title": "实体", "summary": "摘要", "content": "Markdown 正文", "confidence": "INFERRED"}}],
-              "synthesis": {{"title": "Wiki Synthesis", "summary": "综合摘要", "content": "Markdown 正文", "confidence": "INFERRED"}}
+              "topics": [
+                {{"title": "主题", "summary": "摘要", "content": "Markdown 正文", "confidence": "INFERRED"}}
+              ],
+              "entities": [
+                {{"title": "实体", "summary": "摘要", "content": "Markdown 正文", "confidence": "INFERRED"}}
+              ],
+              "synthesis": {{
+                "title": "Wiki Synthesis",
+                "summary": "综合摘要",
+                "content": "Markdown 正文",
+                "confidence": "INFERRED"
+              }}
             }}
             topics 和 entities 可以为空数组。不要使用 pages/document/result 等替代字段。
             title 字段必须是纯文本，不要包含 [[ ]]、Markdown 链接或额外括号；只在 content 正文里使用 wikilink。
@@ -350,8 +369,14 @@ class WikiCompileMixin:
         content: Any,
         source_title: str,
         known_titles: list[str] | None = None,
+        known_title_aliases: dict[str, str] | None = None,
     ) -> str:
         title_index = self._title_index_from_titles(known_titles or [])
+        for alias, canonical in (known_title_aliases or {}).items():
+            key = self._normalize_link_key(alias)
+            clean_canonical = self._clean_wiki_title(canonical)
+            if key and clean_canonical:
+                title_index.setdefault(key, clean_canonical)
         summary_text = self._normalize_wikilinks(str(summary or "").strip(), title_index)
         body = self._normalize_wikilinks(str(content or "").strip(), title_index)
         sections = [f"# {title}"]
@@ -451,6 +476,66 @@ class WikiCompileMixin:
             if key and key not in index:
                 index[key] = clean_title
         return index
+
+    def _source_title_aliases(self, filename: str, source_title: str) -> dict[str, str]:
+        canonical = self._clean_wiki_title(source_title)
+        if not canonical:
+            return {}
+        stem = Path(filename or "").stem
+        aliases = {stem}
+        without_copy_suffix = re.sub(r"\s*[\(（]\d+[\)）]\s*$", "", stem).strip()
+        if without_copy_suffix:
+            aliases.add(without_copy_suffix)
+        canonical_key = self._normalize_link_key(canonical)
+        return {
+            alias: canonical
+            for alias in aliases
+            if alias and self._normalize_link_key(alias) != canonical_key
+        }
+
+    def _fallback_link_entities(
+        self,
+        markdown: str,
+        source_title: str,
+        topics: list[dict],
+        entities: list[dict],
+        source_title_aliases: dict[str, str],
+    ) -> list[dict]:
+        planned_keys = {
+            self._normalize_link_key(title)
+            for title in [source_title, *(item["title"] for item in topics), *(item["title"] for item in entities)]
+        }
+        source_alias_keys = {self._normalize_link_key(alias) for alias in source_title_aliases}
+        extracted_entities = {
+            self._normalize_link_key(entity): entity
+            for entity in self._extract_entities(markdown)
+            if self._normalize_link_key(entity)
+        }
+        linked_titles = [
+            link
+            for item in [*topics, *entities]
+            for value in (item.get("summary"), item.get("content"))
+            for link in self._extract_wikilinks(str(value or ""))
+        ]
+        fallback = []
+        seen = set(planned_keys)
+        for link in linked_titles:
+            key = self._normalize_link_key(link)
+            if not key or key in seen or key in source_alias_keys or key in NOISE_WIKILINKS:
+                continue
+            title = extracted_entities.get(key)
+            if not title:
+                continue
+            seen.add(key)
+            fallback.append(
+                {
+                    "title": self._clean_wiki_title(title),
+                    "summary": f"源文档中提到的实体：{title}",
+                    "content": f"{title} 与 [[{source_title}]] 相关，编译时由源文档实体候选自动补全。",
+                    "confidence": "INFERRED",
+                }
+            )
+        return fallback
 
     def _normalize_wikilinks(self, markdown: str, title_index: dict[str, str]) -> str:
         if not markdown or not title_index:

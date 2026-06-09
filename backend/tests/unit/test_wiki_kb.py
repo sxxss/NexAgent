@@ -406,6 +406,84 @@ async def test_wiki_page_content_normalizes_generated_wikilinks():
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_wiki_page_content_normalizes_source_filename_aliases():
+    from nexagent.knowledge.manager import reset_manager
+
+    work_dir = _work_dir("compile-source-alias")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+
+        source_title = "2025-2026学年暑期留宿知情同意书"
+        aliases = backend._source_title_aliases("导师知情同意书(2).docx", source_title)
+        content = backend._page_content_from_llm(
+            "暑期留宿申请",
+            "申请材料见 [[导师知情同意书]]。",
+            "学生需填写 [[导师知情同意书]] 并由导师确认。",
+            source_title,
+            known_titles=[source_title, "暑期留宿申请"],
+            known_title_aliases=aliases,
+        )
+
+        assert "[[2025-2026学年暑期留宿知情同意书]]" in content
+        assert "[[导师知情同意书]]" not in content
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_compile_creates_fallback_entities_for_linked_source_terms(monkeypatch):
+    from nexagent.knowledge.manager import reset_manager
+
+    async def fake_compile(_kb_id, _file_id, _file_meta, _markdown):
+        return {
+            "source": {
+                "title": "NexAgent 开源产品开发计划",
+                "summary": "NexAgent 开源计划",
+                "key_points": [],
+                "confidence": "EXTRACTED",
+            },
+            "topics": [
+                {
+                    "title": "MVP",
+                    "summary": "最小可行产品",
+                    "content": "[[NexAgent]] 的核心功能采用 MVP 策略。",
+                    "confidence": "INFERRED",
+                }
+            ],
+            "entities": [],
+        }
+
+    work_dir = _work_dir("compile-fallback-entity")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+        monkeypatch.setattr(backend, "_compile_markdown_with_llm", fake_compile)
+
+        await backend._compile_markdown_file(
+            kb_meta.kb_id,
+            "file-1",
+            SimpleNamespace(filename="NexAgent 开源产品开发计划.md"),
+            "# NexAgent 开源产品开发计划\n\nNexAgent 是开源 Agent 平台。",
+        )
+
+        entity = backend.get_wiki_page(kb_meta.kb_id, "entity:nexagent")
+        lint = backend.lint_wiki(kb_meta.kb_id)
+
+        assert entity["title"] == "NexAgent"
+        assert "[[NexAgent 开源产品开发计划]]" in entity["content"]
+        assert not any(issue.get("target") == "NexAgent" for issue in lint["issues"])
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_wiki_refresh_corpus_synthesis_creates_summary_page():
     from nexagent.knowledge.manager import reset_manager
 
