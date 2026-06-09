@@ -7,6 +7,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   acceptGeneratedWikiKbPage,
+  crystallizeWikiKbPage,
   deleteWikiKbPage,
   discardGeneratedWikiKbPage,
   updateWikiKbPage,
@@ -113,6 +114,27 @@ export function WikiPagePanel({
     }
   };
 
+  const createLinkedPage = async (title: string) => {
+    if (!title.trim()) return;
+    setActing(`create:${title}`);
+    setError("");
+    try {
+      const sourceTitle = selectedPage?.title || "Wiki";
+      const page = await crystallizeWikiKbPage(kbId, {
+        title: title.trim(),
+        type: "topic",
+        confidence: "UNVERIFIED",
+        content: `# ${title.trim()}\n\n## Summary\n待补充。\n\n## Notes\n- 从 [[${sourceTitle}]] 创建。\n\n## Sources\n- [[${sourceTitle}]]`,
+        sources: selectedPage?.sources ?? [],
+      });
+      await onReload(page.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "创建 Wiki 页面失败");
+    } finally {
+      setActing("");
+    }
+  };
+
   if (!pages.length) {
     return (
       <div className="flex min-h-80 flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 text-center">
@@ -203,6 +225,19 @@ export function WikiPagePanel({
                       const pageId = decodeURIComponent(href.slice(5));
                       return <button type="button" className="wiki-link font-semibold text-blue-700 underline decoration-blue-300 underline-offset-2 transition hover:text-blue-800" onClick={() => onSelect(pageId)}>{children}</button>;
                     }
+                    if (href?.startsWith("wiki-new:")) {
+                      const title = decodeURIComponent(href.slice(9));
+                      return (
+                        <button
+                          type="button"
+                          className="wiki-link font-semibold text-blue-700 underline decoration-blue-300 underline-offset-2 transition hover:text-blue-800 disabled:opacity-60"
+                          disabled={Boolean(acting)}
+                          onClick={() => void createLinkedPage(title)}
+                        >
+                          {acting === `create:${title}` ? "创建中..." : children}
+                        </button>
+                      );
+                    }
                     return <a href={href} target="_blank" rel="noreferrer" className="font-medium text-blue-700 underline decoration-blue-200 underline-offset-2 hover:text-blue-800">{children}</a>;
                   },
                 }}
@@ -237,37 +272,34 @@ export function WikiPageDirectory({
   };
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white">
+    <section className="bg-white">
       <div className="border-b border-slate-100 px-3 py-3">
         <div className="flex items-center justify-between gap-2">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800"><FileText size={14} />页面</h3>
           <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">{pages.length}</span>
         </div>
-        <div className="mt-3 grid gap-2">
+        <div className={compactFilterBar}>
           <input
             value={filters.q}
             onChange={(event) => updateFilter("q", event.target.value)}
             placeholder="搜索页面"
-            className={filterInput}
+            className={cn(filterInput, "min-w-0 flex-1")}
           />
-          <div className="grid grid-cols-2 gap-2">
-            <select value={filters.type} onChange={(event) => updateFilter("type", event.target.value)} className={filterInput}>
-              <option value="">全部类型</option>
-              {pageTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-            </select>
-            <select value={filters.status} onChange={(event) => updateFilter("status", event.target.value)} className={filterInput}>
-              <option value="">全部状态</option>
-              {pageStatuses.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-            </select>
-          </div>
-          <select value={sourceFilter} onChange={(event) => updateFilter("source_file_id", event.target.value)} className={filterInput}>
+          <select value={filters.type} onChange={(event) => updateFilter("type", event.target.value)} className={cn(filterInput, "w-24")}>
+            <option value="">类型</option>
+            {pageTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+          </select>
+          <select value={filters.status} onChange={(event) => updateFilter("status", event.target.value)} className={cn(filterInput, "w-24")}>
+            <option value="">状态</option>
+            {pageStatuses.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+          </select>
+          <select value={sourceFilter} onChange={(event) => updateFilter("source_file_id", event.target.value)} className={cn(filterInput, "w-28")}>
             <option value="">全部来源</option>
             {files.map((file) => <option key={file.file_id} value={file.file_id}>{file.filename}</option>)}
           </select>
           {filters.q || filters.type || filters.status || filters.source_file_id ? (
-            <button type="button" onClick={() => onFilterChange(emptyFilters())} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-500 hover:bg-slate-50">
+            <button type="button" onClick={() => onFilterChange(emptyFilters())} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50" title="清空筛选">
               <X size={13} />
-              清空筛选
             </button>
           ) : null}
         </div>
@@ -334,7 +366,7 @@ function renderWikiLinks(content: string, pageLookup: Map<string, string>) {
   return content.replace(/\[\[([^\]#|]+)(?:[|#][^\]]*)?\]\]/g, (_match, rawTitle: string) => {
     const title = String(rawTitle || "").trim();
     const pageId = pageLookup.get(normalizeWikiKey(title));
-    return pageId ? `[${title}](wiki:${encodeURIComponent(pageId)})` : title;
+    return pageId ? `[${title}](wiki:${encodeURIComponent(pageId)})` : `[${title}](wiki-new:${encodeURIComponent(title)})`;
   });
 }
 
@@ -382,6 +414,7 @@ const pageStatuses = [
   { value: "needs_review", label: "需要复核" },
 ];
 
-const filterInput = "h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none transition focus:border-amber-300 focus:ring-2 focus:ring-amber-100";
+const compactFilterBar = "mt-3 flex flex-wrap items-center gap-1.5";
+const filterInput = "h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100";
 const segmentButton = "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold text-slate-600 transition";
 const actionButton = "inline-flex h-9 items-center gap-2 rounded-lg border bg-white px-3 text-xs font-semibold transition hover:bg-slate-50 disabled:opacity-40";

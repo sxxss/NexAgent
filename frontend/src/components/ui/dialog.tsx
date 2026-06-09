@@ -48,6 +48,9 @@ export function Dialog({ open, onClose, children, title, description, className,
               )}
             </div>
             <button
+              type="button"
+              aria-label="关闭"
+              title="关闭"
               onClick={onClose}
               className="ml-3 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
             >

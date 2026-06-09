@@ -60,6 +60,7 @@ import {
   type SearchWarning,
 } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
+import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { WikiWorkbench } from "@/components/wiki/WikiWorkbench";
 import { cn, formatBytes, formatDate } from "@/lib/utils";
@@ -311,13 +312,18 @@ export default function KBDetailPage() {
                 onOpenGraph={() => router.push(`/knowledge/${id}/wiki/graph`)}
                 onRefresh={() => void loadData()}
               />
-              <WikiQuickUpload uploading={uploading} pendingCount={pendingCount} inputRef={fileInputRef} onUpload={handleUpload} onProcessAll={handleProcessAll} />
+              <div className="flex items-center gap-2">
+                <WikiQuickUpload uploading={uploading} pendingCount={pendingCount} inputRef={fileInputRef} onUpload={handleUpload} onProcessAll={handleProcessAll} />
+                <WikiTaskQueue jobs={jobs.slice(0, 6)} onRetry={(jobId) => void retryIngestionJob(jobId).then(loadData)} onCancel={(taskId) => void cancelTask(taskId).then(loadData)} />
+              </div>
               <UploadResultList results={uploadResults} />
-              <WikiModelPanel kb={kb} chatModels={chatModels} onKbUpdated={(next) => setKb(next)} />
+            </div>
+          }
+          resources={
+            <>
               <WikiFileList files={files} processingIds={processingIds} onProcess={handleProcess} onPreview={handlePreview} onDelete={handleDelete} />
               {preview || previewLoading ? <PreviewPanel preview={preview} loading={previewLoading} onClose={() => setPreview(null)} /> : null}
-              <WikiTaskQueue jobs={jobs.slice(0, 6)} onRetry={(jobId) => void retryIngestionJob(jobId).then(loadData)} onCancel={(taskId) => void cancelTask(taskId).then(loadData)} />
-            </div>
+            </>
           }
         />
       </div>
@@ -509,23 +515,18 @@ function WikiQuickUpload({
   onProcessAll: () => void;
 }) {
   const [dragging, setDragging] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
   return (
-    <div
-      onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(event) => { event.preventDefault(); setDragging(false); if (!uploading) onUpload(event.dataTransfer.files); }}
-      className={cn("rounded-xl border bg-white p-3 shadow-sm transition", dragging ? "border-amber-300 bg-amber-50" : "border-slate-200")}
-    >
-      <input ref={inputRef} type="file" multiple disabled={uploading} className="hidden" accept=".pdf,.docx,.doc,.pptx,.ppt,.txt,.md,.markdown,.html,.htm,.csv,.json" onChange={(event) => onUpload(event.target.files)} />
+    <>
       <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={() => { if (!uploading) inputRef.current?.click(); }}
+          onClick={() => setShowUpload(true)}
           disabled={uploading}
           className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-slate-950 px-3 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
         >
           {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-          上传文件
+          上传
         </button>
         <button
           type="button"
@@ -537,8 +538,28 @@ function WikiQuickUpload({
           编译{pendingCount ? ` ${pendingCount}` : ""}
         </button>
       </div>
-      <p className="mt-2 truncate text-[11px] text-slate-400">支持拖拽上传 PDF、DOCX、PPTX、Markdown、HTML、CSV、JSON</p>
-    </div>
+      <Dialog open={showUpload} onClose={() => setShowUpload(false)} title="上传文件" description="选择或拖拽文件到 Wiki 素材库。">
+        <div
+          onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragging(false);
+            if (!uploading) {
+              onUpload(event.dataTransfer.files);
+              setShowUpload(false);
+            }
+          }}
+          onClick={() => { if (!uploading) inputRef.current?.click(); }}
+          className={cn(uploadDialogDropzone, uploading ? "cursor-wait opacity-80" : "cursor-pointer", dragging ? "border-sky-300 bg-sky-50" : "border-slate-200 bg-white hover:border-sky-200")}
+        >
+          <input ref={inputRef} type="file" multiple disabled={uploading} className="hidden" accept=".pdf,.docx,.doc,.pptx,.ppt,.txt,.md,.markdown,.html,.htm,.csv,.json" onChange={(event) => { onUpload(event.target.files); setShowUpload(false); }} />
+          {uploading ? <Loader2 size={24} className="animate-spin text-sky-600" /> : <Upload size={24} className="text-slate-300" />}
+          <p className="mt-3 text-sm font-semibold text-slate-700">{uploading ? "上传中..." : "点击上传或拖拽文件到此处"}</p>
+          <p className="mt-1 text-xs text-slate-400">支持 PDF、DOCX、PPTX、TXT、Markdown、HTML、CSV、JSON</p>
+        </div>
+      </Dialog>
+    </>
   );
 }
 
@@ -552,8 +573,8 @@ function WikiFileList({ files, processingIds, onProcess, onPreview, onDelete }: 
     );
   }
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-      <div className="mb-2 flex items-center justify-between gap-2">
+    <section className="bg-white px-3 py-3">
+      <div className="mb-1 flex items-center justify-between gap-2">
         <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-900"><FileText size={14} />素材</h2>
         <span className="text-xs text-slate-400">{files.length} files</span>
       </div>
@@ -581,49 +602,59 @@ function WikiFileList({ files, processingIds, onProcess, onPreview, onDelete }: 
           );
         })}
       </div>
-    </div>
+    </section>
   );
 }
 
 function WikiTaskQueue({ jobs, onRetry, onCancel }: { jobs: IngestionJob[]; onRetry: (jobId: string) => void; onCancel: (taskId: string) => void }) {
-  if (!jobs.length) return null;
+  const [open, setOpen] = useState(false);
+  const activeCount = jobs.filter((job) => job.status === "queued" || job.status === "running").length;
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-      <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-900">任务队列</h2>
-        <span className="text-xs text-slate-400">{jobs.length}</span>
-      </div>
-      <div className="space-y-2">
-        {jobs.map((job) => {
-          const running = job.status === "queued" || job.status === "running";
-          const retryable = !["queued", "running", "completed"].includes(job.status);
-          const completed = taskCompleted(job);
-          const failed = taskFailed(job);
-          const total = Math.max(1, Number(job.total_steps || 1));
-          const percent = Math.min(100, Math.round(((completed + failed) / total) * 100));
-          return (
-            <div key={job.task_id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate font-mono text-[11px] font-semibold text-slate-500" title={job.task_id}>{shortTaskId(job.task_id)}</p>
-                  <p className="mt-0.5 text-[11px] text-slate-400">{completed} 完成 / {failed} 失败 / {job.total_steps} 总计</p>
+    <div className="relative shrink-0">
+      <button type="button" onClick={() => setOpen((next) => !next)} className={cn(outlineButton, "h-9 px-2.5")}>
+        <ListChecks size={14} />
+        任务{jobs.length ? ` ${jobs.length}` : ""}
+        {activeCount ? <span className="ml-0.5 h-2 w-2 rounded-full bg-sky-500" /> : null}
+      </button>
+      {open ? (
+        <div className={taskQueuePopover}>
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-900">任务队列</h2>
+            <span className="text-xs text-slate-400">{jobs.length}</span>
+          </div>
+          <div className="max-h-80 space-y-2 overflow-auto">
+            {jobs.length ? jobs.map((job) => {
+              const running = job.status === "queued" || job.status === "running";
+              const retryable = !["queued", "running", "completed"].includes(job.status);
+              const completed = taskCompleted(job);
+              const failed = taskFailed(job);
+              const total = Math.max(1, Number(job.total_steps || 1));
+              const percent = Math.min(100, Math.round(((completed + failed) / total) * 100));
+              return (
+                <div key={job.task_id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate font-mono text-[11px] font-semibold text-slate-500" title={job.task_id}>{shortTaskId(job.task_id)}</p>
+                      <p className="mt-0.5 text-[11px] text-slate-400">{completed} 完成 / {failed} 失败 / {job.total_steps} 总计</p>
+                    </div>
+                    <Badge variant={running ? "info" : job.status === "completed" ? "success" : "error"}>{jobLabel(job.status)}</Badge>
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
+                    <div className={cn("h-full rounded-full", failed ? "bg-rose-400" : running ? "bg-sky-500" : "bg-emerald-500")} style={{ width: `${percent}%` }} />
+                  </div>
+                  {retryable || running ? (
+                    <div className="mt-2 flex justify-end gap-1">
+                      {retryable ? <button className={tinyButton} onClick={() => onRetry(job.task_id)}>重试</button> : null}
+                      {running ? <button className={tinyButton} onClick={() => onCancel(job.task_id)}>取消</button> : null}
+                    </div>
+                  ) : null}
                 </div>
-                <Badge variant={running ? "info" : job.status === "completed" ? "success" : "error"}>{jobLabel(job.status)}</Badge>
-              </div>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
-                <div className={cn("h-full rounded-full", failed ? "bg-rose-400" : running ? "bg-sky-500" : "bg-emerald-500")} style={{ width: `${percent}%` }} />
-              </div>
-              {retryable || running ? (
-                <div className="mt-2 flex justify-end gap-1">
-                  {retryable ? <button className={tinyButton} onClick={() => onRetry(job.task_id)}>重试</button> : null}
-                  {running ? <button className={tinyButton} onClick={() => onCancel(job.task_id)}>取消</button> : null}
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
+              );
+            }) : <div className="rounded-lg border border-dashed border-slate-200 px-3 py-8 text-center text-xs text-slate-400">暂无任务</div>}
+          </div>
+        </div>
+      ) : null}
       </div>
-    </div>
   );
 }
 
@@ -665,55 +696,6 @@ function FileList({ files, processingIds, onProcess, onPreview, onDelete }: { fi
           );
         })}
       </div>
-    </div>
-  );
-}
-
-function WikiModelPanel({ kb, chatModels, onKbUpdated }: { kb: KBMeta; chatModels: ProviderModelOption[]; onKbUpdated: (kb: KBMeta) => void }) {
-  const [llmModel, setLlmModel] = useState(kbLlmModelValue(kb));
-  const [saving, setSaving] = useState(false);
-  const selectedLLM = chatModels.find((item) => item.value === llmModel);
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      const result = await updateKBModelConfig(kb.kb_id, { llm_model: llmModel });
-      onKbUpdated(result.kb);
-      if (result.requires_reindex) {
-        alert(`LLM 配置已更新，${result.indexed_files} 个已编译文件需要重新处理。`);
-      }
-    } catch (error) {
-      alert(error instanceof Error ? error.message : "保存 LLM 配置失败");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="rounded-xl border border-amber-100 bg-white p-3 shadow-sm">
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-900">Wiki LLM 配置</h2>
-          <p className="mt-1 text-xs text-slate-500">用于文件编译、页面抽取和对话沉淀。</p>
-        </div>
-        <button type="button" onClick={save} disabled={saving || !llmModel} className={cn(outlineButton, "h-8 shrink-0 px-2.5")}>
-          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-          保存
-        </button>
-      </div>
-      <Field label="LLM 模型">
-        <ModelPicker
-          value={llmModel}
-          options={chatModels}
-          placeholder={selectedLLM?.label || kb.llm_info?.model || "选择 LLM 模型"}
-          onChange={(option) => setLlmModel(option.value)}
-        />
-      </Field>
-      {chatModels.length === 0 ? (
-        <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs leading-5 text-amber-700">
-          没有可用的 LLM 模型。请先到设置页给供应商添加 chat 类型模型并启用供应商。
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -1169,4 +1151,6 @@ const iconButton = "inline-flex h-9 w-9 items-center justify-center rounded-lg b
 const wikiIconButton = "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 disabled:opacity-40";
 const wikiInlineIconButton = "inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-35";
 const wikiSidebar = "space-y-3";
+const uploadDialogDropzone = "flex min-h-52 flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-8 text-center transition";
+const taskQueuePopover = "absolute left-0 z-30 mt-2 w-[360px] rounded-xl border border-slate-200 bg-white p-3 shadow-xl";
 const tinyButton = "rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100";

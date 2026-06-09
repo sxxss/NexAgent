@@ -33,11 +33,13 @@ export function WikiWorkbench({
   files,
   reload,
   sidebar,
+  resources,
 }: {
   kb: KBMeta;
   files: FileMeta[];
   reload: () => void | Promise<void>;
   sidebar?: React.ReactNode;
+  resources?: React.ReactNode;
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<WikiTab>("pages");
@@ -167,13 +169,18 @@ export function WikiWorkbench({
       <aside className="min-h-0 overflow-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
         <div className="space-y-3">
           {sidebar}
-          <WikiPageDirectory
-            pages={pages}
-            files={files}
-            selectedPageId={selectedPageId}
-            filters={pageFilters}
-            onFilterChange={setPageFilters}
-            onSelect={(pageId) => void selectPage(pageId)}
+          <WikiResourcePane
+            resources={resources}
+            pageDirectory={
+              <WikiPageDirectory
+                pages={pages}
+                files={files}
+                selectedPageId={selectedPageId}
+                filters={pageFilters}
+                onFilterChange={setPageFilters}
+                onSelect={(pageId) => void selectPage(pageId)}
+              />
+            }
           />
         </div>
       </aside>
@@ -253,6 +260,17 @@ export function WikiWorkbench({
         </div>
       </section>
     </div>
+  );
+}
+
+function WikiResourcePane({ resources, pageDirectory }: { resources?: React.ReactNode; pageDirectory: React.ReactNode }) {
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white">
+      <div className="grid gap-0 divide-y divide-slate-100">
+        {resources ? <div>{resources}</div> : null}
+        <div>{pageDirectory}</div>
+      </div>
+    </section>
   );
 }
 

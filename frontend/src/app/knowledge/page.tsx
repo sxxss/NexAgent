@@ -15,6 +15,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
 } from "lucide-react";
@@ -71,6 +72,7 @@ export default function KnowledgePage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [settingsKb, setSettingsKb] = useState<KBMeta | null>(null);
   const [form, setForm] = useState(initialForm);
   const [probeResult, setProbeResult] = useState<ModelProbeResult | null>(null);
   const [probeError, setProbeError] = useState("");
@@ -200,6 +202,7 @@ export default function KnowledgePage() {
                 <KBCard
                   key={kb.kb_id}
                   kb={kb}
+                  onSettings={() => setSettingsKb(kb)}
                   onDelete={() => void deleteKB(kb.kb_id).then(() => queryClient.invalidateQueries({ queryKey: ["kbs"] }))}
                 />
               ))}
@@ -380,11 +383,22 @@ export default function KnowledgePage() {
           </aside>
         </div>
       </Dialog>
+      <ModelSettingsDialog
+        kb={settingsKb}
+        chatModels={chatModels}
+        embeddingModels={embeddingModels}
+        rerankModels={rerankModels}
+        onClose={() => setSettingsKb(null)}
+        onSaved={async () => {
+          setSettingsKb(null);
+          await queryClient.invalidateQueries({ queryKey: ["kbs"] });
+        }}
+      />
     </div>
   );
 }
 
-function KBCard({ kb, onDelete }: { kb: KBMeta; onDelete: () => void }) {
+function KBCard({ kb, onSettings, onDelete }: { kb: KBMeta; onSettings: () => void; onDelete: () => void }) {
   const isWiki = kb.kb_type === "wiki";
   const isRag = kb.kb_type === "milvus";
   const requiresReindex = Boolean(kb.extra?.requires_reindex);
@@ -393,7 +407,10 @@ function KBCard({ kb, onDelete }: { kb: KBMeta; onDelete: () => void }) {
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-4">
           <div className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl", isWiki ? "bg-amber-50 text-amber-700" : isRag ? "bg-sky-50 text-sky-700" : "bg-indigo-50 text-indigo-700")}>{isWiki ? <BookOpen size={20} /> : isRag ? <FileText size={20} /> : <Network size={20} />}</div>
-          <button type="button" onClick={onDelete} className="hidden h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 group-hover:flex"><Trash2 size={14} /></button>
+          <div className="flex items-center gap-1">
+            <button type="button" onClick={onSettings} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-sky-50 hover:text-sky-700" title="知识库设置"><SlidersHorizontal size={14} /></button>
+            <button type="button" onClick={onDelete} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600" title="删除"><Trash2 size={14} /></button>
+          </div>
         </div>
         <div className="mt-4 flex items-start justify-between gap-2">
           <h2 className="truncate text-sm font-semibold text-slate-950">{kb.name}</h2>
@@ -414,6 +431,132 @@ function KBCard({ kb, onDelete }: { kb: KBMeta; onDelete: () => void }) {
         </Link>
       </CardContent>
     </Card>
+  );
+}
+
+function ModelSettingsDialog({
+  kb,
+  chatModels,
+  embeddingModels,
+  rerankModels,
+  onClose,
+  onSaved,
+}: {
+  kb: KBMeta | null;
+  chatModels: ProviderModelOption[];
+  embeddingModels: ProviderModelOption[];
+  rerankModels: ProviderModelOption[];
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  if (!kb) return null;
+  return (
+    <ModelSettingsDialogContent
+      key={kb.kb_id}
+      kb={kb}
+      chatModels={chatModels}
+      embeddingModels={embeddingModels}
+      rerankModels={rerankModels}
+      onClose={onClose}
+      onSaved={onSaved}
+    />
+  );
+}
+
+function ModelSettingsDialogContent({
+  kb,
+  chatModels,
+  embeddingModels,
+  rerankModels,
+  onClose,
+  onSaved,
+}: {
+  kb: KBMeta;
+  chatModels: ProviderModelOption[];
+  embeddingModels: ProviderModelOption[];
+  rerankModels: ProviderModelOption[];
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const modelConfig = kb.extra?.model_config && typeof kb.extra.model_config === "object" ? (kb.extra.model_config as Record<string, unknown>) : {};
+  const [llmModel, setLlmModel] = useState(() => kbLlmModelValue(kb));
+  const [embedModel, setEmbedModel] = useState(() => kb.embed_info?.model || "");
+  const [embedDimension, setEmbedDimension] = useState(() => kb.embed_info?.dimension || 1024);
+  const [useReranker, setUseReranker] = useState(() => Boolean(modelConfig.use_reranker));
+  const [rerankerModel, setRerankerModel] = useState(() => String(modelConfig.reranker_model ?? ""));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const isWiki = kb.kb_type === "wiki";
+  const needsLLM = kb.kb_type === "wiki" || kb.kb_type === "lightrag";
+  const needsEmbedding = kb.kb_type !== "wiki";
+  const selectedEmbedding = embeddingModels.find((item) => item.value === embedModel);
+
+  const save = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      await updateKBModelConfig(kb.kb_id, {
+        llm_model: needsLLM ? llmModel : undefined,
+        embed_model: needsEmbedding ? embedModel : undefined,
+        embed_dimension: needsEmbedding ? embedDimension : undefined,
+        use_reranker: needsEmbedding ? useReranker : undefined,
+        reranker_model: needsEmbedding ? rerankerModel : undefined,
+      });
+      await onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存知识库配置失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={Boolean(kb)} onClose={onClose} title="知识库设置" description="调整已有知识库的模型配置；保存后已入库内容可能需要重新处理。">
+      <div className="space-y-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <p className="text-sm font-semibold text-slate-900">{kb.name}</p>
+          <p className="mt-1 text-xs text-slate-500">{isWiki ? "Wiki 知识库使用 LLM 编译页面和沉淀内容。" : kb.kb_type === "lightrag" ? "LightRAG 同时使用 Embedding 和 LLM 构建图谱。" : "向量 RAG 使用 Embedding 入库，可选 Rerank。"} </p>
+        </div>
+        {needsLLM ? (
+          <FormSection title="LLM 配置" description={isWiki ? "用于 Wiki 编译页面、抽取主题和对话沉淀。" : "用于 LightRAG 抽取实体关系。"}>
+            <Field label="LLM 模型" required>
+              <ModelPicker value={llmModel} options={chatModels} placeholder={kb.llm_info?.model || "选择 LLM 模型"} onChange={(option) => setLlmModel(option.value)} />
+            </Field>
+          </FormSection>
+        ) : null}
+        {needsEmbedding ? (
+          <FormSection title="Embedding / Rerank 配置">
+            <Field label="Embedding 模型" required>
+              <ModelPicker value={embedModel} options={embeddingModels} placeholder={kb.embed_info?.model || "选择 Embedding 模型"} onChange={(option) => { setEmbedModel(option.value); setEmbedDimension(option.dimension || embedDimension); }} />
+            </Field>
+            <Field label="向量维度">
+              <input className={inputClass} type="number" min={1} max={8192} value={embedDimension} onChange={(event) => setEmbedDimension(Number(event.target.value))} />
+            </Field>
+            <label className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-3">
+              <span>
+                <span className="block text-sm font-semibold text-slate-800">启用 Rerank</span>
+                <span className="text-xs text-slate-500">提升最终召回排序。</span>
+              </span>
+              <input type="checkbox" checked={useReranker} onChange={(event) => setUseReranker(event.target.checked)} />
+            </label>
+            {useReranker ? (
+              <Field label="Rerank 模型">
+                <ModelPicker value={rerankerModel} options={rerankModels} placeholder="选择 Rerank 模型" onChange={(option) => setRerankerModel(option.value)} />
+              </Field>
+            ) : null}
+            {selectedEmbedding?.dimension ? <p className="text-xs text-slate-400">当前模型标注维度：{selectedEmbedding.dimension}</p> : null}
+          </FormSection>
+        ) : null}
+        {error ? <div className="rounded-xl border border-rose-100 bg-rose-50 p-3 text-xs text-rose-700">{error}</div> : null}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className={outlineButton}>取消</button>
+          <button type="button" onClick={() => void save()} disabled={saving || (needsLLM && !llmModel) || (needsEmbedding && !embedModel)} className={primarySmallButton}>
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+            保存设置
+          </button>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 
@@ -537,6 +680,13 @@ function PreviewRow({ label, value }: { label: string; value: string }) {
       <span className="min-w-0 text-right text-xs font-semibold text-slate-700">{value}</span>
     </div>
   );
+}
+
+function kbLlmModelValue(kb: KBMeta): string {
+  const model = kb.llm_info?.model || "";
+  const provider = kb.llm_info?.provider || "";
+  if (provider && model && !model.includes("::")) return `${provider}::${model}`;
+  return model;
 }
 
 function providerModelOptions(providers: ModelProvider[], capability: ProviderCapability): ProviderModelOption[] {
