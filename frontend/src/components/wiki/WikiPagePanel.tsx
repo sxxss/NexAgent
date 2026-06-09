@@ -193,8 +193,8 @@ export function WikiPagePanel({
             spellCheck={false}
           />
         ) : (
-          <div className="max-h-[720px] overflow-auto bg-slate-50/50 px-5 py-4">
-            <div className="markdown-body rounded-xl border border-slate-100 bg-white px-5 py-4 shadow-sm">
+          <div className="overflow-auto bg-white px-5 py-5">
+            <article className={cn("markdown-body", wikiDocumentBody)}>
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 urlTransform={preserveWikiUrl}
@@ -210,7 +210,7 @@ export function WikiPagePanel({
               >
                 {renderedContent}
               </ReactMarkdown>
-            </div>
+            </article>
           </div>
         )}
       </section>
@@ -219,6 +219,7 @@ export function WikiPagePanel({
 
 export function WikiPageDirectory({
   pages,
+  totalCount,
   files,
   selectedPageId,
   filters,
@@ -226,6 +227,7 @@ export function WikiPageDirectory({
   onSelect,
 }: {
   pages: WikiPageSummary[];
+  totalCount?: number;
   files: FileMeta[];
   selectedPageId: string;
   filters: WikiPageFilters;
@@ -243,7 +245,9 @@ export function WikiPageDirectory({
       <div className="shrink-0 border-b border-slate-100 px-3 py-3">
         <div className="flex items-center justify-between gap-2">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800"><FileText size={14} />页面</h3>
-          <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">{pages.length}</span>
+          <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">
+            {typeof totalCount === "number" && totalCount !== pages.length ? `${pages.length}/${totalCount}` : pages.length}
+          </span>
         </div>
         <div className={compactFilterBar}>
           <input
@@ -394,3 +398,4 @@ const compactFilterBar = "mt-3 flex flex-wrap items-center gap-1.5";
 const filterInput = "h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100";
 const segmentButton = "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold text-slate-600 transition";
 const actionButton = "inline-flex h-9 items-center gap-2 rounded-lg border bg-white px-3 text-xs font-semibold transition hover:bg-slate-50 disabled:opacity-40";
+const wikiDocumentBody = "mx-auto max-w-4xl bg-white px-1 py-1 text-[15px] leading-7 text-slate-900";

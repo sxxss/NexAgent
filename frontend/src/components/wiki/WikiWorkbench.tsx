@@ -60,6 +60,7 @@ export function WikiWorkbench({
   const [lint, setLint] = useState<WikiLintPayload | null>(null);
   const lintRef = useRef<WikiLintPayload | null>(null);
   const [pageFilters, setPageFilters] = useState<WikiPageFilters>(() => emptyFilters());
+  const visiblePages = useMemo(() => filterWikiPages(pages, pageFilters), [pageFilters, pages]);
   const [graphOptions, setGraphOptions] = useState<WikiGraphOptions>(defaultGraphOptions);
   const graphQueryKey = useMemo(() => JSON.stringify(graphParams(graphOptions)), [graphOptions]);
   const [loading, setLoading] = useState(true);
@@ -85,13 +86,13 @@ export function WikiWorkbench({
 
   const loadWikiPages = useCallback(async (preferredPageId?: string) => {
     setError("");
-    const nextPages = await fetchWikiKbPages(kb.kb_id, compactParams(pageFilters));
+    const nextPages = await fetchWikiKbPages(kb.kb_id);
     setPages(nextPages);
     const urlPageId = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("wikiPage") ?? "" : "";
     const currentId = (preferredPageId ?? selectedPageIdRef.current) || urlPageId;
     const nextPageId = currentId && nextPages.some((page) => page.id === currentId) ? currentId : nextPages[0]?.id ?? "";
     await loadSelectedPage(nextPageId);
-  }, [kb.kb_id, loadSelectedPage, pageFilters]);
+  }, [kb.kb_id, loadSelectedPage]);
 
   const loadWikiGraph = useCallback(async (nextOptions?: WikiGraphOptions) => {
     const requestOptions = nextOptions ?? graphOptions;
@@ -254,7 +255,8 @@ export function WikiWorkbench({
             resources={renderResources()}
             pageDirectory={
               <WikiPageDirectory
-                pages={pages}
+                pages={visiblePages}
+                totalCount={pages.length}
                 files={files}
                 selectedPageId={selectedPageId}
                 filters={pageFilters}
@@ -355,16 +357,33 @@ function WikiResourcePane({ resources, pageDirectory }: { resources?: React.Reac
   );
 }
 
-function compactParams(filters: WikiPageFilters): Record<string, string> {
-  return Object.fromEntries(Object.entries(filters).filter(([, value]) => value.trim()));
-}
-
 function graphParams(options: WikiGraphOptions): Record<string, string> {
   return {
     max_edges: String(Math.max(20, Math.min(300, options.maxEdges || 80))),
     include_weak: String(Boolean(options.includeWeak)),
     ...(options.q.trim() ? { q: options.q.trim() } : {}),
   };
+}
+
+function filterWikiPages(pages: WikiPageSummary[], filters: WikiPageFilters): WikiPageSummary[] {
+  const q = filters.q.trim().toLowerCase();
+  return pages.filter((page) => {
+    if (q) {
+      const haystack = [page.title, page.path, page.excerpt].filter(Boolean).join(" ").toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
+    if (filters.type && page.type !== filters.type) return false;
+    if (filters.status && wikiPageStatus(page) !== filters.status) return false;
+    if (filters.source_file_id && !(page.sources ?? []).includes(filters.source_file_id)) return false;
+    return true;
+  });
+}
+
+function wikiPageStatus(page: WikiPageSummary): string {
+  if (page.has_candidate) return "pending_candidate";
+  if (page.status) return page.status;
+  if (page.manual_edited) return "manual_edited";
+  return "generated";
 }
 
 const iconButton = "inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 disabled:opacity-40";
