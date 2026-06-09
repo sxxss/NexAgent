@@ -33,6 +33,13 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 router = APIRouter()
 KNOWLEDGE_INGESTION_TASK_KIND = "knowledge_ingestion"
+KNOWLEDGE_WIKI_COMPILE_TASK_KIND = "wiki_compile"
+KNOWLEDGE_WIKI_REPAIR_TASK_KIND = "wiki_repair"
+LOCAL_KNOWLEDGE_TASK_KINDS = {
+    KNOWLEDGE_INGESTION_TASK_KIND,
+    KNOWLEDGE_WIKI_COMPILE_TASK_KIND,
+    KNOWLEDGE_WIKI_REPAIR_TASK_KIND,
+}
 SEARCH_TIMEOUT_SECONDS = 60
 _ACTIVE_INGESTION_FILES: set[str] = set()
 
@@ -699,13 +706,25 @@ def _query_config_response(mgr, kb_id: str, kb_type: str) -> dict:
     }
 
 
-def _task_or_404(task_id: str):
+def _task_or_404(task_id: str, allowed_kinds: set[str] | None = None):
     from nexagent.services.task_service import get_task
 
     task = get_task(task_id)
-    if task is None or task.kind != KNOWLEDGE_INGESTION_TASK_KIND:
+    allowed = allowed_kinds or {KNOWLEDGE_INGESTION_TASK_KIND}
+    if task is None or task.kind not in allowed:
         raise HTTPException(status_code=404, detail=f"Ingestion task not found: {task_id}")
     return task
+
+
+def _list_local_knowledge_tasks(kb_id: str) -> list[dict]:
+    from nexagent.services.task_service import list_tasks
+
+    tasks = [
+        task
+        for task in list_tasks(metadata={"kb_id": kb_id}, limit=75)
+        if task.kind in LOCAL_KNOWLEDGE_TASK_KINDS
+    ]
+    return [task.to_dict() for task in tasks]
 
 
 async def _run_ingestion_task(task_id: str) -> None:
@@ -839,6 +858,229 @@ def _queue_ingestion(kb_id: str, file_ids: list[str]):
     return task
 
 
+class _WikiTaskContext:
+    def __init__(self, task_id: str, total_steps: int = 0):
+        self.task_id = task_id
+        self.total_steps = total_steps
+
+    async def set_message(self, message: str):
+        from nexagent.services.task_service import update_task
+
+        update_task(self.task_id, current_step=str(message or ""))
+
+    async def set_progress(self, progress: float, message: str | None = None):
+        from nexagent.services.task_service import update_task
+
+        updates: dict[str, Any] = {"progress": max(0.0, min(100.0, float(progress)))}
+        if message is not None:
+            updates["current_step"] = message
+        if self.total_steps and progress >= 100:
+            updates["completed_steps"] = self.total_steps
+        update_task(self.task_id, **updates)
+
+    async def set_result(self, result: dict):
+        from nexagent.services.task_service import update_task
+
+        update_task(self.task_id, result=result)
+
+
+def _wiki_compile_total_steps(backend, kb_id: str, file_ids: list[str] | None, force: bool, retry_failed: bool) -> int:
+    wanted = set(file_ids or [])
+    total = 0
+    for file_meta in backend.list_files(kb_id):
+        if wanted and file_meta.file_id not in wanted:
+            continue
+        status = getattr(file_meta.status, "value", str(file_meta.status))
+        if status in {"uploaded", "parsed"}:
+            total += 1
+        elif retry_failed and status in {"parse_error", "index_error", "error_graphing", "indexed_with_graph_degraded"}:
+            total += 1
+        elif force and status in {"indexed", "graph_indexed"}:
+            total += 1
+    return total
+
+
+def _wiki_repair_total_steps(
+    backend,
+    kb_id: str,
+    issue_ids: list[str] | None,
+    issue_types: list[str] | None,
+    page_ids: list[str] | None,
+) -> int:
+    wanted_ids = set(issue_ids or [])
+    wanted_types = set(issue_types or [])
+    wanted_pages = set(page_ids or [])
+    total = 0
+    for issue in backend.lint_wiki(kb_id).get("issues", []):
+        if issue.get("repair_action") != "ai_candidate":
+            continue
+        if wanted_ids and issue.get("id") not in wanted_ids:
+            continue
+        if wanted_types and issue.get("type") not in wanted_types:
+            continue
+        if wanted_pages and issue.get("page_id") not in wanted_pages:
+            continue
+        total += 1
+    return total
+
+
+def _wiki_compile_task_result(raw: dict) -> dict:
+    return {
+        **raw,
+        "completed": int(raw.get("processed") or raw.get("completed") or 0),
+        "failed": int(raw.get("failed") or 0),
+        "items": raw.get("items") if isinstance(raw.get("items"), list) else [],
+    }
+
+
+def _wiki_repair_task_result(raw: dict) -> dict:
+    failed_issues = raw.get("failed_issues") if isinstance(raw.get("failed_issues"), list) else []
+    skipped_issues = raw.get("skipped_issues") if isinstance(raw.get("skipped_issues"), list) else []
+    items = [
+        {"issue_id": item.get("id"), "status": "failed", "error": item.get("error", "")}
+        for item in failed_issues
+        if isinstance(item, dict)
+    ]
+    items.extend(
+        {"issue_id": item.get("id"), "status": "skipped", "reason": item.get("reason", "")}
+        for item in skipped_issues
+        if isinstance(item, dict)
+    )
+    return {
+        **raw,
+        "completed": int(raw.get("repaired_count") or 0),
+        "failed": len(failed_issues),
+        "items": items,
+    }
+
+
+async def _run_wiki_compile_task(task_id: str) -> None:
+    from nexagent.services.task_service import is_cancel_requested, update_progress, update_task
+
+    task = _task_or_404(task_id, {KNOWLEDGE_WIKI_COMPILE_TASK_KIND})
+    kb_id = str(task.metadata.get("kb_id") or "")
+    file_ids = task.metadata.get("file_ids")
+    file_ids = [str(file_id) for file_id in file_ids] if isinstance(file_ids, list) else None
+    force = bool(task.metadata.get("force"))
+    retry_failed = bool(task.metadata.get("retry_failed"))
+    if task.cancel_requested or task.status == "cancelled":
+        update_task(task_id, status="cancelled", current_step="cancelled", error="Task was cancelled before it started.")
+        return
+    update_task(task_id, status="running", progress=5.0, current_step="正在编译 Wiki", result={"completed": 0, "failed": 0, "items": []})
+    try:
+        if is_cancel_requested(task_id):
+            update_task(task_id, status="cancelled", current_step="cancelled", error="Task was cancelled.")
+            return
+        _mgr, _kb, backend = _local_wiki_kb_or_404(kb_id)
+        raw = await backend.compile_wiki(kb_id, file_ids=file_ids, force=force, retry_failed=retry_failed)
+        result = _wiki_compile_task_result(raw)
+        failed = int(result["failed"])
+        completed = int(result["completed"])
+        total = max(task.total_steps, completed + failed)
+        status = "failed" if failed and completed == 0 else "completed"
+        update_progress(
+            task_id,
+            completed_steps=total,
+            total_steps=total,
+            current_step="done",
+            result=result,
+            status=status,
+        )
+    except Exception as exc:
+        logger.exception("Wiki compile task %s failed", task_id)
+        update_task(task_id, status="failed", error=str(exc), result={"completed": 0, "failed": 1, "items": [{"status": "error", "error": str(exc)}]})
+
+
+async def _run_wiki_repair_task(task_id: str) -> None:
+    from nexagent.services.task_service import is_cancel_requested, update_progress, update_task
+
+    task = _task_or_404(task_id, {KNOWLEDGE_WIKI_REPAIR_TASK_KIND})
+    kb_id = str(task.metadata.get("kb_id") or "")
+    issue_ids = task.metadata.get("issue_ids")
+    issue_types = task.metadata.get("issue_types")
+    page_ids = task.metadata.get("page_ids")
+    force = bool(task.metadata.get("force"))
+    issue_ids = [str(item) for item in issue_ids] if isinstance(issue_ids, list) else None
+    issue_types = [str(item) for item in issue_types] if isinstance(issue_types, list) else None
+    page_ids = [str(item) for item in page_ids] if isinstance(page_ids, list) else None
+    if task.cancel_requested or task.status == "cancelled":
+        update_task(task_id, status="cancelled", current_step="cancelled", error="Task was cancelled before it started.")
+        return
+    update_task(task_id, status="running", progress=5.0, current_step="正在生成 Wiki AI 修复候选", result={"completed": 0, "failed": 0, "items": []})
+    try:
+        if is_cancel_requested(task_id):
+            update_task(task_id, status="cancelled", current_step="cancelled", error="Task was cancelled.")
+            return
+        _mgr, _kb, backend = _local_wiki_kb_or_404(kb_id)
+        context = _WikiTaskContext(task_id, total_steps=int(task.total_steps or 0))
+        raw = await backend.repair_wiki(
+            kb_id,
+            issue_ids=issue_ids,
+            issue_types=issue_types,
+            page_ids=page_ids,
+            force=force,
+            context=context,
+        )
+        result = _wiki_repair_task_result(raw)
+        failed = int(result["failed"])
+        completed = int(result["completed"])
+        total = max(task.total_steps, completed + failed + len(result.get("skipped_issues", [])))
+        status = "failed" if failed and completed == 0 and not result.get("candidate_count") else "completed"
+        update_progress(
+            task_id,
+            completed_steps=total,
+            total_steps=total,
+            current_step="done",
+            result=result,
+            status=status,
+        )
+    except Exception as exc:
+        logger.exception("Wiki repair task %s failed", task_id)
+        update_task(task_id, status="failed", error=str(exc), result={"completed": 0, "failed": 1, "items": [{"status": "error", "error": str(exc)}]})
+
+
+def _queue_wiki_compile(kb_id: str, file_ids: list[str] | None, force: bool, retry_failed: bool):
+    from nexagent.services.task_service import create_task
+
+    _mgr, _kb, backend = _local_wiki_kb_or_404(kb_id)
+    total_steps = _wiki_compile_total_steps(backend, kb_id, file_ids, force, retry_failed)
+    task = create_task(
+        kind=KNOWLEDGE_WIKI_COMPILE_TASK_KIND,
+        metadata={"kb_id": kb_id, "file_ids": file_ids or [], "force": force, "retry_failed": retry_failed},
+        total_steps=total_steps,
+        current_step="queued",
+    )
+    asyncio.create_task(_run_wiki_compile_task(task.task_id))
+    return task
+
+
+def _queue_wiki_repair(
+    kb_id: str,
+    issue_ids: list[str] | None,
+    issue_types: list[str] | None,
+    page_ids: list[str] | None,
+    force: bool,
+):
+    from nexagent.services.task_service import create_task
+
+    _mgr, _kb, backend = _local_wiki_kb_or_404(kb_id)
+    total_steps = _wiki_repair_total_steps(backend, kb_id, issue_ids, issue_types, page_ids)
+    task = create_task(
+        kind=KNOWLEDGE_WIKI_REPAIR_TASK_KIND,
+        metadata={
+            "kb_id": kb_id,
+            "issue_ids": issue_ids or [],
+            "issue_types": issue_types or [],
+            "page_ids": page_ids or [],
+            "force": force,
+        },
+        total_steps=total_steps,
+        current_step="queued",
+    )
+    asyncio.create_task(_run_wiki_repair_task(task.task_id))
+    return task
+
+
 def _retry_ingestion_task(task):
     result = task.result or {}
     failed_ids = [
@@ -853,10 +1095,37 @@ def _retry_ingestion_task(task):
     return _queue_ingestion(str(task.metadata.get("kb_id") or ""), file_ids)
 
 
+def _retry_wiki_compile_task(task):
+    metadata = task.metadata or {}
+    file_ids = metadata.get("file_ids")
+    return _queue_wiki_compile(
+        str(metadata.get("kb_id") or ""),
+        [str(item) for item in file_ids] if isinstance(file_ids, list) else None,
+        bool(metadata.get("force")),
+        bool(metadata.get("retry_failed")),
+    )
+
+
+def _retry_wiki_repair_task(task):
+    metadata = task.metadata or {}
+    issue_ids = metadata.get("issue_ids")
+    issue_types = metadata.get("issue_types")
+    page_ids = metadata.get("page_ids")
+    return _queue_wiki_repair(
+        str(metadata.get("kb_id") or ""),
+        [str(item) for item in issue_ids] if isinstance(issue_ids, list) else None,
+        [str(item) for item in issue_types] if isinstance(issue_types, list) else None,
+        [str(item) for item in page_ids] if isinstance(page_ids, list) else None,
+        bool(metadata.get("force")),
+    )
+
+
 try:
     from nexagent.services.task_service import register_retry_handler
 
     register_retry_handler(KNOWLEDGE_INGESTION_TASK_KIND, _retry_ingestion_task)
+    register_retry_handler(KNOWLEDGE_WIKI_COMPILE_TASK_KIND, _retry_wiki_compile_task)
+    register_retry_handler(KNOWLEDGE_WIKI_REPAIR_TASK_KIND, _retry_wiki_repair_task)
 except Exception as exc:
     logger.debug("Knowledge ingestion retry handler registration skipped: %s", exc)
 
@@ -1014,7 +1283,7 @@ async def get_ingestion_job(job_id: str):
         job = await _prod_service().get_job(job_id)
         if job:
             return job
-    return _task_or_404(job_id).to_dict()
+    return _task_or_404(job_id, LOCAL_KNOWLEDGE_TASK_KINDS).to_dict()
 
 
 @router.get("/jobs/{job_id}/logs", summary="Get knowledge ingestion job logs")
@@ -1023,7 +1292,7 @@ async def get_ingestion_job_logs(job_id: str):
         job = await _prod_service().get_job(job_id)
         if job:
             return {"job_id": job_id, "task": job, "logs": job.get("logs", [])}
-    task = _task_or_404(job_id)
+    task = _task_or_404(job_id, LOCAL_KNOWLEDGE_TASK_KINDS)
     items = task.result.get("items", []) if isinstance(task.result, dict) else []
     return {
         "job_id": job_id,
@@ -1049,7 +1318,26 @@ async def compile_wiki(kb_id: str, body: dict[str, Any] | None = None):
         raise HTTPException(status_code=400, detail="file_ids must be a list")
     force = bool((body or {}).get("force"))
     retry_failed = bool((body or {}).get("retry_failed"))
-    return await backend.compile_wiki(kb_id, file_ids=file_ids, force=force, retry_failed=retry_failed)
+    total_steps = _wiki_compile_total_steps(backend, kb_id, file_ids, force, retry_failed)
+    if total_steps == 0:
+        return {
+            "status": "completed",
+            "task_id": "",
+            "task": None,
+            "job": None,
+            "queued": 0,
+            **_wiki_compile_task_result({"processed": 0, "failed": 0, "items": []}),
+        }
+    task = _queue_wiki_compile(kb_id, [str(item) for item in file_ids] if file_ids else None, force, retry_failed)
+    payload = task.to_dict()
+    return {
+        "status": "queued",
+        "task_id": task.task_id,
+        "task": payload,
+        "job": payload,
+        "queued": int(task.total_steps),
+        **_wiki_compile_task_result({"processed": 0, "failed": 0, "items": []}),
+    }
 
 
 @router.get("/{kb_id}/wiki/pages", summary="List Wiki pages")
@@ -1134,13 +1422,40 @@ async def repair_wiki(kb_id: str, body: dict[str, Any] | None = None):
     for key in ("issue_ids", "issue_types", "page_ids"):
         if payload.get(key) is not None and not isinstance(payload.get(key), list):
             raise HTTPException(status_code=400, detail=f"{key} must be a list")
-    return await backend.repair_wiki(
-        kb_id,
-        issue_ids=payload.get("issue_ids"),
-        issue_types=payload.get("issue_types"),
-        page_ids=payload.get("page_ids"),
-        force=bool(payload.get("force")),
-    )
+    issue_ids = [str(item) for item in payload.get("issue_ids")] if payload.get("issue_ids") else None
+    issue_types = [str(item) for item in payload.get("issue_types")] if payload.get("issue_types") else None
+    page_ids = [str(item) for item in payload.get("page_ids")] if payload.get("page_ids") else None
+    force = bool(payload.get("force"))
+    total_steps = _wiki_repair_total_steps(backend, kb_id, issue_ids, issue_types, page_ids)
+    if total_steps == 0:
+        return {
+            "status": "completed",
+            "task_id": "",
+            "task": None,
+            "job": None,
+            "queued": 0,
+            **_wiki_repair_task_result({
+                "repaired_count": 0,
+                "candidate_count": 0,
+                "skipped_issues": [],
+                "failed_issues": [],
+            }),
+        }
+    task = _queue_wiki_repair(kb_id, issue_ids, issue_types, page_ids, force)
+    task_payload = task.to_dict()
+    return {
+        "status": "queued",
+        "task_id": task.task_id,
+        "task": task_payload,
+        "job": task_payload,
+        "queued": int(task.total_steps),
+        **_wiki_repair_task_result({
+            "repaired_count": 0,
+            "candidate_count": 0,
+            "skipped_issues": [],
+            "failed_issues": [],
+        }),
+    }
 
 
 @router.post("/{kb_id}/wiki/crystallize", summary="Crystallize Markdown into Wiki")
@@ -1396,19 +1711,13 @@ async def list_ingestion_jobs(kb_id: str):
         return {"tasks": payload, "jobs": payload, "total": len(payload)}
     if await _is_local_wiki_kb(kb_id):
         _, _ = _kb_or_404(kb_id)
-        from nexagent.services.task_service import list_tasks
-
-        tasks = list_tasks(kind=KNOWLEDGE_INGESTION_TASK_KIND, metadata={"kb_id": kb_id}, limit=50)
-        payload = [task.to_dict() for task in tasks]
+        payload = _list_local_knowledge_tasks(kb_id)
         return {"tasks": payload, "jobs": payload, "total": len(payload)}
     if _prod_enabled():
         _, _ = _kb_or_404(kb_id)
         return {"tasks": [], "jobs": [], "total": 0, "legacy": True}
     _, _ = _kb_or_404(kb_id)
-    from nexagent.services.task_service import list_tasks
-
-    tasks = list_tasks(kind=KNOWLEDGE_INGESTION_TASK_KIND, metadata={"kb_id": kb_id}, limit=50)
-    payload = [task.to_dict() for task in tasks]
+    payload = _list_local_knowledge_tasks(kb_id)
     return {"tasks": payload, "jobs": payload, "total": len(payload)}
 
 

@@ -629,13 +629,17 @@ function WikiTaskQueue({ jobs, onRetry, onCancel }: { jobs: IngestionJob[]; onRe
               const completed = taskCompleted(job);
               const failed = taskFailed(job);
               const total = Math.max(1, Number(job.total_steps || 1));
-              const percent = Math.min(100, Math.round(((completed + failed) / total) * 100));
+              const percent = Number(job.progress) > 0 ? Math.round(Number(job.progress)) : Math.min(100, Math.round(((completed + failed) / total) * 100));
               return (
                 <div key={job.task_id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate font-mono text-[11px] font-semibold text-slate-500" title={job.task_id}>{shortTaskId(job.task_id)}</p>
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span className="shrink-0 rounded bg-white px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">{taskKindLabel(job.kind)}</span>
+                        <p className="truncate font-mono text-[11px] font-semibold text-slate-500" title={job.task_id}>{shortTaskId(job.task_id)}</p>
+                      </div>
                       <p className="mt-0.5 text-[11px] text-slate-400">{completed} 完成 / {failed} 失败 / {job.total_steps} 总计</p>
+                      {job.current_step && job.current_step !== "done" ? <p className="mt-0.5 truncate text-[11px] text-slate-400">{job.current_step}</p> : null}
                     </div>
                     <Badge variant={running ? "info" : job.status === "completed" ? "success" : "error"}>{jobLabel(job.status)}</Badge>
                   </div>
@@ -1133,6 +1137,14 @@ function taskCompleted(job: IngestionJob) {
 
 function taskFailed(job: IngestionJob) {
   return Number(job.result?.failed ?? 0);
+}
+
+function taskKindLabel(kind: string) {
+  return {
+    knowledge_ingestion: "文件处理",
+    wiki_compile: "Wiki 编译",
+    wiki_repair: "AI 修复",
+  }[kind] ?? "任务";
 }
 
 function shortTaskId(taskId: string) {

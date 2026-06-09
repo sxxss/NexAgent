@@ -249,11 +249,99 @@ async def test_wiki_pages_route_delegates_to_backend(monkeypatch):
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_wiki_repair_route_delegates_to_backend(monkeypatch):
+async def test_wiki_compile_route_enqueues_task(monkeypatch, tmp_path):
+    from nexagent.services import task_service
+
     calls = {}
+    scheduled = []
 
     class FakeBackend:
-        async def repair_wiki(self, kb_id, issue_ids=None, issue_types=None, page_ids=None, force=False):
+        def list_files(self, kb_id):
+            assert kb_id == "wiki-1"
+            return [SimpleNamespace(file_id="file-1", status=SimpleNamespace(value="uploaded"))]
+
+        async def compile_wiki(self, kb_id, file_ids=None, force=False, retry_failed=False):
+            calls.update(
+                {
+                    "kb_id": kb_id,
+                    "file_ids": file_ids,
+                    "force": force,
+                    "retry_failed": retry_failed,
+                }
+            )
+            return {"processed": 1, "failed": 0, "items": [{"file_id": "file-1", "status": "indexed"}]}
+
+    class FakeManager:
+        backend = FakeBackend()
+
+        def get_kb(self, kb_id):
+            return SimpleNamespace(kb_id=kb_id, kb_type=SimpleNamespace(value="wiki"))
+
+        def _find_backend(self, kb_id):
+            return self.backend
+
+    def fake_create_task(coro):
+        scheduled.append(coro)
+        return SimpleNamespace()
+
+    monkeypatch.setenv("NEXAGENT_DATA_DIR", str(tmp_path))
+    task_service.reset_task_registry_for_tests()
+    monkeypatch.setattr(knowledge, "_mgr", lambda: FakeManager())
+    monkeypatch.setattr(knowledge.asyncio, "create_task", fake_create_task)
+
+    try:
+        result = await knowledge.compile_wiki(
+            "wiki-1",
+            {
+                "file_ids": ["file-1"],
+                "force": True,
+                "retry_failed": True,
+            },
+        )
+        await scheduled.pop(0)
+    finally:
+        task_service.reset_task_registry_for_tests()
+
+    assert result["status"] == "queued"
+    assert result["task"]["kind"] == "wiki_compile"
+    assert result["task"]["metadata"] == {
+        "kb_id": "wiki-1",
+        "file_ids": ["file-1"],
+        "force": True,
+        "retry_failed": True,
+    }
+    assert calls == {
+        "kb_id": "wiki-1",
+        "file_ids": ["file-1"],
+        "force": True,
+        "retry_failed": True,
+    }
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_repair_route_enqueues_task(monkeypatch, tmp_path):
+    from nexagent.services import task_service
+
+    calls = {}
+    scheduled = []
+
+    class FakeBackend:
+        def lint_wiki(self, kb_id):
+            assert kb_id == "wiki-1"
+            return {
+                "issues": [
+                    {
+                        "id": "issue-a",
+                        "type": "needs_review",
+                        "page_id": "topic:alpha",
+                        "repair_action": "ai_candidate",
+                    }
+                ]
+            }
+
+        async def repair_wiki(self, kb_id, issue_ids=None, issue_types=None, page_ids=None, force=False, context=None):
+            await context.set_progress(20, "fake repair")
             calls.update(
                 {
                     "kb_id": kb_id,
@@ -261,34 +349,107 @@ async def test_wiki_repair_route_delegates_to_backend(monkeypatch):
                     "issue_types": issue_types,
                     "page_ids": page_ids,
                     "force": force,
+                    "context": context,
                 }
             )
-            return {"candidate_count": 2}
+            return {"repaired_count": 1, "candidate_count": 1, "skipped_issues": [], "failed_issues": []}
 
     class FakeManager:
+        backend = FakeBackend()
+
         def get_kb(self, kb_id):
             return SimpleNamespace(kb_id=kb_id, kb_type=SimpleNamespace(value="wiki"))
 
         def _find_backend(self, kb_id):
-            return FakeBackend()
+            return self.backend
 
+    def fake_create_task(coro):
+        scheduled.append(coro)
+        return SimpleNamespace()
+
+    monkeypatch.setenv("NEXAGENT_DATA_DIR", str(tmp_path))
+    task_service.reset_task_registry_for_tests()
     monkeypatch.setattr(knowledge, "_mgr", lambda: FakeManager())
+    monkeypatch.setattr(knowledge.asyncio, "create_task", fake_create_task)
 
-    result = await knowledge.repair_wiki(
-        "wiki-1",
-        {
-            "issue_ids": ["issue-a"],
-            "issue_types": ["needs_review"],
-            "page_ids": ["topic:alpha"],
-            "force": True,
-        },
-    )
+    try:
+        result = await knowledge.repair_wiki(
+            "wiki-1",
+            {
+                "issue_ids": ["issue-a"],
+                "issue_types": ["needs_review"],
+                "page_ids": ["topic:alpha"],
+                "force": True,
+            },
+        )
+        await scheduled.pop(0)
+    finally:
+        task_service.reset_task_registry_for_tests()
 
-    assert result == {"candidate_count": 2}
-    assert calls == {
+    assert result["status"] == "queued"
+    assert result["task"]["kind"] == "wiki_repair"
+    assert result["task"]["metadata"] == {
         "kb_id": "wiki-1",
         "issue_ids": ["issue-a"],
         "issue_types": ["needs_review"],
         "page_ids": ["topic:alpha"],
         "force": True,
+    }
+    assert calls["kb_id"] == "wiki-1"
+    assert calls["issue_ids"] == ["issue-a"]
+    assert calls["issue_types"] == ["needs_review"]
+    assert calls["page_ids"] == ["topic:alpha"]
+    assert calls["force"] is True
+    assert calls["context"] is not None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_repair_route_returns_completed_when_no_ai_issues(monkeypatch, tmp_path):
+    from nexagent.services import task_service
+
+    class FakeBackend:
+        def lint_wiki(self, kb_id):
+            assert kb_id == "wiki-1"
+            return {"issues": []}
+
+    class FakeManager:
+        backend = FakeBackend()
+
+        def get_kb(self, kb_id):
+            return SimpleNamespace(kb_id=kb_id, kb_type=SimpleNamespace(value="wiki"))
+
+        def _find_backend(self, kb_id):
+            return self.backend
+
+    monkeypatch.setenv("NEXAGENT_DATA_DIR", str(tmp_path))
+    task_service.reset_task_registry_for_tests()
+    monkeypatch.setattr(knowledge, "_mgr", lambda: FakeManager())
+
+    try:
+        result = await knowledge.repair_wiki(
+            "wiki-1",
+            {
+                "issue_ids": ["issue-a"],
+                "issue_types": ["needs_review"],
+                "page_ids": ["topic:alpha"],
+                "force": True,
+            },
+        )
+    finally:
+        task_service.reset_task_registry_for_tests()
+
+    assert result == {
+        "status": "completed",
+        "task_id": "",
+        "task": None,
+        "job": None,
+        "queued": 0,
+        "repaired_count": 0,
+        "candidate_count": 0,
+        "skipped_issues": [],
+        "failed_issues": [],
+        "completed": 0,
+        "failed": 0,
+        "items": [],
     }

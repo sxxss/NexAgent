@@ -228,6 +228,14 @@ export interface WikiRepairResult {
   candidate_count: number;
   skipped_issues: Array<{ id: string; reason: string }>;
   failed_issues: Array<{ id: string; error: string }>;
+  completed?: number;
+  failed?: number;
+  items?: Array<Record<string, unknown>>;
+  status?: "queued" | "running" | "completed" | "failed" | "cancelled" | string;
+  task_id?: string;
+  task?: TaskRecord | null;
+  job?: IngestionJob | null;
+  queued?: number;
 }
 
 export interface FileMeta {

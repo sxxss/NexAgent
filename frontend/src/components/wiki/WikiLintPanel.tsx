@@ -40,9 +40,12 @@ export function WikiLintPanel({
       const result = await repairWikiKbIssues(kbId, { issue_ids: items.map((item) => item.id), force });
       const failed = result.failed_issues?.length ?? 0;
       const skipped = result.skipped_issues?.length ?? 0;
+      const queued = result.status === "queued" || Boolean(result.task_id);
       setRepairResult(result);
       setMessage(
-        result.candidate_count
+        queued
+          ? `AI 修复已加入任务队列（${result.queued ?? items.length} 项），完成后请刷新并处理候选。`
+          : result.candidate_count
           ? `AI 修复已生成 ${result.candidate_count} 个候选，请到页面中接受或丢弃。`
           : skipped
             ? `${skipped} 个问题已有待处理候选，可直接处理候选或强制重新生成。`
@@ -174,6 +177,7 @@ function WikiRepairResultCard({
   onForce: () => void;
 }) {
   if (!result) return null;
+  const queued = result.status === "queued" || Boolean(result.task_id);
   const issueById = new Map(issues.map((issue) => [issue.id, issue]));
   const failedIds = new Set((result.failed_issues ?? []).map((item) => item.id));
   const candidatePages = uniqueStrings(
@@ -192,17 +196,24 @@ function WikiRepairResultCard({
     <section className="rounded-xl border border-slate-200 bg-white">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
         <div>
-          <h4 className="text-sm font-semibold text-slate-900">AI 修复结果</h4>
-          <p className="mt-1 text-xs text-slate-500">生成候选 {result.candidate_count} 个 · 修复问题 {result.repaired_count} 个 · 跳过 {skippedIssues.length} 个 · 失败 {failedIssues.length} 个</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="text-sm font-semibold text-slate-900">{queued ? "AI 修复任务" : "AI 修复结果"}</h4>
+            {queued ? <Badge variant="info">已入队</Badge> : null}
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            {queued
+              ? `任务 ${result.task_id ? result.task_id.slice(0, 8) : ""} 已进入队列 · 待处理 ${result.queued ?? issues.length} 项`
+              : `生成候选 ${result.candidate_count} 个 · 修复问题 ${result.repaired_count} 个 · 跳过 ${skippedIssues.length} 个 · 失败 ${failedIssues.length} 个`}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {candidatePages.length ? (
+          {!queued && candidatePages.length ? (
             <button type="button" onClick={() => onOpenPage(candidatePages[0])} className={cn(actionButton, "border-sky-200 text-sky-700")}>
               <ExternalLink size={13} />
               处理候选
             </button>
           ) : null}
-          {skippedIssues.length ? (
+          {!queued && skippedIssues.length ? (
             <button type="button" onClick={onForce} disabled={repairing} className={cn(actionButton, "border-amber-200 text-amber-800")}>
               {repairing ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
               强制重新生成候选
@@ -211,7 +222,7 @@ function WikiRepairResultCard({
         </div>
       </div>
       <div className="grid gap-3 px-4 py-3 text-xs text-slate-600 lg:grid-cols-3">
-        <ResultColumn title="待处理候选" items={candidatePages} empty="暂无候选页面" render={(pageId) => (
+        <ResultColumn title="待处理候选" items={queued ? [] : candidatePages} empty={queued ? "任务完成后生成候选" : "暂无候选页面"} render={(pageId) => (
           <button type="button" onClick={() => onOpenPage(pageId)} className="truncate text-left font-semibold text-blue-700 underline decoration-blue-200 underline-offset-2 hover:text-blue-800">
             {pageId}
           </button>

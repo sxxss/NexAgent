@@ -72,8 +72,12 @@ const checks = [
   ["lint", "force"],
   ["lint", "skipped_issues"],
   ["lint", "处理候选"],
+  ["lint", "AI 修复已加入任务队列"],
   ["lint", "groupedIssues"],
   ["lint", "repairWikiKbIssues"],
+  ["detail", "taskKindLabel"],
+  ["detail", "wiki_repair"],
+  ["detail", "Wiki 编译"],
 ];
 
 const absentChecks = [
