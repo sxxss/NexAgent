@@ -51,6 +51,9 @@ const checks = [
   ["list", 'capability: "chat"'],
   ["list", "NexAgent wiki model test"],
   ["detail", "WikiSourceToolbar"],
+  ["detail", "compileWikiKb"],
+  ["detail", "handleWikiCompile"],
+  ["detail", "handleWikiRetryFailedCompile"],
   ["detail", "WikiQuickUpload"],
   ["detail", "WikiFileList"],
   ["detail", "WikiCompactHeader"],
@@ -78,6 +81,9 @@ const checks = [
   ["detail", "候选"],
   ["detail", "待复核"],
   ["detail", "失败来源"],
+  ["detail", "重新编译 Wiki"],
+  ["detail", "强制重编译 Wiki"],
+  ["detail", "retry_failed: true"],
   ["detail", "showUpload"],
   ["detail", "uploadDialogDropzone"],
   ["detail", "wikiUploadDialogTrigger"],
@@ -213,6 +219,7 @@ const absentChecks = [
   ["list", "LLM Wiki"],
   ["detail", "LLM Wiki"],
   ["detail", "return `LLM ${provider}/${model}`;"],
+  ["detail", "onRetryFailed={handleProcessAll}"],
   ["graphPage", "LLM Wiki"],
 ];
 

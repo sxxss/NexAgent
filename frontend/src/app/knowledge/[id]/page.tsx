@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import {
   cancelTask,
+  compileWikiKb,
   deleteFile,
   fetchFiles,
   fetchIngestionJobs,
@@ -109,6 +110,7 @@ export default function KBDetailPage() {
   const [graphSummary, setGraphSummary] = useState<KnowledgeGraphSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [wikiCompiling, setWikiCompiling] = useState(false);
   const [uploadResults, setUploadResults] = useState<UploadResult[]>([]);
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
   const [preview, setPreview] = useState<ParsedFilePreview | null>(null);
@@ -224,6 +226,23 @@ export default function KBDetailPage() {
     }
   };
 
+  const handleWikiCompile = async (body: { force?: boolean; retry_failed?: boolean } = {}) => {
+    setWikiCompiling(true);
+    try {
+      const result = await compileWikiKb(id, body);
+      if (!result.task_id && result.message) alert(result.message);
+      await loadData();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Wiki 编译失败");
+    } finally {
+      setWikiCompiling(false);
+    }
+  };
+
+  const handleWikiRetryFailedCompile = async () => {
+    await handleWikiCompile({ retry_failed: true, force: true });
+  };
+
   const handlePreview = async (fileId: string) => {
     setPreviewLoading(true);
     try {
@@ -334,6 +353,7 @@ export default function KBDetailPage() {
                 inputRef={fileInputRef}
                 uploadResults={uploadResults}
                 processingIds={processingIds}
+                compiling={wikiCompiling}
                 activeSourceFileId={activeSourceFileId}
                 preview={preview}
                 previewLoading={previewLoading}
@@ -348,8 +368,10 @@ export default function KBDetailPage() {
                 llmTitle={llmTitle}
                 onUpload={handleUpload}
                 onProcessAll={handleProcessAll}
+                onCompileWiki={() => handleWikiCompile()}
+                onForceCompileWiki={() => handleWikiCompile({ force: true })}
                 onStatusFilter={applyWikiStatusFilter}
-                onRetryFailed={handleProcessAll}
+                onRetryFailed={handleWikiRetryFailedCompile}
                 onRetry={(jobId) => void retryIngestionJob(jobId).then(loadData)}
                 onCancel={(taskId) => void cancelTask(taskId).then(loadData)}
                 onToggleSourceFilter={onToggleSourceFilter}
@@ -538,26 +560,41 @@ function WikiCompactHeader({
 
 function WikiSourceToolbar({
   uploading,
+  compiling,
   pendingCount,
   inputRef,
   onUpload,
   onProcessAll,
+  onCompileWiki,
+  onForceCompileWiki,
   jobs,
   onRetry,
   onCancel,
 }: {
   uploading: boolean;
+  compiling: boolean;
   pendingCount: number;
   inputRef: React.RefObject<HTMLInputElement | null>;
   onUpload: (files: FileList | null) => void;
   onProcessAll: () => void;
+  onCompileWiki: () => Promise<void>;
+  onForceCompileWiki: () => Promise<void>;
   jobs: IngestionJob[];
   onRetry: (jobId: string) => void;
   onCancel: (taskId: string) => void;
 }) {
   return (
     <div className="flex items-center justify-between gap-2 bg-white px-3 py-2">
-      <WikiQuickUpload uploading={uploading} pendingCount={pendingCount} inputRef={inputRef} onUpload={onUpload} onProcessAll={onProcessAll} />
+      <WikiQuickUpload
+        uploading={uploading}
+        compiling={compiling}
+        pendingCount={pendingCount}
+        inputRef={inputRef}
+        onUpload={onUpload}
+        onProcessAll={onProcessAll}
+        onCompileWiki={onCompileWiki}
+        onForceCompileWiki={onForceCompileWiki}
+      />
       <WikiTaskQueue jobs={jobs} onRetry={onRetry} onCancel={onCancel} />
     </div>
   );
@@ -570,6 +607,7 @@ function WikiSourceSection({
   inputRef,
   uploadResults,
   processingIds,
+  compiling,
   activeSourceFileId,
   preview,
   previewLoading,
@@ -584,6 +622,8 @@ function WikiSourceSection({
   activeStatus,
   onUpload,
   onProcessAll,
+  onCompileWiki,
+  onForceCompileWiki,
   onStatusFilter,
   onRetryFailed,
   onRetry,
@@ -600,6 +640,7 @@ function WikiSourceSection({
   inputRef: React.RefObject<HTMLInputElement | null>;
   uploadResults: UploadResult[];
   processingIds: Set<string>;
+  compiling: boolean;
   activeSourceFileId: string;
   preview: ParsedFilePreview | null;
   previewLoading: boolean;
@@ -614,6 +655,8 @@ function WikiSourceSection({
   activeStatus: string;
   onUpload: (files: FileList | null) => void;
   onProcessAll: () => void;
+  onCompileWiki: () => Promise<void>;
+  onForceCompileWiki: () => Promise<void>;
   onStatusFilter: (status: string) => void;
   onRetryFailed: () => void;
   onRetry: (jobId: string) => void;
@@ -628,10 +671,13 @@ function WikiSourceSection({
     <section className="flex min-h-0 flex-col bg-white">
       <WikiSourceToolbar
         uploading={uploading}
+        compiling={compiling}
         pendingCount={pendingCount}
         inputRef={inputRef}
         onUpload={onUpload}
         onProcessAll={onProcessAll}
+        onCompileWiki={onCompileWiki}
+        onForceCompileWiki={onForceCompileWiki}
         jobs={jobs}
         onRetry={onRetry}
         onCancel={onCancel}
@@ -719,16 +765,22 @@ function WikiStatusStrip({
 
 function WikiQuickUpload({
   uploading,
+  compiling,
   pendingCount,
   inputRef,
   onUpload,
   onProcessAll,
+  onCompileWiki,
+  onForceCompileWiki,
 }: {
   uploading: boolean;
+  compiling: boolean;
   pendingCount: number;
   inputRef: React.RefObject<HTMLInputElement | null>;
   onUpload: (files: FileList | null) => void;
   onProcessAll: () => void;
+  onCompileWiki: () => Promise<void>;
+  onForceCompileWiki: () => Promise<void>;
 }) {
   const [dragging, setDragging] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
@@ -743,6 +795,24 @@ function WikiQuickUpload({
         >
           {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
           上传
+        </button>
+        <button
+          type="button"
+          onClick={() => void onCompileWiki()}
+          disabled={compiling || uploading}
+          className={wikiToolbarIconButton}
+          title="重新编译 Wiki"
+        >
+          {compiling ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+        </button>
+        <button
+          type="button"
+          onClick={() => void onForceCompileWiki()}
+          disabled={compiling || uploading}
+          className={cn(wikiToolbarIconButton, "px-2")}
+          title="强制重编译 Wiki"
+        >
+          强制
         </button>
         <button
           type="button"
