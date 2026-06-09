@@ -314,8 +314,14 @@ export default function KBDetailPage() {
               />
             </div>
           }
-          resources={({ filters, setFilters }: WikiResourceContext) => {
+          resources={({ filters, setFilters, candidateCount, needsReviewCount }: WikiResourceContext) => {
             const activeSourceFileId = filters.source_file_id;
+            const failedSourceCount = files.filter(isFailedWikiSource).length;
+            const llmLabel = wikiLlmLabel(kb);
+            const compileStatus = wikiCompileStatus(files, activeJob, candidateCount);
+            const applyWikiStatusFilter = (status: string) => {
+              setFilters({ ...filters, status: filters.status === status ? "" : status });
+            };
             const onToggleSourceFilter = (fileId: string) => {
               setFilters({ ...filters, source_file_id: activeSourceFileId === fileId ? "" : fileId });
             };
@@ -330,6 +336,19 @@ export default function KBDetailPage() {
                 jobs={jobs.slice(0, 6)}
                 onRetry={(jobId) => void retryIngestionJob(jobId).then(loadData)}
                 onCancel={(taskId) => void cancelTask(taskId).then(loadData)}
+              />
+              <WikiStatusStrip
+                llmLabel={llmLabel}
+                indexedCount={indexedCount}
+                fileCount={files.length}
+                compileStatus={compileStatus}
+                candidateCount={candidateCount}
+                needsReviewCount={needsReviewCount}
+                failedSourceCount={failedSourceCount}
+                activeStatus={filters.status}
+                onStatusFilter={applyWikiStatusFilter}
+                onRetryFailed={handleProcessAll}
+                disabled={uploading}
               />
               <UploadResultList results={uploadResults} />
               <WikiFileList
@@ -544,6 +563,54 @@ function WikiSourceToolbar({
     <div className="flex items-center justify-between gap-2 bg-white px-3 py-2">
       <WikiQuickUpload uploading={uploading} pendingCount={pendingCount} inputRef={inputRef} onUpload={onUpload} onProcessAll={onProcessAll} />
       <WikiTaskQueue jobs={jobs} onRetry={onRetry} onCancel={onCancel} />
+    </div>
+  );
+}
+
+function WikiStatusStrip({
+  llmLabel,
+  indexedCount,
+  fileCount,
+  compileStatus,
+  candidateCount,
+  needsReviewCount,
+  failedSourceCount,
+  activeStatus,
+  onStatusFilter,
+  onRetryFailed,
+  disabled,
+}: {
+  llmLabel: string;
+  indexedCount: number;
+  fileCount: number;
+  compileStatus: { label: string; variant: "secondary" | "info" | "success" | "warning" | "error" };
+  candidateCount: number;
+  needsReviewCount: number;
+  failedSourceCount: number;
+  activeStatus: string;
+  onStatusFilter: (status: string) => void;
+  onRetryFailed: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className={wikiStatusStrip}>
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <Badge variant="info" className="max-w-full truncate">{llmLabel}</Badge>
+        <Badge variant="secondary">{indexedCount}/{fileCount} 已编译</Badge>
+        <Badge variant={compileStatus.variant}>{compileStatus.label}</Badge>
+        {candidateCount ? <Badge variant="warning">{candidateCount} 个候选待处理</Badge> : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button type="button" onClick={() => onStatusFilter("pending_candidate")} className={cn(wikiQuickFilterButton, activeStatus === "pending_candidate" && wikiQuickFilterActive)}>
+          候选 {candidateCount}
+        </button>
+        <button type="button" onClick={() => onStatusFilter("needs_review")} className={cn(wikiQuickFilterButton, activeStatus === "needs_review" && wikiQuickFilterActive)}>
+          待复核 {needsReviewCount}
+        </button>
+        <button type="button" onClick={onRetryFailed} disabled={!failedSourceCount || disabled} className={wikiQuickFilterButton}>
+          失败来源 {failedSourceCount}
+        </button>
+      </div>
     </div>
   );
 }
@@ -1227,6 +1294,30 @@ function providerModelOptions(providers: ModelProvider[], capability: ProviderCa
     });
 }
 
+function wikiLlmLabel(kb: KBMeta) {
+  const model = kb.llm_info?.model || "";
+  const provider = kb.llm_info?.provider || "";
+  if (model && provider) return `LLM ${provider}/${model}`;
+  if (model) return `LLM ${model}`;
+  return "LLM 未配置";
+}
+
+function isFailedWikiSource(file: FileMeta) {
+  const status = String(file.status || "").toLowerCase();
+  return status.includes("error") || status.includes("failed");
+}
+
+function wikiCompileStatus(files: FileMeta[], activeJob: IngestionJob | undefined, candidateCount: number): { label: string; variant: "secondary" | "info" | "success" | "warning" | "error" } {
+  if (activeJob && isActiveTask(activeJob)) {
+    return { label: activeJob.kind === "wiki_repair" ? "AI 修复中" : "编译中", variant: "info" };
+  }
+  if (files.some(isFailedWikiSource)) return { label: "部分失败", variant: "error" };
+  if (candidateCount) return { label: "候选待处理", variant: "warning" };
+  if (!files.length) return { label: "未上传", variant: "secondary" };
+  if (files.every((file) => file.status === "indexed")) return { label: "编译完成", variant: "success" };
+  return { label: "待编译", variant: "warning" };
+}
+
 function taskCompleted(job: IngestionJob) {
   return Number(job.result?.completed ?? 0);
 }
@@ -1264,6 +1355,9 @@ const wikiIconButton = "inline-flex h-8 w-8 items-center justify-center rounded-
 const wikiInlineIconButton = "inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-35";
 const wikiUploadDialogTrigger = "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-slate-950 px-2.5 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50";
 const wikiToolbarIconButton = "inline-flex h-8 items-center justify-center gap-1 rounded-md border bg-white px-2 text-xs font-semibold transition hover:bg-slate-50 disabled:opacity-45";
+const wikiStatusStrip = "grid gap-2 border-t border-slate-100 bg-white px-3 pb-2 pt-1";
+const wikiQuickFilterButton = "inline-flex h-7 items-center justify-center rounded-md border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-45";
+const wikiQuickFilterActive = "border-sky-200 bg-sky-50 text-sky-700";
 const taskQueueTrigger = "inline-flex h-8 items-center justify-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-45";
 const wikiSidebar = "space-y-3";
 const uploadDialogDropzone = "flex min-h-52 flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-8 text-center transition";

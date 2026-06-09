@@ -31,6 +31,8 @@ const defaultGraphOptions: WikiGraphOptions = { q: "", maxEdges: 80, includeWeak
 export interface WikiResourceContext {
   filters: WikiPageFilters;
   setFilters: (filters: WikiPageFilters) => void;
+  candidateCount: number;
+  needsReviewCount: number;
 }
 
 type WikiResources = React.ReactNode | ((context: WikiResourceContext) => React.ReactNode);
@@ -61,6 +63,11 @@ export function WikiWorkbench({
   const lintRef = useRef<WikiLintPayload | null>(null);
   const [pageFilters, setPageFilters] = useState<WikiPageFilters>(() => emptyFilters());
   const visiblePages = useMemo(() => filterWikiPages(pages, pageFilters), [pageFilters, pages]);
+  const candidateCount = useMemo(() => pages.filter((page) => page.has_candidate).length, [pages]);
+  const needsReviewCount = useMemo(
+    () => pages.filter((page) => page.status === "needs_review" || page.confidence === "AMBIGUOUS" || page.confidence === "UNVERIFIED").length,
+    [pages],
+  );
   const [graphOptions, setGraphOptions] = useState<WikiGraphOptions>(defaultGraphOptions);
   const graphQueryKey = useMemo(() => JSON.stringify(graphParams(graphOptions)), [graphOptions]);
   const [loading, setLoading] = useState(true);
@@ -242,10 +249,10 @@ export function WikiWorkbench({
 
   const renderResources = useCallback(() => {
     if (typeof resources === "function") {
-      return resources({ filters: pageFilters, setFilters: setPageFilters });
+      return resources({ filters: pageFilters, setFilters: setPageFilters, candidateCount, needsReviewCount });
     }
     return resources;
-  }, [pageFilters, resources]);
+  }, [candidateCount, needsReviewCount, pageFilters, resources]);
 
   return (
     <div className="grid h-full min-h-0 gap-3 xl:grid-cols-[minmax(360px,0.82fr)_minmax(640px,1.18fr)]">
