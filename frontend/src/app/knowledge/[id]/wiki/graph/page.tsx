@@ -51,7 +51,8 @@ export default function WikiGraphPage() {
               <span className="text-slate-600">Wiki 图谱</span>
             </div>
             <h1 className="flex items-center gap-2 text-xl font-bold text-slate-950"><BookOpen size={20} className="text-amber-700" />Wiki 图谱工作台</h1>
-            <p className="mt-1 text-sm text-slate-500">{kb?.description || "查看 Wiki 页面之间的引用、来源重叠和主题关系。"}</p>
+            <p className="mt-1 text-sm text-slate-500">{kb?.description || "页面关系 / 主题结构 / 来源关联，不等同于系统 Neo4j 三元组知识图谱。"}</p>
+            <p className="mt-2 text-xs text-slate-400">图谱说明：左侧筛选关系范围，中间拖拽浏览节点，右侧查看节点详情和关系列表。</p>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="warning">LLM Wiki</Badge>

@@ -2,9 +2,21 @@
 
 import "reactflow/dist/style.css";
 
-import { useEffect, useMemo } from "react";
-import ReactFlow, { Background, Controls, MiniMap, Handle, Position, useEdgesState, useNodesState, type Edge, type Node, type NodeProps } from "reactflow";
-import { ExternalLink, GitBranch, RefreshCw, Search } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import ReactFlow, {
+  Background,
+  Controls,
+  Handle,
+  MiniMap,
+  Position,
+  useEdgesState,
+  useNodesState,
+  type Edge,
+  type Node,
+  type NodeProps,
+  type ReactFlowInstance,
+} from "reactflow";
+import { ExternalLink, GitBranch, LocateFixed, Network, RefreshCw, RotateCcw, Search } from "lucide-react";
 import { type WikiGraphPayload } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -13,6 +25,8 @@ export interface WikiGraphOptions {
   q: string;
   maxEdges: number;
   includeWeak: boolean;
+  typeFilters?: string[];
+  communityFilters?: string[];
 }
 
 interface WikiNodeData {
@@ -23,6 +37,9 @@ interface WikiNodeData {
   community: number;
   degree: number;
 }
+
+type WikiGraphNode = WikiGraphPayload["nodes"][number];
+type WikiGraphEdge = WikiGraphPayload["edges"][number];
 
 const nodeTypes = { wikiNode: WikiNode };
 
@@ -43,25 +60,87 @@ export function WikiGraphPanel({
   onOpenPage?: () => void;
   onReload: () => Promise<void>;
 }) {
-  const effectiveOptions = options ?? { q: "", maxEdges: 80, includeWeak: false };
-  const { nodes: builtNodes, edges: builtEdges, degrees } = useMemo(() => buildFlowGraph(graph), [graph]);
+  const effectiveOptions = useMemo(() => normalizeGraphOptions(options), [options]);
+  const typeFilters = useMemo(() => effectiveOptions.typeFilters ?? [], [effectiveOptions.typeFilters]);
+  const communityFilters = useMemo(() => effectiveOptions.communityFilters ?? [], [effectiveOptions.communityFilters]);
+  const visibleGraph = useMemo(() => filterGraph(graph, typeFilters, communityFilters), [communityFilters, graph, typeFilters]);
+  const { nodes: builtNodes, edges: builtEdges, degrees } = useMemo(() => buildFlowGraph(visibleGraph), [visibleGraph]);
   const [nodes, setNodes, onNodesChange] = useNodesState<WikiNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [flow, setFlow] = useState<ReactFlowInstance | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState("");
+  const [focusNodeId, setFocusNodeId] = useState("");
   const stats = graph?.stats ?? {};
+  const pageTitle = useMemo(() => new Map((graph?.nodes ?? []).map((node) => [node.id, node.label])), [graph?.nodes]);
+  const selectedNode = useMemo(
+    () => (visibleGraph?.nodes ?? []).find((node) => node.id === selectedNodeId) ?? null,
+    [selectedNodeId, visibleGraph?.nodes],
+  );
+  const selectedNodeDegree = selectedNode ? degrees.get(selectedNode.id) ?? 0 : 0;
+  const selectedEdges = useMemo(
+    () => selectedNode ? (visibleGraph?.edges ?? []).filter((edge) => edge.source === selectedNode.id || edge.target === selectedNode.id) : [],
+    [selectedNode, visibleGraph?.edges],
+  );
   const coreNodes = useMemo(
     () =>
-      (graph?.nodes ?? [])
+      (visibleGraph?.nodes ?? [])
         .map((node) => ({ ...node, degree: degrees.get(node.id) ?? 0 }))
         .filter((node) => node.degree > 0)
         .sort((left, right) => right.degree - left.degree || left.label.localeCompare(right.label))
-        .slice(0, 10),
-    [degrees, graph?.nodes],
+        .slice(0, fullscreen ? 14 : 10),
+    [degrees, fullscreen, visibleGraph?.nodes],
   );
-  const pageTitle = useMemo(() => new Map((graph?.nodes ?? []).map((node) => [node.id, node.label])), [graph?.nodes]);
+  const typeOptions = useMemo(
+    () => uniqueSorted((graph?.nodes ?? []).map((node) => node.type || "unknown")),
+    [graph?.nodes],
+  );
+  const communityOptions = useMemo(
+    () => uniqueSorted((graph?.nodes ?? []).map((node) => String(node.community ?? 0)), true),
+    [graph?.nodes],
+  );
+  const displayNodes = useMemo(
+    () =>
+      nodes.map((node) => ({
+        ...node,
+        className: cn(node.className, node.id === selectedNodeId && "wiki-graph-node-selected", node.id === focusNodeId && "wiki-graph-node-focus"),
+      })),
+    [focusNodeId, nodes, selectedNodeId],
+  );
 
-  const updateOption = (patch: Partial<WikiGraphOptions>) => {
+  const updateOption = useCallback((patch: Partial<WikiGraphOptions>) => {
     onOptionsChange?.({ ...effectiveOptions, ...patch });
-  };
+  }, [effectiveOptions, onOptionsChange]);
+
+  const toggleArrayOption = useCallback((key: "typeFilters" | "communityFilters", value: string) => {
+    const current = key === "typeFilters" ? typeFilters : communityFilters;
+    const next = current.includes(value) ? current.filter((item) => item !== value) : [...current, value];
+    updateOption({ [key]: next } as Partial<WikiGraphOptions>);
+  }, [communityFilters, typeFilters, updateOption]);
+
+  const onFitView = useCallback(() => {
+    flow?.fitView({ padding: 0.22, duration: 450 });
+  }, [flow]);
+
+  const resetView = useCallback(() => {
+    setFocusNodeId("");
+    setSelectedNodeId("");
+    flow?.fitView({ padding: 0.22, duration: 450 });
+  }, [flow]);
+
+  const focusNode = useCallback((nodeId: string) => {
+    const target = nodes.find((node) => node.id === nodeId);
+    setSelectedNodeId(nodeId);
+    setFocusNodeId(nodeId);
+    if (target) {
+      flow?.setCenter(target.position.x + 80, target.position.y + 60, { zoom: 1.25, duration: 450 });
+    }
+  }, [flow, nodes]);
+
+  const handleNodeClick = useCallback((nodeId: string) => {
+    setSelectedNodeId(nodeId);
+    setFocusNodeId(nodeId);
+    if (!fullscreen) onNodeSelect?.(nodeId);
+  }, [fullscreen, onNodeSelect]);
 
   useEffect(() => {
     setNodes(builtNodes);
@@ -72,7 +151,7 @@ export function WikiGraphPanel({
   }, [builtEdges, setEdges]);
 
   return (
-    <div className="space-y-4">
+    <div className={cn("space-y-4", fullscreen && "flex min-h-0 flex-1 flex-col")}>
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
         <div className="flex items-center gap-2">
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-700"><GitBranch size={16} /></span>
@@ -82,126 +161,382 @@ export function WikiGraphPanel({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <GraphStat label="页面" value={Number(stats.total_nodes ?? stats.pages ?? nodes.length)} />
-          <GraphStat label="展示关系" value={Number(stats.display_edge_count ?? stats.total_edges ?? edges.length)} />
-          <GraphStat label="原始关系" value={Number(stats.raw_edge_count ?? stats.edges ?? edges.length)} />
-          <GraphStat label="社区" value={Number(stats.communities ?? 0)} />
+          <GraphStat label="页面" value={Number(stats.total_nodes ?? stats.pages ?? graph?.nodes?.length ?? nodes.length)} />
+          <GraphStat label="展示关系" value={edges.length} />
+          <GraphStat label="原始关系" value={Number(stats.raw_edge_count ?? stats.edges ?? graph?.edges?.length ?? edges.length)} />
+          <GraphStat label="社区" value={Number(stats.communities ?? communityOptions.length)} />
           {onOpenPage ? <button type="button" onClick={onOpenPage} className={iconButton} title="打开图谱详细页"><ExternalLink size={14} /></button> : null}
           <button type="button" onClick={() => void onReload()} className={iconButton} title="刷新图谱"><RefreshCw size={14} /></button>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3">
-        <div className="relative min-w-56 flex-1">
-          <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            value={effectiveOptions.q}
-            onChange={(event) => updateOption({ q: event.target.value })}
-            placeholder="聚焦关键词"
-            className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-700 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
-          />
-        </div>
-        <label className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600">
-          关系数
-          <input
-            type="number"
-            min={20}
-            max={300}
-            value={effectiveOptions.maxEdges}
-            onChange={(event) => updateOption({ maxEdges: Number(event.target.value) || 80 })}
-            className="h-6 w-16 rounded border border-slate-200 px-1.5 text-xs outline-none"
-          />
-        </label>
-        <label className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600">
-          <input
-            type="checkbox"
-            checked={effectiveOptions.includeWeak}
-            onChange={(event) => updateOption({ includeWeak: event.target.checked })}
-            className="h-4 w-4 accent-indigo-600"
-          />
-          {effectiveOptions.includeWeak ? "包含弱关系" : "核心关系"}
-        </label>
-      </div>
-
-      <div className={cn("grid gap-4", fullscreen ? "xl:grid-cols-[minmax(0,1fr)_300px]" : "xl:grid-cols-[minmax(0,1fr)_260px]")}>
-        <div className={cn("overflow-hidden rounded-xl border border-slate-200 bg-white", fullscreen ? "h-[calc(100vh-300px)] min-h-[620px]" : "h-[620px]")}>
-          {nodes.length ? (
-            <ReactFlow
-              nodes={nodes}
+      {fullscreen ? (
+        <WikiGraphExplorerShell
+          graph={visibleGraph}
+          displayNodes={displayNodes}
+          edges={edges}
+          effectiveOptions={effectiveOptions}
+          typeFilters={typeFilters}
+          communityFilters={communityFilters}
+          typeOptions={typeOptions}
+          communityOptions={communityOptions}
+          selectedNode={selectedNode}
+          selectedNodeDegree={selectedNodeDegree}
+          selectedEdges={selectedEdges}
+          coreNodes={coreNodes}
+          pageTitle={pageTitle}
+          onOptionsChange={updateOption}
+          onToggleOption={toggleArrayOption}
+          onFitView={onFitView}
+          onResetView={resetView}
+          onFocusNode={focusNode}
+          onOpenNode={onNodeSelect}
+          onReload={onReload}
+          setFlow={setFlow}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={handleNodeClick}
+        />
+      ) : (
+        <>
+          <CompactGraphControls effectiveOptions={effectiveOptions} onOptionsChange={updateOption} />
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+            <GraphCanvas
+              nodes={displayNodes}
               edges={edges}
-              nodeTypes={nodeTypes}
-              fitView
-              fitViewOptions={{ padding: 0.2 }}
-              nodesDraggable
-              nodesConnectable={false}
-              nodesFocusable
-              edgesFocusable
-              panOnDrag
-              zoomOnScroll
-              zoomOnPinch
-              zoomOnDoubleClick
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
-              onNodeClick={(_event, node) => onNodeSelect?.(node.id)}
-            >
-              <Background gap={18} size={1} color="#e2e8f0" />
-              <MiniMap pannable zoomable nodeColor={(node) => nodeColor((node.data as WikiNodeData).type)} />
-              <Controls showInteractive />
-            </ReactFlow>
+              onNodeClick={handleNodeClick}
+              setFlow={setFlow}
+              heightClass="h-[620px]"
+            />
+            <CompactGraphAside coreNodes={coreNodes} onFocusNode={(nodeId) => onNodeSelect?.(nodeId)} />
+          </div>
+          <RelationshipList edges={visibleGraph?.edges ?? []} pageTitle={pageTitle} onFocusNode={(nodeId) => onNodeSelect?.(nodeId)} compact />
+        </>
+      )}
+    </div>
+  );
+}
+
+function WikiGraphExplorerShell({
+  graph,
+  displayNodes,
+  edges,
+  effectiveOptions,
+  typeFilters,
+  communityFilters,
+  typeOptions,
+  communityOptions,
+  selectedNode,
+  selectedNodeDegree,
+  selectedEdges,
+  coreNodes,
+  pageTitle,
+  onOptionsChange,
+  onToggleOption,
+  onFitView,
+  onResetView,
+  onFocusNode,
+  onOpenNode,
+  onReload,
+  setFlow,
+  onNodesChange,
+  onEdgesChange,
+  onNodeClick,
+}: {
+  graph: WikiGraphPayload | null;
+  displayNodes: Node<WikiNodeData>[];
+  edges: Edge[];
+  effectiveOptions: WikiGraphOptions;
+  typeFilters: string[];
+  communityFilters: string[];
+  typeOptions: string[];
+  communityOptions: string[];
+  selectedNode: WikiGraphNode | null;
+  selectedNodeDegree: number;
+  selectedEdges: WikiGraphEdge[];
+  coreNodes: Array<WikiGraphNode & { degree: number }>;
+  pageTitle: Map<string, string>;
+  onOptionsChange: (patch: Partial<WikiGraphOptions>) => void;
+  onToggleOption: (key: "typeFilters" | "communityFilters", value: string) => void;
+  onFitView: () => void;
+  onResetView: () => void;
+  onFocusNode: (nodeId: string) => void;
+  onOpenNode?: (nodeId: string) => void;
+  onReload: () => Promise<void>;
+  setFlow: (flow: ReactFlowInstance) => void;
+  onNodesChange: ReturnType<typeof useNodesState<WikiNodeData>>[2];
+  onEdgesChange: ReturnType<typeof useEdgesState>[2];
+  onNodeClick: (nodeId: string) => void;
+}) {
+  return (
+    <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[260px_minmax(0,1fr)_320px]">
+      <aside className="min-h-0 overflow-auto rounded-xl border border-slate-200 bg-white p-3">
+        <section className="space-y-3 border-b border-slate-100 pb-4">
+          <div>
+            <h4 className="text-sm font-semibold text-slate-900">关系范围</h4>
+            <p className="mt-1 text-xs leading-5 text-slate-500">核心关系优先显示显式双链；弱关系会加入来源重叠、共同邻居等推断关系。</p>
+          </div>
+          <div className="relative">
+            <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              value={effectiveOptions.q}
+              onChange={(event) => onOptionsChange({ q: event.target.value })}
+              placeholder="搜索页面或主题"
+              className={filterInput}
+            />
+          </div>
+          <label className="grid gap-1 text-xs font-semibold text-slate-600">
+            关系数
+            <input
+              type="number"
+              min={20}
+              max={300}
+              value={effectiveOptions.maxEdges}
+              onChange={(event) => onOptionsChange({ maxEdges: Number(event.target.value) || 80 })}
+              className={numberInput}
+            />
+          </label>
+          <label className="flex h-9 items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600">
+            {effectiveOptions.includeWeak ? "包含弱关系" : "核心关系"}
+            <input type="checkbox" checked={effectiveOptions.includeWeak} onChange={(event) => onOptionsChange({ includeWeak: event.target.checked })} className="h-4 w-4 accent-indigo-600" />
+          </label>
+          <button type="button" onClick={() => void onReload()} className={primaryButton}><RefreshCw size={14} />刷新图谱</button>
+        </section>
+
+        <FilterGroup title="页面类型" values={typeOptions} selected={typeFilters} labelFor={pageTypeLabel} onToggle={(value) => onToggleOption("typeFilters", value)} />
+        <FilterGroup title="社区" values={communityOptions} selected={communityFilters} labelFor={(value) => `社区 ${value}`} onToggle={(value) => onToggleOption("communityFilters", value)} />
+
+        <section className="space-y-2 border-t border-slate-100 pt-4">
+          <h4 className="text-sm font-semibold text-slate-900">视图</h4>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={onFitView} className={secondaryButton}><LocateFixed size={14} />适应</button>
+            <button type="button" onClick={onResetView} className={secondaryButton}><RotateCcw size={14} />重置</button>
+          </div>
+        </section>
+      </aside>
+
+      <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+          <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
+            <Network size={16} className="text-indigo-600" />
+            {effectiveOptions.includeWeak ? "包含弱关系" : "核心关系"}
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-3 text-xs text-slate-500">
+            {typeLegend.map((type) => (
+              <span key={type.type} className="inline-flex items-center gap-1.5">
+                <i className="h-2.5 w-2.5 rounded-full" style={{ background: type.color }} />
+                {type.label}
+              </span>
+            ))}
+          </div>
+        </div>
+        <GraphCanvas
+          nodes={displayNodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={onNodeClick}
+          setFlow={setFlow}
+          heightClass="h-full min-h-[640px]"
+        />
+      </section>
+
+      <aside className="min-h-0 overflow-auto rounded-xl border border-slate-200 bg-white p-3">
+        <section className="space-y-3 border-b border-slate-100 pb-4">
+          <h4 className="text-sm font-semibold text-slate-900">当前节点</h4>
+          {selectedNode ? (
+            <div className="space-y-3">
+              <div>
+                <h3 className="break-words text-base font-bold text-slate-950">{selectedNode.label}</h3>
+                <p className="mt-1 break-all font-mono text-[11px] text-slate-400">{selectedNode.id}</p>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <Badge variant="secondary">{pageTypeLabel(selectedNode.type)}</Badge>
+                <Badge variant={confidenceVariant(selectedNode.confidence)}>{selectedNode.confidence || "UNVERIFIED"}</Badge>
+                <Badge variant="info">社区 {selectedNode.community ?? 0}</Badge>
+                <Badge variant="warning">{selectedNodeDegree} links</Badge>
+              </div>
+              <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+                <p>来源数量：{selectedNode.sources?.length ?? 0}</p>
+                <p>相关关系：{selectedEdges.length}</p>
+              </div>
+              {onOpenNode ? <button type="button" onClick={() => onOpenNode(selectedNode.id)} className={primaryButton}><ExternalLink size={14} />在 Wiki 页面中查看</button> : null}
+            </div>
           ) : (
-            <div className="flex h-full flex-col items-center justify-center text-sm text-slate-400">
-              <GitBranch size={32} className="mb-3 text-slate-300" />
-              暂无 Wiki 图谱
-            </div>
+            <div className="rounded-lg border border-dashed border-slate-200 px-3 py-8 text-center text-xs text-slate-400">点击图中节点查看详情</div>
           )}
-        </div>
+        </section>
 
-        <aside className="grid content-start gap-3">
-          <section className="rounded-xl border border-slate-200 bg-white p-3">
-            <h4 className="text-xs font-semibold text-slate-700">节点类型</h4>
-            <div className="mt-2 grid gap-1.5">
-              {typeLegend.map((item) => (
-                <div key={item.type} className="flex items-center gap-2 text-xs text-slate-600">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: item.color }} />
-                  {item.label}
-                </div>
-              ))}
-            </div>
-          </section>
-          <section className="rounded-xl border border-slate-200 bg-white p-3">
-            <h4 className="text-xs font-semibold text-slate-700">核心节点</h4>
-            <div className="mt-2 grid gap-1.5">
-              {coreNodes.length ? coreNodes.map((node) => (
-                <button key={node.id} type="button" onClick={() => onNodeSelect?.(node.id)} className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-slate-600 hover:bg-indigo-50 hover:text-indigo-700">
-                  <span className="min-w-0 truncate">{node.label}</span>
-                  <Badge variant="secondary">{node.degree}</Badge>
-                </button>
-              )) : <span className="text-xs text-slate-400">暂无核心节点</span>}
-            </div>
-          </section>
-        </aside>
+        <section className="space-y-2 border-b border-slate-100 py-4">
+          <h4 className="text-sm font-semibold text-slate-900">核心节点</h4>
+          <div className="grid gap-1.5">
+            {coreNodes.length ? coreNodes.map((node) => (
+              <button key={node.id} type="button" onClick={() => onFocusNode(node.id)} className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-slate-600 hover:bg-indigo-50 hover:text-indigo-700">
+                <span className="min-w-0 truncate">{node.label}</span>
+                <Badge variant="secondary">{node.degree}</Badge>
+              </button>
+            )) : <span className="text-xs text-slate-400">暂无核心节点</span>}
+          </div>
+        </section>
+
+        <RelationshipList edges={graph?.edges ?? []} pageTitle={pageTitle} onFocusNode={onFocusNode} title="关系列表" />
+      </aside>
+    </div>
+  );
+}
+
+function CompactGraphControls({ effectiveOptions, onOptionsChange }: { effectiveOptions: WikiGraphOptions; onOptionsChange: (patch: Partial<WikiGraphOptions>) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3">
+      <div className="relative min-w-56 flex-1">
+        <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input
+          value={effectiveOptions.q}
+          onChange={(event) => onOptionsChange({ q: event.target.value })}
+          placeholder="聚焦关键词"
+          className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-700 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+        />
       </div>
+      <label className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600">
+        关系数
+        <input
+          type="number"
+          min={20}
+          max={300}
+          value={effectiveOptions.maxEdges}
+          onChange={(event) => onOptionsChange({ maxEdges: Number(event.target.value) || 80 })}
+          className="h-6 w-16 rounded border border-slate-200 px-1.5 text-xs outline-none"
+        />
+      </label>
+      <label className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600">
+        <input type="checkbox" checked={effectiveOptions.includeWeak} onChange={(event) => onOptionsChange({ includeWeak: event.target.checked })} className="h-4 w-4 accent-indigo-600" />
+        {effectiveOptions.includeWeak ? "包含弱关系" : "核心关系"}
+      </label>
+    </div>
+  );
+}
 
-      <section className="rounded-xl border border-slate-200 bg-white">
-        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-          <h4 className="text-xs font-semibold text-slate-700">关系详情</h4>
-          <span className="text-[11px] text-slate-400">{graph?.edges?.length ?? 0}</span>
+function GraphCanvas({
+  nodes,
+  edges,
+  onNodesChange,
+  onEdgesChange,
+  onNodeClick,
+  setFlow,
+  heightClass,
+}: {
+  nodes: Node<WikiNodeData>[];
+  edges: Edge[];
+  onNodesChange: ReturnType<typeof useNodesState<WikiNodeData>>[2];
+  onEdgesChange: ReturnType<typeof useEdgesState>[2];
+  onNodeClick: (nodeId: string) => void;
+  setFlow: (flow: ReactFlowInstance) => void;
+  heightClass: string;
+}) {
+  return (
+    <div className={cn("overflow-hidden rounded-xl border border-slate-200 bg-white", heightClass)}>
+      {nodes.length ? (
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          fitView
+          fitViewOptions={{ padding: 0.2 }}
+          nodesDraggable
+          nodesConnectable={false}
+          nodesFocusable
+          edgesFocusable
+          panOnDrag
+          zoomOnScroll
+          zoomOnPinch
+          zoomOnDoubleClick
+          onInit={setFlow}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={(_event, node) => onNodeClick(node.id)}
+        >
+          <Background gap={18} size={1} color="#e2e8f0" />
+          <MiniMap pannable zoomable nodeColor={(node) => nodeColor((node.data as WikiNodeData).type)} />
+          <Controls showInteractive />
+        </ReactFlow>
+      ) : (
+        <div className="flex h-full flex-col items-center justify-center text-sm text-slate-400">
+          <GitBranch size={32} className="mb-3 text-slate-300" />
+          暂无 Wiki 图谱
         </div>
-        <div className="max-h-72 overflow-auto">
-          {graph?.edges?.length ? graph.edges.map((edge, index) => (
-            <div key={`${edge.source}-${edge.target}-${index}`} className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-2 text-xs text-slate-600 last:border-0">
-              <button type="button" onClick={() => onNodeSelect?.(edge.source)} className="font-semibold text-slate-800 hover:text-indigo-700">{pageTitle.get(edge.source) ?? edge.source}</button>
-              <span className="text-slate-300">{"->"}</span>
-              <button type="button" onClick={() => onNodeSelect?.(edge.target)} className="font-semibold text-slate-800 hover:text-indigo-700">{pageTitle.get(edge.target) ?? edge.target}</button>
-              <Badge variant="secondary">权重 {edge.weight}</Badge>
-              {edge.signals?.wikilink ? <Badge variant="info">双链</Badge> : <Badge variant="secondary">推断</Badge>}
-              {Array.isArray(edge.signals?.source_overlap) && edge.signals.source_overlap.length ? <Badge variant="success">同源</Badge> : null}
-              {Array.isArray(edge.signals?.common_neighbors) && edge.signals.common_neighbors.length ? <Badge variant="warning">共邻</Badge> : null}
+      )}
+    </div>
+  );
+}
+
+function FilterGroup({ title, values, selected, labelFor, onToggle }: { title: string; values: string[]; selected: string[]; labelFor: (value: string) => string; onToggle: (value: string) => void }) {
+  return (
+    <section className="space-y-2 border-t border-slate-100 py-4">
+      <h4 className="text-sm font-semibold text-slate-900">{title}</h4>
+      <div className="grid gap-1.5">
+        {values.length ? values.map((value) => (
+          <label key={value} className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+            <span className="min-w-0 truncate">{labelFor(value)}</span>
+            <input type="checkbox" checked={selected.includes(value)} onChange={() => onToggle(value)} className="h-4 w-4 accent-indigo-600" />
+          </label>
+        )) : <span className="text-xs text-slate-400">暂无可筛选项</span>}
+      </div>
+    </section>
+  );
+}
+
+function CompactGraphAside({ coreNodes, onFocusNode }: { coreNodes: Array<WikiGraphNode & { degree: number }>; onFocusNode: (nodeId: string) => void }) {
+  return (
+    <aside className="grid content-start gap-3">
+      <section className="rounded-xl border border-slate-200 bg-white p-3">
+        <h4 className="text-xs font-semibold text-slate-700">节点类型</h4>
+        <div className="mt-2 grid gap-1.5">
+          {typeLegend.map((item) => (
+            <div key={item.type} className="flex items-center gap-2 text-xs text-slate-600">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ background: item.color }} />
+              {item.label}
             </div>
-          )) : <div className="px-4 py-8 text-center text-xs text-slate-400">暂无关系</div>}
+          ))}
         </div>
       </section>
-    </div>
+      <section className="rounded-xl border border-slate-200 bg-white p-3">
+        <h4 className="text-xs font-semibold text-slate-700">核心节点</h4>
+        <div className="mt-2 grid gap-1.5">
+          {coreNodes.length ? coreNodes.map((node) => (
+            <button key={node.id} type="button" onClick={() => onFocusNode(node.id)} className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-slate-600 hover:bg-indigo-50 hover:text-indigo-700">
+              <span className="min-w-0 truncate">{node.label}</span>
+              <Badge variant="secondary">{node.degree}</Badge>
+            </button>
+          )) : <span className="text-xs text-slate-400">暂无核心节点</span>}
+        </div>
+      </section>
+    </aside>
+  );
+}
+
+function RelationshipList({ edges, pageTitle, onFocusNode, title = "关系详情", compact = false }: { edges: WikiGraphEdge[]; pageTitle: Map<string, string>; onFocusNode: (nodeId: string) => void; title?: string; compact?: boolean }) {
+  return (
+    <section className={cn(!compact && "space-y-2 pt-4", compact && "rounded-xl border border-slate-200 bg-white")}>
+      <div className={cn("flex items-center justify-between", compact ? "border-b border-slate-100 px-4 py-3" : "pb-1")}>
+        <h4 className="text-xs font-semibold text-slate-700">{title}</h4>
+        <span className="text-[11px] text-slate-400">{edges.length}</span>
+      </div>
+      <div className={cn("overflow-auto", compact ? "max-h-72" : "max-h-96")}>
+        {edges.length ? edges.map((edge, index) => (
+          <div key={`${edge.source}-${edge.target}-${index}`} className={cn("flex flex-wrap items-center gap-2 border-b border-slate-100 text-xs text-slate-600 last:border-0", compact ? "px-4 py-2" : "py-2")}>
+            <button type="button" onClick={() => onFocusNode(edge.source)} className="min-w-0 max-w-full truncate font-semibold text-slate-800 hover:text-indigo-700">{pageTitle.get(edge.source) ?? edge.source}</button>
+            <span className="text-slate-300">{"->"}</span>
+            <button type="button" onClick={() => onFocusNode(edge.target)} className="min-w-0 max-w-full truncate font-semibold text-slate-800 hover:text-indigo-700">{pageTitle.get(edge.target) ?? edge.target}</button>
+            <Badge variant="secondary">权重 {edge.weight}</Badge>
+            {edge.signals?.wikilink ? <Badge variant="info">双链</Badge> : <Badge variant="secondary">推断</Badge>}
+            {Array.isArray(edge.signals?.source_overlap) && edge.signals.source_overlap.length ? <Badge variant="success">同源</Badge> : null}
+            {Array.isArray(edge.signals?.common_neighbors) && edge.signals.common_neighbors.length ? <Badge variant="warning">共邻</Badge> : null}
+          </div>
+        )) : <div className={cn("text-center text-xs text-slate-400", compact ? "px-4 py-8" : "py-6")}>暂无关系</div>}
+      </div>
+    </section>
   );
 }
 
@@ -212,12 +547,37 @@ function WikiNode({ data }: NodeProps<WikiNodeData>) {
       <p className="line-clamp-2 text-sm font-semibold leading-5 text-slate-900">{data.label}</p>
       <div className="mt-2 flex flex-wrap gap-1">
         <Badge variant="secondary">{pageTypeLabel(data.type)}</Badge>
-        <Badge variant={data.confidence === "EXTRACTED" ? "success" : data.confidence === "INFERRED" ? "info" : "warning"}>{data.confidence}</Badge>
+        <Badge variant={confidenceVariant(data.confidence)}>{data.confidence}</Badge>
       </div>
       <p className="mt-2 text-[11px] text-slate-400">{data.sources} sources · {data.degree} links · C{data.community}</p>
       <Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !bg-slate-300" />
     </div>
   );
+}
+
+function normalizeGraphOptions(options?: WikiGraphOptions): WikiGraphOptions {
+  return {
+    q: options?.q ?? "",
+    maxEdges: options?.maxEdges ?? 80,
+    includeWeak: options?.includeWeak ?? false,
+    typeFilters: options?.typeFilters ?? [],
+    communityFilters: options?.communityFilters ?? [],
+  };
+}
+
+function filterGraph(graph: WikiGraphPayload | null, typeFilters: string[], communityFilters: string[]): WikiGraphPayload | null {
+  if (!graph) return null;
+  const nodes = graph.nodes.filter((node) => {
+    const typeOk = !typeFilters.length || typeFilters.includes(node.type || "unknown");
+    const communityOk = !communityFilters.length || communityFilters.includes(String(node.community ?? 0));
+    return typeOk && communityOk;
+  });
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  return {
+    ...graph,
+    nodes,
+    edges: graph.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)),
+  };
 }
 
 function buildFlowGraph(graph: WikiGraphPayload | null): { nodes: Node<WikiNodeData>[]; edges: Edge[]; degrees: Map<string, number> } {
@@ -280,6 +640,10 @@ function GraphStat({ label, value }: { label: string; value: number }) {
   );
 }
 
+function uniqueSorted(values: string[], numeric = false) {
+  return [...new Set(values.filter(Boolean))].sort((left, right) => numeric ? Number(left) - Number(right) : left.localeCompare(right));
+}
+
 function nodeColor(type: string) {
   if (type === "source") return "#0ea5e9";
   if (type === "entity") return "#10b981";
@@ -305,7 +669,15 @@ function pageTypeLabel(type: string) {
     comparison: "对比",
     query: "问答",
     note: "笔记",
+    unknown: "未知",
   }[type] ?? type;
+}
+
+function confidenceVariant(confidence: string): "secondary" | "info" | "success" | "warning" | "error" {
+  if (confidence === "EXTRACTED") return "success";
+  if (confidence === "INFERRED") return "info";
+  if (confidence === "AMBIGUOUS") return "warning";
+  return "secondary";
 }
 
 const typeLegend = [
@@ -317,3 +689,7 @@ const typeLegend = [
 ];
 
 const iconButton = "inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50";
+const primaryButton = "inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-3 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-40";
+const secondaryButton = "inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50";
+const filterInput = "h-9 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-700 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100";
+const numberInput = "h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-700 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100";
