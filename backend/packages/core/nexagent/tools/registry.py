@@ -58,6 +58,27 @@ _BUILTIN_SPECS: dict[str, ToolSpec] = {
         module="nexagent.tools.builtin.wiki",
         factory="get_wiki_graph_tool",
     ),
+    "compile_wiki": ToolSpec(
+        name="compile_wiki",
+        description="Compile uploaded source files into an enabled LLM Wiki after explicit confirmation.",
+        category="knowledge",
+        module="nexagent.tools.builtin.wiki",
+        factory="get_compile_wiki_tool",
+    ),
+    "crystallize_wiki": ToolSpec(
+        name="crystallize_wiki",
+        description="Create or update a Wiki page from explicit markdown text after confirmation.",
+        category="knowledge",
+        module="nexagent.tools.builtin.wiki",
+        factory="get_crystallize_wiki_tool",
+    ),
+    "handle_wiki_candidate": ToolSpec(
+        name="handle_wiki_candidate",
+        description="Accept or discard a generated Wiki candidate after explicit confirmation.",
+        category="knowledge",
+        module="nexagent.tools.builtin.wiki",
+        factory="get_handle_wiki_candidate_tool",
+    ),
     "web_search": ToolSpec(
         name="web_search",
         description="Search the web for current information via Tavily or DuckDuckGo/DDGS.",
@@ -217,7 +238,16 @@ class ToolRegistry:
         try:
             module = import_module(spec.module)
             factory: Callable = getattr(module, spec.factory)
-            if name in {"knowledge_search", "list_wiki_pages", "read_wiki_page", "wiki_lint", "get_wiki_graph"}:
+            if name in {
+                "knowledge_search",
+                "list_wiki_pages",
+                "read_wiki_page",
+                "wiki_lint",
+                "get_wiki_graph",
+                "compile_wiki",
+                "crystallize_wiki",
+                "handle_wiki_candidate",
+            }:
                 return factory(kb_ids=kwargs.get("kb_ids") or None)
             if name == "delegate_subagents":
                 return factory(

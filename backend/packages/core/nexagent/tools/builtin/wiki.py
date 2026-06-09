@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -128,6 +129,143 @@ def get_wiki_graph_tool(kb_ids: list[str] | None = None):
     return get_wiki_graph
 
 
+def get_compile_wiki_tool(kb_ids: list[str] | None = None):
+    """Return a write tool that compiles uploaded Wiki source files."""
+
+    target_kb_ids = list(kb_ids or [])
+
+    @tool
+    async def compile_wiki(
+        kb_id: str,
+        file_ids: list[str] | None = None,
+        force: bool = False,
+        retry_failed: bool = False,
+        confirmed: bool = False,
+    ) -> str:
+        """Compile an enabled LLM Wiki knowledge base after explicit user confirmation."""
+
+        try:
+            target = _resolve_wiki_target(kb_id, target_kb_ids)
+            normalized_file_ids = _clean_list(file_ids)
+            if not confirmed:
+                scope = f"指定 {len(normalized_file_ids)} 个文件" if normalized_file_ids else "所有待处理文件"
+                return (
+                    f"需要用户确认：将编译 Wiki 知识库 '{target.kb_name}' 的{scope}"
+                    f"（force={bool(force)}, retry_failed={bool(retry_failed)}）。"
+                    "确认后请再次调用并设置 confirmed=true。"
+                )
+            result = await target.backend.compile_wiki(
+                target.kb_id,
+                file_ids=normalized_file_ids or None,
+                force=bool(force),
+                retry_failed=bool(retry_failed),
+            )
+            return _json_payload(result)
+        except _WikiToolError as exc:
+            return str(exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("compile_wiki tool error: %s", exc)
+            return f"Compile Wiki failed: {exc}"
+
+    return compile_wiki
+
+
+def get_crystallize_wiki_tool(kb_ids: list[str] | None = None):
+    """Return a write tool that distills explicit text into a Wiki page."""
+
+    target_kb_ids = list(kb_ids or [])
+
+    @tool
+    async def crystallize_wiki(
+        kb_id: str,
+        title: str,
+        content: str,
+        page_type: str = "note",
+        confidence: str = "UNVERIFIED",
+        sources: list[str] | None = None,
+        confirmed: bool = False,
+    ) -> str:
+        """Create or update a Wiki page from explicit markdown text after confirmation."""
+
+        title_text = str(title or "").strip()
+        content_text = str(content or "").strip()
+        if not title_text or not content_text:
+            return "标题和内容不能为空。"
+        normalized_type = str(page_type or "note").strip().lower()
+        if normalized_type not in {"source", "topic", "entity", "synthesis", "note"}:
+            return "page_type 只支持 source、topic、entity、synthesis、note。"
+        normalized_confidence = str(confidence or "UNVERIFIED").strip().upper()
+        if normalized_confidence not in {"UNVERIFIED", "EXTRACTED", "INFERRED", "AMBIGUOUS"}:
+            return "confidence 只支持 UNVERIFIED、EXTRACTED、INFERRED、AMBIGUOUS。"
+
+        try:
+            target = _resolve_wiki_target(kb_id, target_kb_ids)
+            normalized_sources = _clean_list(sources)
+            if not confirmed:
+                return (
+                    f"需要用户确认：将在 Wiki 知识库 '{target.kb_name}' 中创建或更新 "
+                    f"{normalized_type} 页面 '{title_text}'。确认后请再次调用并设置 confirmed=true。"
+                )
+            page = await target.backend.crystallize_wiki_text(
+                target.kb_id,
+                title=title_text,
+                content=content_text,
+                page_type=normalized_type,
+                sources=normalized_sources,
+                confidence=normalized_confidence,
+            )
+            return f"已沉淀 Wiki 页面 '{page.get('title') or title_text}'。\n{_json_payload(page)}"
+        except _WikiToolError as exc:
+            return str(exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("crystallize_wiki tool error: %s", exc)
+            return f"Crystallize Wiki failed: {exc}"
+
+    return crystallize_wiki
+
+
+def get_handle_wiki_candidate_tool(kb_ids: list[str] | None = None):
+    """Return a write tool that accepts or discards generated Wiki candidates."""
+
+    target_kb_ids = list(kb_ids or [])
+
+    @tool
+    async def handle_wiki_candidate(
+        kb_id: str,
+        page_id: str,
+        action: str,
+        confirmed: bool = False,
+    ) -> str:
+        """Accept or discard a generated Wiki candidate after explicit confirmation."""
+
+        normalized_action = str(action or "").strip().lower()
+        if normalized_action not in {"accept", "discard"}:
+            return "action 只支持 accept 或 discard。"
+        try:
+            target = _resolve_wiki_target(kb_id, target_kb_ids)
+            page_id_text = str(page_id or "").strip()
+            if not page_id_text:
+                return "page_id 不能为空。"
+            if not confirmed:
+                return (
+                    f"需要用户确认：将对 Wiki 知识库 '{target.kb_name}' 的页面 "
+                    f"'{page_id_text}' 执行 {normalized_action} 候选版本操作。"
+                    "确认后请再次调用并设置 confirmed=true。"
+                )
+            if normalized_action == "accept":
+                page = await target.backend.accept_generated_wiki_page(target.kb_id, page_id_text)
+            else:
+                page = await target.backend.discard_generated_wiki_page(target.kb_id, page_id_text)
+            return _json_payload(page)
+        except _WikiToolError as exc:
+            return str(exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("handle_wiki_candidate tool error: %s", exc)
+            return f"Handle Wiki candidate failed: {exc}"
+
+    return handle_wiki_candidate
+
+
 def _resolve_wiki_target(kb_id: str, allowed_kb_ids: list[str]) -> _WikiTarget:
     normalized_kb_id = str(kb_id or "").strip()
     if not normalized_kb_id and len(allowed_kb_ids) == 1:
@@ -197,6 +335,21 @@ def _kb_type(kb: Any) -> str:
 def _clean_optional(value: str | None) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _clean_list(values: list[str] | None) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values or []:
+        text = str(value or "").strip()
+        if text and text not in seen:
+            seen.add(text)
+            result.append(text)
+    return result
+
+
+def _json_payload(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
 
 
 def _format_page_list(target: _WikiTarget, pages: list[dict]) -> str:

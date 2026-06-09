@@ -190,6 +190,36 @@ class _FakeWikiBackend:
             "stats": {"total_nodes": 2, "total_edges": 1, "raw_edge_count": 1, "communities": 1},
         }
 
+    async def compile_wiki(self, kb_id, *, file_ids=None, force=False, retry_failed=False):
+        self.calls.append(("compile", kb_id, file_ids, force, retry_failed))
+        return {"processed": 1, "failed": 0, "items": [{"file_id": "file-1", "status": "indexed"}]}
+
+    async def crystallize_wiki_text(
+        self,
+        kb_id,
+        title,
+        content,
+        page_type="note",
+        sources=None,
+        confidence="UNVERIFIED",
+    ):
+        self.calls.append(("crystallize", kb_id, title, content, page_type, sources, confidence))
+        return {
+            "id": "note:alpha-note",
+            "title": title,
+            "type": page_type,
+            "content": content,
+            "frontmatter": {"confidence": confidence, "sources": sources or []},
+        }
+
+    async def accept_generated_wiki_page(self, kb_id, page_id):
+        self.calls.append(("accept", kb_id, page_id))
+        return {"id": page_id, "title": "Alpha", "candidate": None}
+
+    async def discard_generated_wiki_page(self, kb_id, page_id):
+        self.calls.append(("discard", kb_id, page_id))
+        return {"id": page_id, "title": "Alpha", "candidate": None}
+
 
 class _FakeWikiManager:
     def __init__(self, backend):
@@ -291,3 +321,92 @@ async def test_wiki_tools_reject_unscoped_kb(monkeypatch):
 
     assert "not available" in output
     assert backend.calls == []
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_compile_wiki_tool_requires_confirmation_then_runs(monkeypatch):
+    from nexagent.tools.builtin.wiki import get_compile_wiki_tool
+
+    backend = _FakeWikiBackend()
+    monkeypatch.setattr("nexagent.knowledge.manager.get_manager", lambda: _FakeWikiManager(backend))
+
+    tool = get_compile_wiki_tool(["wiki-1"])
+    preview = await tool.ainvoke({"kb_id": "wiki-1", "force": True, "retry_failed": False})
+
+    assert "需要用户确认" in preview
+    assert backend.calls == []
+
+    output = await tool.ainvoke(
+        {
+            "kb_id": "wiki-1",
+            "file_ids": ["file-1"],
+            "force": True,
+            "retry_failed": False,
+            "confirmed": True,
+        }
+    )
+
+    assert backend.calls == [("compile", "wiki-1", ["file-1"], True, False)]
+    assert "processed" in output
+    assert "file-1" in output
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_crystallize_wiki_tool_requires_confirmation_then_creates_page(monkeypatch):
+    from nexagent.tools.builtin.wiki import get_crystallize_wiki_tool
+
+    backend = _FakeWikiBackend()
+    monkeypatch.setattr("nexagent.knowledge.manager.get_manager", lambda: _FakeWikiManager(backend))
+
+    tool = get_crystallize_wiki_tool(["wiki-1"])
+    preview = await tool.ainvoke(
+        {"kb_id": "wiki-1", "title": "Alpha Note", "content": "Some markdown", "page_type": "note"}
+    )
+
+    assert "需要用户确认" in preview
+    assert backend.calls == []
+
+    output = await tool.ainvoke(
+        {
+            "kb_id": "wiki-1",
+            "title": "Alpha Note",
+            "content": "Some markdown",
+            "page_type": "note",
+            "confidence": "unverified",
+            "sources": ["file-1"],
+            "confirmed": True,
+        }
+    )
+
+    assert backend.calls == [
+        ("crystallize", "wiki-1", "Alpha Note", "Some markdown", "note", ["file-1"], "UNVERIFIED")
+    ]
+    assert "已沉淀 Wiki 页面" in output
+    assert "note:alpha-note" in output
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_wiki_candidate_tool_requires_confirmation_then_handles_action(monkeypatch):
+    from nexagent.tools.builtin.wiki import get_handle_wiki_candidate_tool
+
+    backend = _FakeWikiBackend()
+    monkeypatch.setattr("nexagent.knowledge.manager.get_manager", lambda: _FakeWikiManager(backend))
+
+    tool = get_handle_wiki_candidate_tool(["wiki-1"])
+
+    invalid = await tool.ainvoke({"kb_id": "wiki-1", "page_id": "topic:alpha", "action": "merge"})
+    assert "accept 或 discard" in invalid
+
+    preview = await tool.ainvoke({"kb_id": "wiki-1", "page_id": "topic:alpha", "action": "accept"})
+    assert "需要用户确认" in preview
+    assert backend.calls == []
+
+    output = await tool.ainvoke(
+        {"kb_id": "wiki-1", "page_id": "topic:alpha", "action": "accept", "confirmed": True}
+    )
+
+    assert backend.calls == [("accept", "wiki-1", "topic:alpha")]
+    assert "topic:alpha" in output
