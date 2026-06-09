@@ -389,17 +389,11 @@ def _create_chunk_parser_config(req: KBCreateRequest) -> dict[str, Any]:
 
 
 def _has_llm_config_request(req: KBCreateRequest) -> bool:
-    return any(
-        str(value or "").strip()
-        for value in (req.llm_model, req.llm_provider, req.llm_base_url, req.llm_api_key)
-    )
+    return bool(str(req.llm_model or "").strip())
 
 
 def _has_embedding_config_request(req: KBCreateRequest) -> bool:
-    return any(
-        str(value or "").strip()
-        for value in (req.embed_model, req.embed_base_url, req.embed_api_key)
-    )
+    return bool(str(req.embed_model or "").strip())
 
 
 def _validate_create_kb_model_requirements(req: KBCreateRequest) -> None:
@@ -407,6 +401,30 @@ def _validate_create_kb_model_requirements(req: KBCreateRequest) -> None:
         label = "Wiki" if req.kb_type == "wiki" else "LightRAG"
         raise HTTPException(status_code=400, detail=f"{label} 知识库需要配置 LLM。")
     if req.kb_type == "lightrag" and not _has_embedding_config_request(req):
+        raise HTTPException(status_code=400, detail="LightRAG 知识库需要配置 Embedding。")
+
+
+def _model_info_value(info: Any, key: str) -> str:
+    if isinstance(info, dict):
+        return str(info.get(key) or "").strip()
+    return str(getattr(info, key, "") or "").strip()
+
+
+def _effective_patch_model(kb: Any, patch: dict[str, Any], patch_key: str, info_attr: str) -> str:
+    if patch_key in patch:
+        return str(patch.get(patch_key) or "").strip()
+    info = getattr(kb, info_attr, {})
+    return _model_info_value(info, "model")
+
+
+def _validate_model_config_update_requirements(kb: Any, patch: dict[str, Any]) -> None:
+    kb_type = _kb_type_value(kb)
+    if kb_type not in {"wiki", "lightrag"}:
+        return
+    label = "Wiki" if kb_type == "wiki" else "LightRAG"
+    if not _effective_patch_model(kb, patch, "llm_model", "llm_info"):
+        raise HTTPException(status_code=400, detail=f"{label} 知识库需要配置 LLM。")
+    if kb_type == "lightrag" and not _effective_patch_model(kb, patch, "embed_model", "embed_info"):
         raise HTTPException(status_code=400, detail="LightRAG 知识库需要配置 Embedding。")
 
 
@@ -1612,24 +1630,28 @@ async def update_query_config(kb_id: str, req: QueryConfigUpdate):
 
 @router.patch("/{kb_id}/model-config", summary="Update knowledge base model config")
 async def update_model_config(kb_id: str, req: ModelConfigUpdate):
-    if await _prod_kb(kb_id):
+    prod_kb = await _prod_kb(kb_id)
+    if prod_kb:
         try:
             patch = await _resolve_model_config_patch(req.model_dump(exclude_none=True))
+            _validate_model_config_update_requirements(prod_kb, patch)
             return _redact_kb_secrets(await _prod_service().update_model_config(kb_id, patch))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     if await _is_local_wiki_kb(kb_id):
-        mgr, _ = _kb_or_404(kb_id)
+        mgr, kb = _kb_or_404(kb_id)
         try:
             patch = await _resolve_model_config_patch(req.model_dump(exclude_none=True))
+            _validate_model_config_update_requirements(kb, patch)
             return _redact_kb_secrets(mgr.update_model_config(kb_id, patch))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     if _prod_enabled():
         raise _legacy_read_only_error(kb_id)
-    mgr, _ = _kb_or_404(kb_id)
+    mgr, kb = _kb_or_404(kb_id)
     try:
         patch = await _resolve_model_config_patch(req.model_dump(exclude_none=True))
+        _validate_model_config_update_requirements(kb, patch)
         return _redact_kb_secrets(mgr.update_model_config(kb_id, patch))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

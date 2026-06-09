@@ -272,6 +272,84 @@ async def test_update_model_config_resolves_selected_llm(monkeypatch):
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_update_wiki_model_config_rejects_empty_llm(monkeypatch):
+    class FakeManager:
+        def update_model_config(self, kb_id, patch):
+            return {"kb": {"kb_id": kb_id}, "patch": patch}
+
+    kb = SimpleNamespace(
+        kb_id="wiki-1",
+        kb_type=SimpleNamespace(value="wiki"),
+        llm_info=SimpleNamespace(model="chat-model", provider="provider-a"),
+        embed_info=SimpleNamespace(model="", dimension=0),
+    )
+
+    async def fake_prod_kb(kb_id):
+        return None
+
+    async def fake_is_local_wiki_kb(kb_id):
+        return True
+
+    monkeypatch.setattr(knowledge, "_prod_kb", fake_prod_kb)
+    monkeypatch.setattr(knowledge, "_is_local_wiki_kb", fake_is_local_wiki_kb)
+    monkeypatch.setattr(knowledge, "_kb_or_404", lambda kb_id: (FakeManager(), kb))
+
+    with pytest.raises(HTTPException) as exc:
+        await knowledge.update_model_config(
+            "wiki-1",
+            knowledge.ModelConfigUpdate(llm_model=""),
+        )
+
+    assert exc.value.status_code == 400
+    assert "Wiki 知识库需要配置 LLM" in str(exc.value.detail)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_update_lightrag_model_config_rejects_empty_required_models(monkeypatch):
+    class FakeManager:
+        def update_model_config(self, kb_id, patch):
+            return {"kb": {"kb_id": kb_id}, "patch": patch}
+
+    kb = SimpleNamespace(
+        kb_id="light-1",
+        kb_type=SimpleNamespace(value="lightrag"),
+        llm_info=SimpleNamespace(model="chat-model", provider="provider-a"),
+        embed_info=SimpleNamespace(model="embed-model", dimension=1536),
+    )
+
+    async def fake_prod_kb(kb_id):
+        return None
+
+    async def fake_is_local_wiki_kb(kb_id):
+        return False
+
+    monkeypatch.setattr(knowledge, "_prod_enabled", lambda: False)
+    monkeypatch.setattr(knowledge, "_prod_kb", fake_prod_kb)
+    monkeypatch.setattr(knowledge, "_is_local_wiki_kb", fake_is_local_wiki_kb)
+    monkeypatch.setattr(knowledge, "_kb_or_404", lambda kb_id: (FakeManager(), kb))
+
+    with pytest.raises(HTTPException) as llm_exc:
+        await knowledge.update_model_config(
+            "light-1",
+            knowledge.ModelConfigUpdate(llm_model=""),
+        )
+
+    assert llm_exc.value.status_code == 400
+    assert "LightRAG 知识库需要配置 LLM" in str(llm_exc.value.detail)
+
+    with pytest.raises(HTTPException) as embed_exc:
+        await knowledge.update_model_config(
+            "light-1",
+            knowledge.ModelConfigUpdate(embed_model=""),
+        )
+
+    assert embed_exc.value.status_code == 400
+    assert "LightRAG 知识库需要配置 Embedding" in str(embed_exc.value.detail)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_wiki_pages_route_rejects_non_wiki(monkeypatch):
     class FakeManager:
         def get_kb(self, kb_id):
