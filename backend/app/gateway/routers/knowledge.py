@@ -210,6 +210,26 @@ def _kb_public_dict(kb) -> dict:
     return payload
 
 
+def _local_wiki_public_dict(mgr, kb) -> dict:
+    item = _kb_public_dict(kb)
+    extra = {**item.get("extra", {}), "storage": "local_wiki"}
+    try:
+        backend = mgr._find_backend(kb.kb_id)
+        load_state = getattr(backend, "_load_state", None)
+        state = load_state(kb.kb_id) if callable(load_state) else {}
+    except Exception:
+        state = {}
+    compile_status = state.get("compile_status") if isinstance(state, dict) else {}
+    compile_completed = isinstance(compile_status, dict) and compile_status.get("status") == "completed"
+    if compile_completed and not state.get("needs_recompile"):
+        extra["requires_reindex"] = False
+        model_config = extra.get("model_config")
+        if isinstance(model_config, dict):
+            extra["model_config"] = {**model_config, "requires_reindex": False}
+    item["extra"] = extra
+    return item
+
+
 def _redact_kb_secrets(payload: dict) -> dict:
     out = dict(payload)
     for key in ("embed_info", "llm_info"):
@@ -1140,12 +1160,13 @@ async def list_kbs():
         local_wiki = []
         legacy = []
         try:
-            for kb in _mgr().list_kbs():
-                item = _kb_public_dict(kb)
+            mgr = _mgr()
+            for kb in mgr.list_kbs():
                 if _kb_type_value(kb) == "wiki":
-                    item["extra"] = {**item.get("extra", {}), "storage": "local_wiki"}
+                    item = _local_wiki_public_dict(mgr, kb)
                     local_wiki.append(item)
                     continue
+                item = _kb_public_dict(kb)
                 item.setdefault("extra", {})
                 item["extra"] = {**item.get("extra", {}), "legacy": True, "read_only": True}
                 item["status"] = "legacy"
@@ -1510,10 +1531,8 @@ async def get_kb(kb_id: str):
     if prod_kb:
         return _kb_public_dict(prod_kb)
     if await _is_local_wiki_kb(kb_id):
-        _, kb = _kb_or_404(kb_id)
-        item = _kb_public_dict(kb)
-        item["extra"] = {**item.get("extra", {}), "storage": "local_wiki"}
-        return item
+        mgr, kb = _kb_or_404(kb_id)
+        return _local_wiki_public_dict(mgr, kb)
     if _prod_enabled():
         _, kb = _kb_or_404(kb_id)
         item = _kb_public_dict(kb)

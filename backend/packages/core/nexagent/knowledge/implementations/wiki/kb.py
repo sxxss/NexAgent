@@ -222,6 +222,14 @@ class WikiKB(
         }
         state["needs_recompile"] = False
         self._save_state(kb_id, state)
+        if not result["failed"]:
+            kb_meta = self.get_kb(kb_id)
+            if kb_meta is not None:
+                kb_meta.extra["requires_reindex"] = False
+                model_config = kb_meta.extra.get("model_config")
+                if isinstance(model_config, dict):
+                    model_config["requires_reindex"] = False
+                self._save_meta()
         return result
 
     async def accept_generated_wiki_page(self, kb_id: str, page_id: str) -> dict:

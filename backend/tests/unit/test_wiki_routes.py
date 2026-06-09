@@ -82,6 +82,48 @@ async def test_create_wiki_kb_uses_selected_llm(monkeypatch):
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_list_kbs_clears_stale_wiki_reindex_flag_when_compile_completed(monkeypatch):
+    wiki_kb = SimpleNamespace(
+        kb_id="wiki-1",
+        kb_type="wiki",
+        to_dict=lambda **_kwargs: {
+            "kb_id": "wiki-1",
+            "kb_type": "wiki",
+            "extra": {
+                "requires_reindex": True,
+                "model_config": {"requires_reindex": True},
+            },
+        },
+    )
+
+    class FakeProdService:
+        async def list_kbs(self):
+            return []
+
+    class FakeBackend:
+        def _load_state(self, kb_id):
+            return {"compile_status": {"status": "completed"}, "needs_recompile": False}
+
+    class FakeManager:
+        def list_kbs(self):
+            return [wiki_kb]
+
+        def _find_backend(self, kb_id):
+            return FakeBackend()
+
+    monkeypatch.setattr(knowledge, "_prod_enabled", lambda: True)
+    monkeypatch.setattr(knowledge, "_prod_service", lambda: FakeProdService())
+    monkeypatch.setattr(knowledge, "_mgr", lambda: FakeManager())
+
+    result = await knowledge.list_kbs()
+
+    extra = result["knowledge_bases"][0]["extra"]
+    assert extra["requires_reindex"] is False
+    assert extra["model_config"]["requires_reindex"] is False
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_create_lightrag_kb_uses_selected_embedding_and_llm(monkeypatch):
     calls = {}
 

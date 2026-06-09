@@ -143,6 +143,45 @@ async def test_wiki_kb_indexes_markdown_into_pages_and_searches(monkeypatch):
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_wiki_compile_clears_stale_reindex_flag(monkeypatch):
+    from nexagent.knowledge.manager import reset_manager
+
+    work_dir = _work_dir("compile-clear-reindex")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", description="Project memory", kb_type="wiki")
+        file_meta = await manager.add_file(kb_meta.kb_id, "plan.md", b"# Plan\n\nUse Wiki pages.")
+        await manager.parse_file(kb_meta.kb_id, file_meta.file_id)
+        backend = manager._find_backend(kb_meta.kb_id)
+        kb_meta.extra["requires_reindex"] = True
+        kb_meta.extra["model_config"] = {"requires_reindex": True}
+
+        async def fake_compile(kb_id, file_id, meta, markdown):
+            return [
+                await backend.create_or_update_wiki_page(
+                    kb_id,
+                    page_type="source",
+                    title="Plan",
+                    content="# Plan\n\n## Summary\n\nUse Wiki pages.",
+                    sources=[file_id],
+                    confidence="EXTRACTED",
+                )
+            ]
+
+        monkeypatch.setattr(backend, "_compile_markdown_file", fake_compile)
+
+        result = await backend.compile_wiki(kb_meta.kb_id)
+
+        assert result["failed"] == 0
+        assert kb_meta.extra["requires_reindex"] is False
+        assert kb_meta.extra["model_config"]["requires_reindex"] is False
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_wiki_llm_compile_invocation_times_out(monkeypatch):
     from nexagent.knowledge.manager import reset_manager
 
