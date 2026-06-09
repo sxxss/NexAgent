@@ -25,6 +25,11 @@ class WikiCompileMixin:
         compiled = await self._compile_markdown_with_llm(kb_id, file_id, file_meta, markdown)
         source = compiled.get("source") or {}
         title = self._clean_wiki_title(source.get("title") or Path(file_meta.filename).stem or file_id)
+        topics = self._clean_page_items(compiled.get("topics"), "topics")[:8]
+        entities = self._clean_page_items(compiled.get("entities"), "entities")[:12]
+        planned_titles = [title]
+        planned_titles.extend(item["title"] for item in topics)
+        planned_titles.extend(item["title"] for item in entities)
         pages = [
             await self.create_or_update_wiki_page(
                 kb_id,
@@ -35,7 +40,7 @@ class WikiCompileMixin:
                 confidence=self._normalize_confidence(source.get("confidence"), "EXTRACTED"),
             )
         ]
-        for item in self._clean_page_items(compiled.get("topics"), "topics")[:8]:
+        for item in topics:
             pages.append(
                 await self.create_or_update_wiki_page(
                     kb_id,
@@ -46,12 +51,13 @@ class WikiCompileMixin:
                         item.get("summary"),
                         item.get("content"),
                         title,
+                        known_titles=planned_titles,
                     ),
                     sources=[file_id],
                     confidence=self._normalize_confidence(item.get("confidence"), "EXTRACTED"),
                 )
             )
-        for item in self._clean_page_items(compiled.get("entities"), "entities")[:12]:
+        for item in entities:
             pages.append(
                 await self.create_or_update_wiki_page(
                     kb_id,
@@ -62,6 +68,7 @@ class WikiCompileMixin:
                         item.get("summary"),
                         item.get("content"),
                         title,
+                        known_titles=planned_titles,
                     ),
                     sources=[file_id],
                     confidence=self._normalize_confidence(item.get("confidence"), "EXTRACTED"),
@@ -92,7 +99,13 @@ class WikiCompileMixin:
             llm = await load_chat_model_async(model_ref, streaming=False)
         except Exception:
             llm = await load_chat_model_async(llm_info.model, streaming=False)
-        messages = self._build_compile_prompt(file_meta.filename, self._read_purpose(kb_id), markdown)
+        messages = self._build_compile_prompt(
+            file_meta.filename,
+            self._read_purpose(kb_id),
+            markdown,
+            headings=self._extract_headings(markdown)[:20],
+            entities=self._extract_entities(markdown)[:30],
+        )
         response = await self._invoke_wiki_llm(
             llm,
             [
@@ -146,7 +159,14 @@ class WikiCompileMixin:
         path = self._db_root(kb_id) / "purpose.md"
         return path.read_text(encoding="utf-8")[:2000] if path.exists() else ""
 
-    def _build_compile_prompt(self, filename: str, purpose: str, markdown: str) -> list[dict]:
+    def _build_compile_prompt(
+        self,
+        filename: str,
+        purpose: str,
+        markdown: str,
+        headings: list[str] | None = None,
+        entities: list[str] | None = None,
+    ) -> list[dict]:
         source_text = markdown[:12000]
         system_prompt = "你是 NexAgent 的 LLM Wiki 编译器。只输出合法 JSON，不要输出 Markdown 代码块或解释。"
         user_prompt = textwrap.dedent(
@@ -155,6 +175,10 @@ class WikiCompileMixin:
             {purpose or "未设置"}
             Source filename:
             {filename}
+            Detected headings:
+            {json.dumps(headings or [], ensure_ascii=False)}
+            Detected entity candidates:
+            {json.dumps(entities or [], ensure_ascii=False)}
             必须只返回一个 JSON 对象，顶层字段固定为 source、topics、entities。
             schema:
             {{
@@ -162,12 +186,16 @@ class WikiCompileMixin:
                 "title": "源文档标题",
                 "summary": "源文档摘要",
                 "key_points": ["要点"],
+                "claims": ["重要结论"],
                 "confidence": "EXTRACTED"
               }},
               "topics": [{{"title": "主题", "summary": "摘要", "content": "Markdown 正文", "confidence": "INFERRED"}}],
-              "entities": [{{"title": "实体", "summary": "摘要", "content": "Markdown 正文", "confidence": "INFERRED"}}]
+              "entities": [{{"title": "实体", "summary": "摘要", "content": "Markdown 正文", "confidence": "INFERRED"}}],
+              "synthesis": {{"title": "Wiki Synthesis", "summary": "综合摘要", "content": "Markdown 正文", "confidence": "INFERRED"}}
             }}
             topics 和 entities 可以为空数组。不要使用 pages/document/result 等替代字段。
+            title 字段必须是纯文本，不要包含 [[ ]]、Markdown 链接或额外括号；只在 content 正文里使用 wikilink。
+            source.title 应稳定，通常来自文件名或一级标题。
             confidence 只能是 EXTRACTED、INFERRED、AMBIGUOUS、UNVERIFIED。
             页面正文必须使用 Markdown，可用 [[页面标题]] 表达重要关联。
             Markdown source:
@@ -241,6 +269,7 @@ class WikiCompileMixin:
                 "title": title,
                 "summary": summary,
                 "key_points": key_points,
+                "claims": source.get("claims") or payload.get("claims") or [],
                 "confidence": source.get("confidence") or payload.get("confidence") or "EXTRACTED",
             },
             "topics": self._coerce_page_items(
@@ -285,6 +314,16 @@ class WikiCompileMixin:
                 cleaned.append({**item, "title": title})
         return cleaned
 
+    def _clean_string_list(self, items: Any) -> list[str]:
+        if not isinstance(items, list):
+            return []
+        return [str(item).strip() for item in items if str(item).strip()]
+
+    def _bullet_list(self, items: list[str]) -> str:
+        if not items:
+            return "- No extracted items."
+        return "\n".join(f"- {item}" for item in items)
+
     def _normalize_confidence(self, value: Any, default: str) -> str:
         confidence = str(value or default).strip().upper()
         return confidence if confidence in CONFIDENCE_VALUES else default
@@ -292,22 +331,137 @@ class WikiCompileMixin:
     def _source_page_content(self, filename: str, markdown: str, source: dict) -> str:
         title = self._clean_wiki_title(source.get("title") or Path(filename).stem)
         summary = str(source.get("summary") or "").strip()
-        key_points = source.get("key_points") if isinstance(source.get("key_points"), list) else []
-        bullets = "\n".join(f"- {item}" for item in key_points if str(item).strip()) or "- No extracted items."
+        key_points = self._clean_string_list(source.get("key_points"))[:8]
+        claims = self._clean_string_list(source.get("claims"))[:8]
         return (
             f"# {title}\n\n"
             f"Source file: `{filename}`\n\n"
-            f"## Summary\n\n{summary or self._summarize(markdown)}\n\n"
-            f"## Key Points\n\n{bullets}"
+            f"## Summary\n\n{self._summarize(markdown)}\n\n"
+            f"## LLM Summary\n\n{summary}\n\n"
+            f"## Key Points\n\n{self._bullet_list(key_points)}\n\n"
+            f"## Claims\n\n{self._bullet_list(claims)}\n\n"
+            f"## Suggested Links\n\n{self._links_section(markdown)}"
         )
 
-    def _page_content_from_llm(self, title: str, summary: Any, content: Any, source_title: str) -> str:
+    def _page_content_from_llm(
+        self,
+        title: str,
+        summary: Any,
+        content: Any,
+        source_title: str,
+        known_titles: list[str] | None = None,
+    ) -> str:
+        title_index = self._title_index_from_titles(known_titles or [])
+        summary_text = self._normalize_wikilinks(str(summary or "").strip(), title_index)
+        body = self._normalize_wikilinks(str(content or "").strip(), title_index)
         sections = [f"# {title}"]
-        if str(summary or "").strip():
-            sections.extend(["", "## Summary", "", str(summary).strip()])
-        sections.extend(["", "## Notes", "", str(content or "").strip() or "No detailed content generated."])
+        if summary_text:
+            sections.extend(["", "## Summary", "", summary_text])
+        sections.extend(["", "## Notes", "", body or "No detailed content generated."])
         sections.extend(["", "## Sources", "", f"- [[{source_title}]]"])
         return "\n".join(sections)
+
+    async def _refresh_corpus_synthesis(self, kb_id: str) -> dict | None:
+        pages = self.list_wiki_pages(kb_id)["pages"]
+        source_pages = [page for page in pages if page["type"] == "source"]
+        topic_pages = [page for page in pages if page["type"] == "topic"]
+        entity_pages = [page for page in pages if page["type"] == "entity"]
+        if not source_pages and not topic_pages and not entity_pages:
+            return None
+        source_ids = sorted({source for page in pages for source in page.get("sources", [])})
+        summary = (
+            f"当前 Wiki 包含 {len(source_pages)} 个来源页、{len(topic_pages)} 个主题页、{len(entity_pages)} 个实体页。"
+        )
+        content = "\n".join(
+            [
+                "# Wiki Synthesis",
+                "",
+                "## Summary",
+                "",
+                summary,
+                "",
+                "## Source Pages",
+                "",
+                self._bullet_list([f"[[{page['title']}]]" for page in source_pages[:20]]),
+                "",
+                "## Core Topics",
+                "",
+                self._bullet_list([f"[[{page['title']}]]" for page in topic_pages[:20]]),
+                "",
+                "## Core Entities",
+                "",
+                self._bullet_list([f"[[{page['title']}]]" for page in entity_pages[:20]]),
+            ]
+        )
+        return await self.create_or_update_wiki_page(
+            kb_id,
+            page_type="synthesis",
+            title="Wiki Synthesis",
+            content=content,
+            sources=source_ids,
+            confidence="INFERRED",
+        )
+
+    def _extract_headings(self, markdown: str) -> list[str]:
+        headings = []
+        for line in (markdown or "").splitlines():
+            match = re.match(r"^#{1,3}\s+(.+)$", line.strip())
+            if not match:
+                continue
+            title = match.group(1).strip(" #")
+            if title and title not in headings:
+                headings.append(title)
+        return headings
+
+    def _extract_entities(self, markdown: str) -> list[str]:
+        candidates = []
+        candidates.extend(self._extract_headings(markdown))
+        candidates.extend(re.findall(r"\b[A-Z][A-Za-z0-9]{2,}\b", markdown or ""))
+        candidates.extend(re.findall(r"[《“\"]([^《》“”\"]{2,24})[》”\"]", markdown or ""))
+        chinese_term_pattern = (
+            r"[\u4e00-\u9fffA-Za-z0-9]{2,24}"
+            r"(?:思想|理论|治理|模型|架构|系统|平台|技术|算法|协议|知识库|图谱|凭证|流程|问答)"
+        )
+        candidates.extend(re.findall(chinese_term_pattern, markdown or ""))
+        seen = set()
+        entities = []
+        for item in candidates:
+            clean_item = str(item).strip(" #，,。.!！?？:：;；、")
+            if not clean_item or clean_item.lower() in {"source", "summary", "notes"}:
+                continue
+            key = self._normalize_link_key(clean_item)
+            if key in seen:
+                continue
+            seen.add(key)
+            entities.append(clean_item)
+        return entities
+
+    def _links_section(self, markdown: str) -> str:
+        links = []
+        for item in self._extract_headings(markdown)[:5] + self._extract_entities(markdown)[:5]:
+            if item not in links:
+                links.append(item)
+        return ", ".join(f"[[{item}]]" for item in links) if links else "No candidate links extracted."
+
+    def _title_index_from_titles(self, titles: list[str]) -> dict[str, str]:
+        index = {}
+        for title in titles:
+            clean_title = self._clean_wiki_title(title)
+            key = self._normalize_link_key(clean_title)
+            if key and key not in index:
+                index[key] = clean_title
+        return index
+
+    def _normalize_wikilinks(self, markdown: str, title_index: dict[str, str]) -> str:
+        if not markdown or not title_index:
+            return markdown
+
+        def replace(match: re.Match[str]) -> str:
+            raw_title = self._clean_wiki_title(match.group(1))
+            canonical = title_index.get(self._normalize_link_key(raw_title))
+            return f"[[{canonical or raw_title}]]"
+
+        return re.sub(r"\[\[([^\]]+)\]\]", replace, markdown)
 
     def _summarize(self, markdown: str) -> str:
         text = re.sub(r"\s+", " ", re.sub(r"^#+\s+", "", markdown, flags=re.MULTILINE)).strip()

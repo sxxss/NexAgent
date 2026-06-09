@@ -260,6 +260,114 @@ async def test_wiki_compile_loads_llm_without_streaming(monkeypatch):
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_wiki_compile_prompt_includes_detected_headings_and_entities(monkeypatch):
+    from nexagent.knowledge.manager import reset_manager
+
+    captured = {}
+
+    class FakeResponse:
+        content = '{"source": {"title": "Alpha"}, "topics": [], "entities": []}'
+
+    class FakeLLM:
+        async def ainvoke(self, messages):
+            captured["messages"] = messages
+            return FakeResponse()
+
+    async def fake_load_chat_model_async(model_name=None, **kwargs):
+        return FakeLLM()
+
+    work_dir = _work_dir("compile-prompt-context")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+        monkeypatch.setattr("nexagent.models.factory.load_chat_model_async", fake_load_chat_model_async)
+
+        await backend._compile_markdown_with_llm(
+            kb_meta.kb_id,
+            "file-1",
+            SimpleNamespace(filename="alpha.md"),
+            "# 医保电子凭证使用与维护\n\n本文介绍医保电子凭证常见问题处理。",
+        )
+
+        user_prompt = captured["messages"][1].content
+        assert "Detected headings" in user_prompt
+        assert "医保电子凭证使用与维护" in user_prompt
+        assert "Detected entity candidates" in user_prompt
+        assert "医保电子凭证" in user_prompt
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_page_content_normalizes_generated_wikilinks():
+    from nexagent.knowledge.manager import reset_manager
+
+    work_dir = _work_dir("compile-link-normalize")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+
+        content = backend._page_content_from_llm(
+            "医保电子凭证概述",
+            "关联 [[医保电子凭证使用与维护]]。",
+            "处理流程见 [[医保电子凭证使用与维护]] 和 [[未知页面]]。",
+            "医保中心问答",
+            known_titles=["医保中心问答", "医保电子凭证使用与维护"],
+        )
+
+        assert "[[医保电子凭证使用与维护]]" in content
+        assert "[[未知页面]]" in content
+        assert "- [[医保中心问答]]" in content
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wiki_refresh_corpus_synthesis_creates_summary_page():
+    from nexagent.knowledge.manager import reset_manager
+
+    work_dir = _work_dir("compile-synthesis")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+        await backend.create_or_update_wiki_page(
+            kb_meta.kb_id,
+            page_type="source",
+            title="医保中心问答",
+            content="# 医保中心问答",
+            sources=["file-1"],
+            confidence="EXTRACTED",
+        )
+        await backend.create_or_update_wiki_page(
+            kb_meta.kb_id,
+            page_type="topic",
+            title="医保电子凭证使用与维护",
+            content="# 医保电子凭证使用与维护",
+            sources=["file-1"],
+            confidence="INFERRED",
+        )
+
+        synthesis = await backend._refresh_corpus_synthesis(kb_meta.kb_id)
+        detail = backend.get_wiki_page(kb_meta.kb_id, "synthesis:wiki-synthesis")
+
+        assert synthesis["id"] == "synthesis:wiki-synthesis"
+        assert "当前 Wiki 包含 1 个来源页、1 个主题页、0 个实体页" in detail["content"]
+        assert "[[医保中心问答]]" in detail["content"]
+        assert "[[医保电子凭证使用与维护]]" in detail["content"]
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_wiki_graph_lint_and_candidate_actions():
     from nexagent.knowledge.manager import reset_manager
 

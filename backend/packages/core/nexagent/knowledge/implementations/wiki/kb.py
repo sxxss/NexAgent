@@ -209,6 +209,10 @@ class WikiKB(
                     "processed": int(result["processed"]) + int(result["failed"]),
                 }
                 self._save_state(kb_id, state)
+        if result["processed"]:
+            synthesis = await self._refresh_corpus_synthesis(kb_id)
+            if synthesis:
+                result["synthesis_page_id"] = synthesis["id"]
         state = self._load_state(kb_id)
         state["compile_status"] = {
             "status": "failed" if result["failed"] and not result["processed"] else "completed",
