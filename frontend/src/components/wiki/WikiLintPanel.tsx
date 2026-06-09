@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertCircle, CheckCircle, ExternalLink, Loader2, RefreshCw, RotateCcw, WandSparkles, Wrench } from "lucide-react";
-import { repairWikiKbIssues, type WikiLintPayload, type WikiRepairResult } from "@/lib/api";
+import { fetchIngestionJobs, repairWikiKbIssues, type IngestionJob, type WikiLintPayload, type WikiRepairResult } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -23,11 +23,64 @@ export function WikiLintPanel({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [repairResult, setRepairResult] = useState<WikiRepairResult | null>(null);
+  const [repairTask, setRepairTask] = useState<IngestionJob | null>(null);
   const [lastRepairItems, setLastRepairItems] = useState<WikiIssue[]>([]);
+  const handledRepairTasksRef = useRef(new Set<string>());
   const issues = useMemo(() => lint?.issues ?? [], [lint?.issues]);
   const pageCount = lint?.summary?.page_count ?? 0;
   const groupedIssues = useMemo(() => groupIssues(issues), [issues]);
   const repairableAiIssues = useMemo(() => issues.filter((issue) => issue.repair_action === "ai_candidate"), [issues]);
+  const repairTaskActive = isActiveRepairTask(repairTask);
+
+  const pollRepairTask = useCallback(async (taskId: string) => {
+    const jobs = await fetchIngestionJobs(kbId);
+    const nextTask = jobs.find((job) => job.task_id === taskId && job.kind === "wiki_repair") ?? jobs.find((job) => job.task_id === taskId);
+    if (!nextTask) return;
+    setRepairTask(nextTask);
+    if (isActiveRepairTask(nextTask) || handledRepairTasksRef.current.has(taskId)) return;
+    handledRepairTasksRef.current.add(taskId);
+    const result = repairResultFromTask(nextTask);
+    setRepairResult(result);
+    setRepairing("");
+    if (nextTask.status === "completed") {
+      const candidateCount = result.candidate_count ?? 0;
+      const failedCount = result.failed_issues?.length ?? 0;
+      setMessage(
+        candidateCount
+          ? `AI 修复任务完成，生成 ${candidateCount} 个候选。任务完成后已自动刷新，请在页面中处理候选。`
+          : failedCount
+            ? `AI 修复任务完成，但 ${failedCount} 个问题未生成候选。任务完成后已自动刷新。`
+            : "AI 修复任务完成。任务完成后已自动刷新。",
+      );
+      await onReload();
+      return;
+    }
+    if (nextTask.status === "cancelled" || nextTask.status === "interrupted") {
+      setMessage(nextTask.status === "cancelled" ? "Wiki AI 修复任务已取消。" : "Wiki AI 修复任务已中断。");
+      await onReload();
+      return;
+    }
+    setError(nextTask.error || "Wiki AI 修复任务失败");
+    await onReload();
+  }, [kbId, onReload]);
+
+  useEffect(() => {
+    if (!repairTask?.task_id || !repairTaskActive) return;
+    const taskId = repairTask.task_id;
+    const tick = () => {
+      void pollRepairTask(taskId).catch((err) => {
+        setError(err instanceof Error ? err.message : "获取 Wiki AI 修复任务状态失败");
+      });
+    };
+    const firstTick = window.setTimeout(tick, 250);
+    const timer = window.setInterval(() => {
+      tick();
+    }, 1800);
+    return () => {
+      window.clearTimeout(firstTick);
+      window.clearInterval(timer);
+    };
+  }, [pollRepairTask, repairTask?.task_id, repairTaskActive]);
 
   const repairIssues = async (items: WikiIssue[], force = false) => {
     if (!items.length) return;
@@ -35,16 +88,22 @@ export function WikiLintPanel({
     setMessage("");
     setError("");
     setRepairResult(null);
+    setRepairTask(null);
     setLastRepairItems(items);
     try {
       const result = await repairWikiKbIssues(kbId, { issue_ids: items.map((item) => item.id), force });
       const failed = result.failed_issues?.length ?? 0;
       const skipped = result.skipped_issues?.length ?? 0;
       const queued = result.status === "queued" || Boolean(result.task_id);
+      const queuedTask = createQueuedRepairTask(result, items.length);
+      if (queuedTask?.task_id) {
+        handledRepairTasksRef.current.delete(queuedTask.task_id);
+      }
+      setRepairTask(queuedTask);
       setRepairResult(result);
       setMessage(
         queued
-          ? `AI 修复已加入任务队列（${result.queued ?? items.length} 项），完成后请刷新并处理候选。`
+          ? `AI 修复已加入任务队列（${result.queued ?? items.length} 项），完成后会自动刷新候选状态。`
           : result.candidate_count
           ? `AI 修复已生成 ${result.candidate_count} 个候选，请到页面中接受或丢弃。`
           : skipped
@@ -53,7 +112,13 @@ export function WikiLintPanel({
               ? `AI 修复完成，但 ${failed} 个问题未生成候选。`
               : "没有可生成候选的问题。",
       );
-      await onReload();
+      if (queued && queuedTask?.task_id) {
+        void onReload().catch((err) => {
+          setError(err instanceof Error ? err.message : "Wiki 状态刷新失败");
+        });
+      } else {
+        await onReload();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "AI 修复失败");
     } finally {
@@ -99,7 +164,7 @@ export function WikiLintPanel({
             <button
               type="button"
               onClick={() => void repairIssues(repairableAiIssues)}
-              disabled={!repairableAiIssues.length || Boolean(repairing)}
+              disabled={!repairableAiIssues.length || Boolean(repairing) || repairTaskActive}
               className="inline-flex h-9 items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 text-xs font-semibold text-amber-800 transition hover:bg-amber-50 disabled:opacity-40"
             >
               {repairing === "all" ? <Loader2 size={14} className="animate-spin" /> : <WandSparkles size={14} />}
@@ -114,8 +179,9 @@ export function WikiLintPanel({
       {error ? <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</div> : null}
       <WikiRepairResultCard
         result={repairResult}
+        repairTask={repairTask}
         issues={lastRepairItems}
-        repairing={Boolean(repairing)}
+        repairing={Boolean(repairing) || repairTaskActive}
         onOpenPage={(pageId) => void openCandidatePage(pageId)}
         onForce={() => void repairIssues(lastRepairItems, true)}
       />
@@ -148,7 +214,7 @@ export function WikiLintPanel({
                       </p>
                       <p className="mt-1 text-xs text-slate-500">建议动作：{actionAdvice(issue)}</p>
                     </button>
-                    <button type="button" onClick={() => void handleAction(issue)} className={cn(actionButton, issue.repair_action === "ai_candidate" && "border-amber-200 text-amber-800")}>
+                    <button type="button" onClick={() => void handleAction(issue)} disabled={Boolean(repairing) || repairTaskActive} className={cn(actionButton, issue.repair_action === "ai_candidate" && "border-amber-200 text-amber-800")}>
                       {repairing === issue.id ? <Loader2 size={13} className="animate-spin" /> : <Wrench size={13} />}
                       {actionLabel(issue)}
                     </button>
@@ -165,19 +231,22 @@ export function WikiLintPanel({
 
 function WikiRepairResultCard({
   result,
+  repairTask,
   issues,
   repairing,
   onOpenPage,
   onForce,
 }: {
   result: WikiRepairResult | null;
+  repairTask: IngestionJob | null;
   issues: WikiIssue[];
   repairing: boolean;
   onOpenPage: (pageId: string) => void;
   onForce: () => void;
 }) {
   if (!result) return null;
-  const queued = result.status === "queued" || Boolean(result.task_id);
+  const queued = result.status === "queued" || result.status === "running" || (Boolean(result.task_id) && !result.status);
+  const activeTask = repairTask ?? result.job ?? result.task ?? null;
   const issueById = new Map(issues.map((issue) => [issue.id, issue]));
   const failedIds = new Set((result.failed_issues ?? []).map((item) => item.id));
   const candidatePages = uniqueStrings(
@@ -198,13 +267,18 @@ function WikiRepairResultCard({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="text-sm font-semibold text-slate-900">{queued ? "AI 修复任务" : "AI 修复结果"}</h4>
-            {queued ? <Badge variant="info">已入队</Badge> : null}
+            {activeTask ? <Badge variant="info">{taskStatusLabel(activeTask.status)}</Badge> : queued ? <Badge variant="info">已入队</Badge> : null}
           </div>
           <p className="mt-1 text-xs text-slate-500">
             {queued
-              ? `任务 ${result.task_id ? result.task_id.slice(0, 8) : ""} 已进入队列 · 待处理 ${result.queued ?? issues.length} 项`
+              ? `任务 ${result.task_id ? result.task_id.slice(0, 8) : ""} 已进入队列 · 待处理 ${result.queued ?? issues.length} 项${activeTask?.current_step ? ` · ${activeTask.current_step}` : ""}`
               : `生成候选 ${result.candidate_count} 个 · 修复问题 ${result.repaired_count} 个 · 跳过 ${skippedIssues.length} 个 · 失败 ${failedIssues.length} 个`}
           </p>
+          {activeTask && isActiveRepairTask(activeTask) ? (
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
+              <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${Math.max(5, Math.min(100, Number(activeTask.progress ?? 0)))}%` }} />
+            </div>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {!queued && candidatePages.length ? (
@@ -265,6 +339,61 @@ function ResultColumn<T>({ title, items, empty, render }: { title: string; items
       </div>
     </div>
   );
+}
+
+function createQueuedRepairTask(result: WikiRepairResult, total: number): IngestionJob | null {
+  const task = result.job ?? result.task;
+  if (task) return task;
+  if (!result.task_id) return null;
+  const now = Date.now() / 1000;
+  return {
+    task_id: result.task_id,
+    kind: "wiki_repair",
+    status: result.status || "queued",
+    progress: 0,
+    current_step: "Wiki AI 修复任务已排队",
+    completed_steps: 0,
+    total_steps: result.queued ?? total,
+    result: {},
+    error: "",
+    metadata: {},
+    cancel_requested: false,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+function repairResultFromTask(task: IngestionJob): WikiRepairResult {
+  const payload = (task.result ?? {}) as Partial<WikiRepairResult>;
+  return {
+    repaired_count: Number(payload.repaired_count ?? payload.completed ?? 0),
+    candidate_count: Number(payload.candidate_count ?? 0),
+    skipped_issues: Array.isArray(payload.skipped_issues) ? payload.skipped_issues : [],
+    failed_issues: Array.isArray(payload.failed_issues) ? payload.failed_issues : [],
+    completed: Number(payload.completed ?? payload.repaired_count ?? 0),
+    failed: Number(payload.failed ?? payload.failed_issues?.length ?? 0),
+    items: Array.isArray(payload.items) ? payload.items : [],
+    status: task.status,
+    task_id: task.task_id,
+    task,
+    job: task,
+    queued: task.total_steps,
+  };
+}
+
+function isActiveRepairTask(task: IngestionJob | null) {
+  return task?.status === "queued" || task?.status === "running";
+}
+
+function taskStatusLabel(status: string) {
+  return {
+    queued: "已排队",
+    running: "运行中",
+    completed: "已完成",
+    failed: "失败",
+    interrupted: "已中断",
+    cancelled: "已取消",
+  }[status] ?? status;
 }
 
 function uniqueStrings(values: Array<string | undefined>) {
