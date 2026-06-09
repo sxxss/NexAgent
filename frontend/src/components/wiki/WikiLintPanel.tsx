@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { AlertCircle, CheckCircle, Loader2, RefreshCw, WandSparkles, Wrench } from "lucide-react";
-import { repairWikiKbIssues, type WikiLintPayload } from "@/lib/api";
+import { useMemo, useState, type ReactNode } from "react";
+import { AlertCircle, CheckCircle, ExternalLink, Loader2, RefreshCw, RotateCcw, WandSparkles, Wrench } from "lucide-react";
+import { repairWikiKbIssues, type WikiLintPayload, type WikiRepairResult } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +22,8 @@ export function WikiLintPanel({
   const [repairing, setRepairing] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [repairResult, setRepairResult] = useState<WikiRepairResult | null>(null);
+  const [lastRepairItems, setLastRepairItems] = useState<WikiIssue[]>([]);
   const issues = useMemo(() => lint?.issues ?? [], [lint?.issues]);
   const pageCount = lint?.summary?.page_count ?? 0;
   const groupedIssues = useMemo(() => groupIssues(issues), [issues]);
@@ -32,15 +34,21 @@ export function WikiLintPanel({
     setRepairing(items.length === 1 ? items[0].id : "all");
     setMessage("");
     setError("");
+    setRepairResult(null);
+    setLastRepairItems(items);
     try {
       const result = await repairWikiKbIssues(kbId, { issue_ids: items.map((item) => item.id), force });
       const failed = result.failed_issues?.length ?? 0;
+      const skipped = result.skipped_issues?.length ?? 0;
+      setRepairResult(result);
       setMessage(
         result.candidate_count
           ? `AI 修复已生成 ${result.candidate_count} 个候选，请到页面中接受或丢弃。`
-          : failed
-            ? `AI 修复完成，但 ${failed} 个问题未生成候选。`
-            : "没有可生成候选的问题。",
+          : skipped
+            ? `${skipped} 个问题已有待处理候选，可直接处理候选或强制重新生成。`
+            : failed
+              ? `AI 修复完成，但 ${failed} 个问题未生成候选。`
+              : "没有可生成候选的问题。",
       );
       await onReload();
     } catch (err) {
@@ -58,6 +66,18 @@ export function WikiLintPanel({
     await onIssueAction?.(issue);
   };
 
+  const openCandidatePage = async (pageId: string) => {
+    await onIssueAction?.({
+      id: `repair-result:${pageId}`,
+      type: "pending_candidate",
+      page_id: pageId,
+      severity: "info",
+      message: "处理 AI 修复候选",
+      action: "handle_candidate",
+      repair_action: "handle_candidate",
+    });
+  };
+
   return (
     <div className="space-y-4">
       <div className={cn("rounded-xl border px-4 py-3", issues.length ? "border-amber-100 bg-amber-50" : "border-emerald-100 bg-emerald-50")}>
@@ -69,6 +89,7 @@ export function WikiLintPanel({
             <div>
               <h3 className="text-sm font-semibold text-slate-900">Wiki 健康检查</h3>
               <p className="text-xs text-slate-500">{pageCount} pages · {issues.length} issues · 可 AI 修复 {repairableAiIssues.length} 项</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">AI 修复只生成候选版本，不会直接覆盖页面正文。</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -79,7 +100,7 @@ export function WikiLintPanel({
               className="inline-flex h-9 items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 text-xs font-semibold text-amber-800 transition hover:bg-amber-50 disabled:opacity-40"
             >
               {repairing === "all" ? <Loader2 size={14} className="animate-spin" /> : <WandSparkles size={14} />}
-              一键 AI 修复
+              一键 AI 生成修复候选
             </button>
             <button type="button" onClick={() => void onReload()} className={iconButton} title="刷新检查"><RefreshCw size={14} /></button>
           </div>
@@ -88,6 +109,13 @@ export function WikiLintPanel({
 
       {message ? <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{message}</div> : null}
       {error ? <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</div> : null}
+      <WikiRepairResultCard
+        result={repairResult}
+        issues={lastRepairItems}
+        repairing={Boolean(repairing)}
+        onOpenPage={(pageId) => void openCandidatePage(pageId)}
+        onForce={() => void repairIssues(lastRepairItems, true)}
+      />
 
       {!issues.length ? (
         <div className="flex min-h-72 flex-col items-center justify-center rounded-xl border border-emerald-100 bg-emerald-50 text-center">
@@ -130,6 +158,106 @@ export function WikiLintPanel({
       )}
     </div>
   );
+}
+
+function WikiRepairResultCard({
+  result,
+  issues,
+  repairing,
+  onOpenPage,
+  onForce,
+}: {
+  result: WikiRepairResult | null;
+  issues: WikiIssue[];
+  repairing: boolean;
+  onOpenPage: (pageId: string) => void;
+  onForce: () => void;
+}) {
+  if (!result) return null;
+  const issueById = new Map(issues.map((issue) => [issue.id, issue]));
+  const failedIds = new Set((result.failed_issues ?? []).map((item) => item.id));
+  const candidatePages = uniqueStrings(
+    issues
+      .filter((issue) => issue.page_id && !failedIds.has(issue.id))
+      .map((issue) => issue.page_id),
+  );
+  const skippedPages = uniqueStrings(
+    (result.skipped_issues ?? [])
+      .map((item) => issueById.get(item.id)?.page_id)
+      .filter(Boolean),
+  );
+  const failedIssues = result.failed_issues ?? [];
+  const skippedIssues = result.skipped_issues ?? [];
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+        <div>
+          <h4 className="text-sm font-semibold text-slate-900">AI 修复结果</h4>
+          <p className="mt-1 text-xs text-slate-500">生成候选 {result.candidate_count} 个 · 修复问题 {result.repaired_count} 个 · 跳过 {skippedIssues.length} 个 · 失败 {failedIssues.length} 个</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {candidatePages.length ? (
+            <button type="button" onClick={() => onOpenPage(candidatePages[0])} className={cn(actionButton, "border-sky-200 text-sky-700")}>
+              <ExternalLink size={13} />
+              处理候选
+            </button>
+          ) : null}
+          {skippedIssues.length ? (
+            <button type="button" onClick={onForce} disabled={repairing} className={cn(actionButton, "border-amber-200 text-amber-800")}>
+              {repairing ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+              强制重新生成候选
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <div className="grid gap-3 px-4 py-3 text-xs text-slate-600 lg:grid-cols-3">
+        <ResultColumn title="待处理候选" items={candidatePages} empty="暂无候选页面" render={(pageId) => (
+          <button type="button" onClick={() => onOpenPage(pageId)} className="truncate text-left font-semibold text-blue-700 underline decoration-blue-200 underline-offset-2 hover:text-blue-800">
+            {pageId}
+          </button>
+        )} />
+        <ResultColumn title="已跳过" items={skippedIssues} empty="暂无跳过项" render={(item) => (
+          <span className="min-w-0">
+            <span className="block truncate font-mono text-[11px] text-slate-500">{item.id}</span>
+            <span className="block text-slate-400">{item.reason}</span>
+          </span>
+        )} />
+        <ResultColumn title="失败项" items={failedIssues} empty="暂无失败项" render={(item) => (
+          <span className="min-w-0">
+            <span className="block truncate font-mono text-[11px] text-slate-500">{item.id}</span>
+            <span className="block text-rose-500">{item.error}</span>
+          </span>
+        )} />
+      </div>
+      {skippedPages.length ? (
+        <div className="border-t border-slate-100 px-4 py-3 text-xs text-slate-500">
+          已有候选页面：
+          <span className="ml-1 inline-flex flex-wrap gap-1">
+            {skippedPages.map((pageId) => (
+              <button key={pageId} type="button" onClick={() => onOpenPage(pageId)} className="font-semibold text-blue-700 underline decoration-blue-200 underline-offset-2 hover:text-blue-800">{pageId}</button>
+            ))}
+          </span>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ResultColumn<T>({ title, items, empty, render }: { title: string; items: T[]; empty: string; render: (item: T) => ReactNode }) {
+  return (
+    <div className="min-w-0 rounded-lg bg-slate-50 p-3">
+      <p className="mb-2 font-semibold text-slate-700">{title}</p>
+      <div className="grid gap-2">
+        {items.length ? items.map((item, index) => (
+          <div key={index} className="min-w-0 rounded-md bg-white px-2 py-1.5 shadow-sm">{render(item)}</div>
+        )) : <span className="text-slate-400">{empty}</span>}
+      </div>
+    </div>
+  );
+}
+
+function uniqueStrings(values: Array<string | undefined>) {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))];
 }
 
 function groupIssues(issues: WikiIssue[]) {
