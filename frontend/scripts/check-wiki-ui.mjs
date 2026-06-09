@@ -80,6 +80,11 @@ const checks = [
   ["detail", "taskKindLabel"],
   ["detail", "wiki_repair"],
   ["detail", "Wiki 编译"],
+  ["detail", "visibleJobs"],
+  ["detail", "hiddenJobCount"],
+  ["detail", "showAllJobs"],
+  ["detail", "活跃"],
+  ["detail", "历史任务"],
 ];
 
 const absentChecks = [
@@ -88,6 +93,7 @@ const absentChecks = [
   ["page", "xl:grid-cols-[360px_minmax(0,1fr)]"],
   ["detail", "<WikiModelPanel"],
   ["detail", "Wiki LLM 配置"],
+  ["detail", "任务{jobs.length"],
 ];
 
 const failures = [];

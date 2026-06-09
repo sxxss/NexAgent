@@ -608,22 +608,28 @@ function WikiFileList({ files, processingIds, onProcess, onPreview, onDelete }: 
 
 function WikiTaskQueue({ jobs, onRetry, onCancel }: { jobs: IngestionJob[]; onRetry: (jobId: string) => void; onCancel: (taskId: string) => void }) {
   const [open, setOpen] = useState(false);
-  const activeCount = jobs.filter((job) => job.status === "queued" || job.status === "running").length;
+  const [showAllJobs, setShowAllJobs] = useState(false);
+  const activeJobs = jobs.filter(isActiveTask);
+  const historyJobs = jobs.filter((job) => !isActiveTask(job)).sort((left, right) => Number(right.updated_at || right.created_at || 0) - Number(left.updated_at || left.created_at || 0));
+  const priorityHistoryJobs = historyJobs.filter((job) => job.status !== "completed").slice(0, 3);
+  const visibleJobs = showAllJobs ? [...activeJobs, ...historyJobs] : [...activeJobs, ...priorityHistoryJobs];
+  const hiddenJobCount = Math.max(0, jobs.length - visibleJobs.length);
+  const displayCount = activeJobs.length || priorityHistoryJobs.length;
   return (
     <div className="relative shrink-0">
       <button type="button" onClick={() => setOpen((next) => !next)} className={cn(outlineButton, "h-9 px-2.5")}>
         <ListChecks size={14} />
-        任务{jobs.length ? ` ${jobs.length}` : ""}
-        {activeCount ? <span className="ml-0.5 h-2 w-2 rounded-full bg-sky-500" /> : null}
+        {activeJobs.length ? `活跃 ${activeJobs.length}` : `任务 ${displayCount}`}
+        {activeJobs.length ? <span className="ml-0.5 h-2 w-2 rounded-full bg-sky-500" /> : null}
       </button>
       {open ? (
         <div className={taskQueuePopover}>
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-900">任务队列</h2>
-            <span className="text-xs text-slate-400">{jobs.length}</span>
+            <span className="text-xs text-slate-400">{activeJobs.length ? `${activeJobs.length} 活跃` : `${historyJobs.length} 历史任务`}</span>
           </div>
           <div className="max-h-80 space-y-2 overflow-auto">
-            {jobs.length ? jobs.map((job) => {
+            {visibleJobs.length ? visibleJobs.map((job) => {
               const running = job.status === "queued" || job.status === "running";
               const retryable = !["queued", "running", "completed"].includes(job.status);
               const completed = taskCompleted(job);
@@ -656,6 +662,11 @@ function WikiTaskQueue({ jobs, onRetry, onCancel }: { jobs: IngestionJob[]; onRe
               );
             }) : <div className="rounded-lg border border-dashed border-slate-200 px-3 py-8 text-center text-xs text-slate-400">暂无任务</div>}
           </div>
+          {hiddenJobCount ? (
+            <button type="button" onClick={() => setShowAllJobs((next) => !next)} className="mt-2 inline-flex h-8 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-500 hover:bg-slate-50">
+              {showAllJobs ? "收起历史任务" : `展开历史任务 ${hiddenJobCount}`}
+            </button>
+          ) : null}
         </div>
       ) : null}
       </div>
@@ -1139,6 +1150,10 @@ function taskFailed(job: IngestionJob) {
   return Number(job.result?.failed ?? 0);
 }
 
+function isActiveTask(job: IngestionJob) {
+  return job.status === "queued" || job.status === "running";
+}
+
 function taskKindLabel(kind: string) {
   return {
     knowledge_ingestion: "文件处理",
@@ -1153,7 +1168,7 @@ function shortTaskId(taskId: string) {
 }
 
 function jobLabel(status: string) {
-  return { queued: "排队中", running: "运行中", completed: "完成", failed: "失败", cancelled: "已取消" }[status] ?? status;
+  return { queued: "排队中", running: "运行中", completed: "完成", failed: "失败", interrupted: "已中断", cancelled: "已取消" }[status] ?? status;
 }
 
 const inputClass = "h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100 disabled:bg-slate-50 disabled:text-slate-400";
