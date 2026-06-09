@@ -70,17 +70,42 @@ export function WikiGraphPanel({
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [flow, setFlow] = useState<ReactFlowInstance | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState("");
+  const [selectedEdgeKey, setSelectedEdgeKey] = useState("");
   const [focusNodeId, setFocusNodeId] = useState("");
   const stats = graph?.stats ?? {};
   const pageTitle = useMemo(() => new Map((graph?.nodes ?? []).map((node) => [node.id, node.label])), [graph?.nodes]);
+  const pageById = useMemo(() => new Map((visibleGraph?.nodes ?? []).map((node) => [node.id, node])), [visibleGraph?.nodes]);
   const selectedNode = useMemo(
     () => (visibleGraph?.nodes ?? []).find((node) => node.id === selectedNodeId) ?? null,
     [selectedNodeId, visibleGraph?.nodes],
+  );
+  const selectedEdge = useMemo(
+    () => (visibleGraph?.edges ?? []).find((edge) => graphEdgeKey(edge) === selectedEdgeKey) ?? null,
+    [selectedEdgeKey, visibleGraph?.edges],
   );
   const selectedNodeDegree = selectedNode ? degrees.get(selectedNode.id) ?? 0 : 0;
   const selectedEdges = useMemo(
     () => selectedNode ? (visibleGraph?.edges ?? []).filter((edge) => edge.source === selectedNode.id || edge.target === selectedNode.id) : [],
     [selectedNode, visibleGraph?.edges],
+  );
+  const selectedNeighbors = useMemo(
+    () =>
+      selectedNode
+        ? selectedEdges
+            .map((edge) => {
+              const nodeId = edge.source === selectedNode.id ? edge.target : edge.source;
+              const node = pageById.get(nodeId);
+              return {
+                nodeId,
+                label: node?.label ?? pageTitle.get(nodeId) ?? nodeId,
+                type: node?.type ?? "unknown",
+                confidence: node?.confidence ?? "UNVERIFIED",
+                edge,
+              };
+            })
+            .sort((left, right) => right.edge.weight - left.edge.weight || left.label.localeCompare(right.label))
+        : [],
+    [pageById, pageTitle, selectedEdges, selectedNode],
   );
   const coreNodes = useMemo(
     () =>
@@ -106,6 +131,24 @@ export function WikiGraphPanel({
         className: cn(node.className, node.id === selectedNodeId && "wiki-graph-node-selected", node.id === focusNodeId && "wiki-graph-node-focus"),
       })),
     [focusNodeId, nodes, selectedNodeId],
+  );
+  const displayEdges = useMemo(
+    () =>
+      edges.map((edge) => {
+        const selected = edge.id === selectedEdgeKey;
+        const connectedToFocus = !focusNodeId || edge.source === focusNodeId || edge.target === focusNodeId;
+        return {
+          ...edge,
+          animated: selected || edge.animated,
+          style: {
+            ...edge.style,
+            opacity: connectedToFocus ? 1 : 0.26,
+            stroke: selected ? "#dc2626" : edge.style?.stroke,
+            strokeWidth: selected ? 4 : edge.style?.strokeWidth,
+          },
+        };
+      }),
+    [edges, focusNodeId, selectedEdgeKey],
   );
 
   const updateOption = useCallback((patch: Partial<WikiGraphOptions>) => {
@@ -140,6 +183,7 @@ export function WikiGraphPanel({
   const resetView = useCallback(() => {
     setFocusNodeId("");
     setSelectedNodeId("");
+    setSelectedEdgeKey("");
     flow?.fitView({ padding: 0.22, duration: 450 });
   }, [flow]);
 
@@ -147,6 +191,7 @@ export function WikiGraphPanel({
     const target = nodes.find((node) => node.id === nodeId);
     setSelectedNodeId(nodeId);
     setFocusNodeId(nodeId);
+    setSelectedEdgeKey("");
     if (target) {
       flow?.setCenter(target.position.x + 80, target.position.y + 60, { zoom: 1.25, duration: 450 });
     }
@@ -155,8 +200,18 @@ export function WikiGraphPanel({
   const handleNodeClick = useCallback((nodeId: string) => {
     setSelectedNodeId(nodeId);
     setFocusNodeId(nodeId);
+    setSelectedEdgeKey("");
     if (!fullscreen) onNodeSelect?.(nodeId);
   }, [fullscreen, onNodeSelect]);
+
+  const handleEdgeClick = useCallback((edgeKey: string) => {
+    setSelectedEdgeKey(edgeKey);
+    const edge = (visibleGraph?.edges ?? []).find((item) => graphEdgeKey(item) === edgeKey);
+    if (edge) {
+      setSelectedNodeId(edge.source);
+      setFocusNodeId(edge.source);
+    }
+  }, [visibleGraph?.edges]);
 
   useEffect(() => {
     setNodes(builtNodes);
@@ -190,7 +245,7 @@ export function WikiGraphPanel({
         <WikiGraphExplorerShell
           graph={visibleGraph}
           displayNodes={displayNodes}
-          edges={edges}
+          edges={displayEdges}
           effectiveOptions={effectiveOptions}
           draftOptions={draftOptions}
           typeFilters={typeFilters}
@@ -200,6 +255,9 @@ export function WikiGraphPanel({
           selectedNode={selectedNode}
           selectedNodeDegree={selectedNodeDegree}
           selectedEdges={selectedEdges}
+          selectedNeighbors={selectedNeighbors}
+          selectedEdge={selectedEdge}
+          selectedEdgeKey={selectedEdgeKey}
           coreNodes={coreNodes}
           pageTitle={pageTitle}
           onDraftOptionsChange={updateDraftOption}
@@ -213,6 +271,7 @@ export function WikiGraphPanel({
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeClick={handleNodeClick}
+          onEdgeClick={handleEdgeClick}
         />
       ) : (
         <>
@@ -220,16 +279,24 @@ export function WikiGraphPanel({
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
             <GraphCanvas
               nodes={displayNodes}
-              edges={edges}
+              edges={displayEdges}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onNodeClick={handleNodeClick}
+              onEdgeClick={handleEdgeClick}
               setFlow={setFlow}
               heightClass="h-[620px]"
             />
             <CompactGraphAside coreNodes={coreNodes} onFocusNode={(nodeId) => onNodeSelect?.(nodeId)} />
           </div>
-          <RelationshipList edges={visibleGraph?.edges ?? []} pageTitle={pageTitle} onFocusNode={(nodeId) => onNodeSelect?.(nodeId)} compact />
+          <RelationshipList
+            edges={visibleGraph?.edges ?? []}
+            pageTitle={pageTitle}
+            selectedEdgeKey={selectedEdgeKey}
+            onSelectEdge={(edge) => handleEdgeClick(graphEdgeKey(edge))}
+            onFocusNode={(nodeId) => onNodeSelect?.(nodeId)}
+            compact
+          />
         </>
       )}
     </div>
@@ -249,6 +316,9 @@ function WikiGraphExplorerShell({
   selectedNode,
   selectedNodeDegree,
   selectedEdges,
+  selectedNeighbors,
+  selectedEdge,
+  selectedEdgeKey,
   coreNodes,
   pageTitle,
   onDraftOptionsChange,
@@ -262,6 +332,7 @@ function WikiGraphExplorerShell({
   onNodesChange,
   onEdgesChange,
   onNodeClick,
+  onEdgeClick,
 }: {
   graph: WikiGraphPayload | null;
   displayNodes: Node<WikiNodeData>[];
@@ -275,6 +346,9 @@ function WikiGraphExplorerShell({
   selectedNode: WikiGraphNode | null;
   selectedNodeDegree: number;
   selectedEdges: WikiGraphEdge[];
+  selectedNeighbors: Array<{ nodeId: string; label: string; type: string; confidence: string; edge: WikiGraphEdge }>;
+  selectedEdge: WikiGraphEdge | null;
+  selectedEdgeKey: string;
   coreNodes: Array<WikiGraphNode & { degree: number }>;
   pageTitle: Map<string, string>;
   onDraftOptionsChange: (patch: Partial<WikiGraphOptions>) => void;
@@ -288,6 +362,7 @@ function WikiGraphExplorerShell({
   onNodesChange: ReturnType<typeof useNodesState<WikiNodeData>>[2];
   onEdgesChange: ReturnType<typeof useEdgesState>[2];
   onNodeClick: (nodeId: string) => void;
+  onEdgeClick: (edgeKey: string) => void;
 }) {
   return (
     <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[260px_minmax(0,1fr)_320px]">
@@ -358,6 +433,7 @@ function WikiGraphExplorerShell({
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeClick={onNodeClick}
+          onEdgeClick={onEdgeClick}
           setFlow={setFlow}
           heightClass="h-full min-h-[640px]"
         />
@@ -382,10 +458,39 @@ function WikiGraphExplorerShell({
                 <p>来源数量：{selectedNode.sources?.length ?? 0}</p>
                 <p>相关关系：{selectedEdges.length}</p>
               </div>
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-slate-700">相邻页面</p>
+                <div className="grid max-h-48 gap-1.5 overflow-auto pr-1">
+                  {selectedNeighbors.length ? selectedNeighbors.map((item) => (
+                    <button key={item.nodeId} type="button" onClick={() => onFocusNode(item.nodeId)} className="min-w-0 rounded-lg border border-slate-100 bg-white px-2 py-1.5 text-left hover:border-indigo-100 hover:bg-indigo-50">
+                      <span className="block truncate text-xs font-semibold text-slate-800">{item.label}</span>
+                      <span className="mt-1 flex flex-wrap items-center gap-1">
+                        <Badge variant="secondary">{pageTypeLabel(item.type)}</Badge>
+                        <Badge variant={confidenceVariant(item.confidence)}>{item.confidence}</Badge>
+                        <Badge variant="warning">权重 {item.edge.weight}</Badge>
+                      </span>
+                    </button>
+                  )) : <span className="rounded-lg border border-dashed border-slate-200 px-3 py-4 text-center text-xs text-slate-400">暂无相邻页面</span>}
+                </div>
+              </div>
               {onOpenNode ? <button type="button" onClick={() => onOpenNode(selectedNode.id)} className={primaryButton}><ExternalLink size={14} />在 Wiki 页面中查看</button> : null}
             </div>
           ) : (
             <div className="rounded-lg border border-dashed border-slate-200 px-3 py-8 text-center text-xs text-slate-400">点击图中节点查看详情</div>
+          )}
+        </section>
+
+        <section className="space-y-3 border-b border-slate-100 py-4">
+          <h4 className="text-sm font-semibold text-slate-900">选中关系</h4>
+          {selectedEdge ? (
+            <GraphSignalList
+              edge={selectedEdge}
+              pageTitle={pageTitle}
+              selectedEdgeKey={selectedEdgeKey}
+              onFocusNode={onFocusNode}
+            />
+          ) : (
+            <div className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-xs text-slate-400">点击图中连线或关系列表查看关系信号</div>
           )}
         </section>
 
@@ -401,7 +506,14 @@ function WikiGraphExplorerShell({
           </div>
         </section>
 
-        <RelationshipList edges={graph?.edges ?? []} pageTitle={pageTitle} onFocusNode={onFocusNode} title="关系列表" />
+        <RelationshipList
+          edges={graph?.edges ?? []}
+          pageTitle={pageTitle}
+          selectedEdgeKey={selectedEdgeKey}
+          onSelectEdge={(edge) => onEdgeClick(graphEdgeKey(edge))}
+          onFocusNode={onFocusNode}
+          title="关系列表"
+        />
       </aside>
     </div>
   );
@@ -454,6 +566,7 @@ function GraphCanvas({
   onNodesChange,
   onEdgesChange,
   onNodeClick,
+  onEdgeClick,
   setFlow,
   heightClass,
 }: {
@@ -462,6 +575,7 @@ function GraphCanvas({
   onNodesChange: ReturnType<typeof useNodesState<WikiNodeData>>[2];
   onEdgesChange: ReturnType<typeof useEdgesState>[2];
   onNodeClick: (nodeId: string) => void;
+  onEdgeClick: (edgeKey: string) => void;
   setFlow: (flow: ReactFlowInstance) => void;
   heightClass: string;
 }) {
@@ -486,6 +600,7 @@ function GraphCanvas({
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeClick={(_event, node) => onNodeClick(node.id)}
+          onEdgeClick={(_event, edge) => onEdgeClick(edge.id)}
         >
           <Background gap={18} size={1} color="#e2e8f0" />
           <MiniMap pannable zoomable nodeColor={(node) => nodeColor((node.data as WikiNodeData).type)} />
@@ -546,7 +661,82 @@ function CompactGraphAside({ coreNodes, onFocusNode }: { coreNodes: Array<WikiGr
   );
 }
 
-function RelationshipList({ edges, pageTitle, onFocusNode, title = "关系详情", compact = false }: { edges: WikiGraphEdge[]; pageTitle: Map<string, string>; onFocusNode: (nodeId: string) => void; title?: string; compact?: boolean }) {
+function GraphSignalList({
+  edge,
+  pageTitle,
+  selectedEdgeKey,
+  onFocusNode,
+}: {
+  edge: WikiGraphEdge;
+  pageTitle: Map<string, string>;
+  selectedEdgeKey: string;
+  onFocusNode: (nodeId: string) => void;
+}) {
+  const sourceOverlap = signalList(edge.signals?.source_overlap);
+  const commonNeighbors = signalList(edge.signals?.common_neighbors);
+  return (
+    <div className="space-y-3 rounded-lg border border-rose-100 bg-rose-50/60 p-3">
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold uppercase text-rose-500">关系信号</p>
+        <div className="mt-2 flex min-w-0 items-center gap-2 text-xs">
+          <button type="button" onClick={() => onFocusNode(edge.source)} className="min-w-0 truncate font-semibold text-slate-900 hover:text-rose-700">{pageTitle.get(edge.source) ?? edge.source}</button>
+          <span className="text-rose-300">{"->"}</span>
+          <button type="button" onClick={() => onFocusNode(edge.target)} className="min-w-0 truncate font-semibold text-slate-900 hover:text-rose-700">{pageTitle.get(edge.target) ?? edge.target}</button>
+        </div>
+        <p className="mt-1 break-all font-mono text-[10px] text-slate-400">{selectedEdgeKey}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <MetricPill label="权重" value={edge.weight} />
+        <MetricPill label="证据数" value={signalEvidenceCount(edge)} />
+      </div>
+      <div className="grid gap-2">
+        <SignalRow active={Boolean(edge.signals?.wikilink)} label="显式双链" detail="页面正文包含直接 wikilink。" />
+        <SignalRow active={sourceOverlap.length > 0} label="同源素材" detail={sourceOverlap.length ? sourceOverlap.map((source) => pageTitle.get(source) ?? source).join("、") : "没有共享来源素材。"} />
+        <SignalRow active={commonNeighbors.length > 0} label="共同邻居" detail={commonNeighbors.length ? commonNeighbors.map((nodeId) => pageTitle.get(nodeId) ?? nodeId).join("、") : "没有共同连接页面。"} />
+        <SignalRow active={Boolean(edge.signals?.type_affinity)} label="类型相同" detail={edge.signals?.type_affinity ? "两个页面属于相同 Wiki 页面类型。" : "两个页面类型不同。"} />
+      </div>
+    </div>
+  );
+}
+
+function MetricPill({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border border-white bg-white px-2 py-1.5">
+      <p className="text-[10px] text-slate-400">{label}</p>
+      <p className="text-sm font-bold text-slate-900">{value}</p>
+    </div>
+  );
+}
+
+function SignalRow({ active, label, detail }: { active: boolean; label: string; detail: string }) {
+  return (
+    <div className={cn("rounded-lg border px-2 py-2 text-xs", active ? "border-rose-100 bg-white text-slate-700" : "border-slate-100 bg-white/60 text-slate-400")}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold">{label}</span>
+        <Badge variant={active ? "success" : "secondary"}>{active ? "命中" : "未命中"}</Badge>
+      </div>
+      <p className="mt-1 break-words leading-5">{detail}</p>
+    </div>
+  );
+}
+
+function RelationshipList({
+  edges,
+  pageTitle,
+  selectedEdgeKey,
+  onSelectEdge,
+  onFocusNode,
+  title = "关系详情",
+  compact = false,
+}: {
+  edges: WikiGraphEdge[];
+  pageTitle: Map<string, string>;
+  selectedEdgeKey?: string;
+  onSelectEdge: (edge: WikiGraphEdge) => void;
+  onFocusNode: (nodeId: string) => void;
+  title?: string;
+  compact?: boolean;
+}) {
   return (
     <section className={cn(!compact && "space-y-2 pt-4", compact && "rounded-xl border border-slate-200 bg-white")}>
       <div className={cn("flex items-center justify-between", compact ? "border-b border-slate-100 px-4 py-3" : "pb-1")}>
@@ -554,8 +744,11 @@ function RelationshipList({ edges, pageTitle, onFocusNode, title = "关系详情
         <span className="text-[11px] text-slate-400">{edges.length}</span>
       </div>
       <div className={cn("overflow-auto", compact ? "max-h-72" : "max-h-96")}>
-        {edges.length ? edges.map((edge, index) => (
-          <div key={`${edge.source}-${edge.target}-${index}`} className={cn("flex flex-wrap items-center gap-2 border-b border-slate-100 text-xs text-slate-600 last:border-0", compact ? "px-4 py-2" : "py-2")}>
+        {edges.length ? edges.map((edge, index) => {
+          const edgeKey = graphEdgeKey(edge);
+          const selected = selectedEdgeKey === edgeKey;
+          return (
+          <div key={`${edgeKey}-${index}`} className={cn("flex flex-wrap items-center gap-2 border-b border-slate-100 text-xs text-slate-600 last:border-0", compact ? "px-4 py-2" : "py-2", selected && "bg-rose-50")}>
             <button type="button" onClick={() => onFocusNode(edge.source)} className="min-w-0 max-w-full truncate font-semibold text-slate-800 hover:text-indigo-700">{pageTitle.get(edge.source) ?? edge.source}</button>
             <span className="text-slate-300">{"->"}</span>
             <button type="button" onClick={() => onFocusNode(edge.target)} className="min-w-0 max-w-full truncate font-semibold text-slate-800 hover:text-indigo-700">{pageTitle.get(edge.target) ?? edge.target}</button>
@@ -563,8 +756,11 @@ function RelationshipList({ edges, pageTitle, onFocusNode, title = "关系详情
             {edge.signals?.wikilink ? <Badge variant="info">双链</Badge> : <Badge variant="secondary">推断</Badge>}
             {Array.isArray(edge.signals?.source_overlap) && edge.signals.source_overlap.length ? <Badge variant="success">同源</Badge> : null}
             {Array.isArray(edge.signals?.common_neighbors) && edge.signals.common_neighbors.length ? <Badge variant="warning">共邻</Badge> : null}
+            {edge.signals?.type_affinity ? <Badge variant="secondary">类型相同</Badge> : null}
+            <button type="button" onClick={() => onSelectEdge(edge)} className="ml-auto rounded-md border border-slate-200 bg-white px-2 py-1 font-semibold text-slate-500 hover:border-rose-200 hover:text-rose-700">详情</button>
           </div>
-        )) : <div className={cn("text-center text-xs text-slate-400", compact ? "px-4 py-8" : "py-6")}>暂无关系</div>}
+          );
+        }) : <div className={cn("text-center text-xs text-slate-400", compact ? "px-4 py-8" : "py-6")}>暂无关系</div>}
       </div>
     </section>
   );
@@ -649,8 +845,8 @@ function buildFlowGraph(graph: WikiGraphPayload | null): { nodes: Node<WikiNodeD
   const nodeIds = new Set(nodes.map((node) => node.id));
   const edges: Edge[] = (graph.edges ?? [])
     .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target))
-    .map((edge, index) => ({
-      id: `${edge.source}-${edge.target}-${index}`,
+    .map((edge) => ({
+      id: graphEdgeKey(edge),
       source: edge.source,
       target: edge.target,
       label: edge.signals?.wikilink ? "双链" : "",
@@ -672,6 +868,24 @@ function GraphStat({ label, value }: { label: string; value: number }) {
 
 function uniqueSorted(values: string[], numeric = false) {
   return [...new Set(values.filter(Boolean))].sort((left, right) => numeric ? Number(left) - Number(right) : left.localeCompare(right));
+}
+
+function graphEdgeKey(edge: Pick<WikiGraphEdge, "source" | "target">) {
+  const [left, right] = [edge.source, edge.target].sort();
+  return `${left}--${right}`;
+}
+
+function signalList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && Boolean(item)) : [];
+}
+
+function signalEvidenceCount(edge: WikiGraphEdge) {
+  return (
+    (edge.signals?.wikilink ? 1 : 0) +
+    signalList(edge.signals?.source_overlap).length +
+    signalList(edge.signals?.common_neighbors).length +
+    (edge.signals?.type_affinity ? 1 : 0)
+  );
 }
 
 function nodeColor(type: string) {
