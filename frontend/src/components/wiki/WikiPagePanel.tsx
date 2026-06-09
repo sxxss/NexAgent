@@ -192,7 +192,6 @@ export function WikiPagePanel({
                 <Badge variant={confidenceVariant(page.confidence)}>{page.confidence}</Badge>
                 {page.status ? <Badge variant="info">{pageStatusLabel(page.status)}</Badge> : null}
               </div>
-              {page.excerpt ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">{page.excerpt}</p> : null}
               <p className="mt-2 truncate text-[11px] text-slate-400">{page.updated_at ? formatDate(page.updated_at) : page.path}</p>
             </button>
           )) : (
@@ -270,17 +269,17 @@ export function WikiPagePanel({
             spellCheck={false}
           />
         ) : (
-          <div className="max-h-[720px] overflow-auto px-5 py-4">
-            <div className="markdown-body">
+          <div className="max-h-[720px] overflow-auto bg-slate-50/50 px-5 py-4">
+            <div className="markdown-body rounded-xl border border-slate-100 bg-white px-5 py-4 shadow-sm">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
                   a: ({ href, children }) => {
                     if (href?.startsWith("wiki:")) {
                       const pageId = decodeURIComponent(href.slice(5));
-                      return <button type="button" className="wiki-link font-semibold text-amber-700 underline decoration-amber-300 underline-offset-2" onClick={() => onSelect(pageId)}>{children}</button>;
+                      return <button type="button" className="wiki-link font-semibold text-blue-700 underline decoration-blue-300 underline-offset-2 transition hover:text-blue-800" onClick={() => onSelect(pageId)}>{children}</button>;
                     }
-                    return <a href={href} target="_blank" rel="noreferrer">{children}</a>;
+                    return <a href={href} target="_blank" rel="noreferrer" className="font-medium text-blue-700 underline decoration-blue-200 underline-offset-2 hover:text-blue-800">{children}</a>;
                   },
                 }}
               >

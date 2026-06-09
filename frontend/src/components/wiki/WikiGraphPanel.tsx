@@ -2,8 +2,8 @@
 
 import "reactflow/dist/style.css";
 
-import { useMemo } from "react";
-import ReactFlow, { Background, Controls, MiniMap, Handle, Position, type Edge, type Node, type NodeProps } from "reactflow";
+import { useEffect, useMemo } from "react";
+import ReactFlow, { Background, Controls, MiniMap, Handle, Position, useEdgesState, useNodesState, type Edge, type Node, type NodeProps } from "reactflow";
 import { ExternalLink, GitBranch, RefreshCw, Search } from "lucide-react";
 import { type WikiGraphPayload } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
@@ -44,7 +44,9 @@ export function WikiGraphPanel({
   onReload: () => Promise<void>;
 }) {
   const effectiveOptions = options ?? { q: "", maxEdges: 80, includeWeak: false };
-  const { nodes, edges, degrees } = useMemo(() => buildFlowGraph(graph), [graph]);
+  const { nodes: builtNodes, edges: builtEdges, degrees } = useMemo(() => buildFlowGraph(graph), [graph]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<WikiNodeData>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const stats = graph?.stats ?? {};
   const coreNodes = useMemo(
     () =>
@@ -60,6 +62,14 @@ export function WikiGraphPanel({
   const updateOption = (patch: Partial<WikiGraphOptions>) => {
     onOptionsChange?.({ ...effectiveOptions, ...patch });
   };
+
+  useEffect(() => {
+    setNodes(builtNodes);
+  }, [builtNodes, setNodes]);
+
+  useEffect(() => {
+    setEdges(builtEdges);
+  }, [builtEdges, setEdges]);
 
   return (
     <div className="space-y-4">
@@ -122,11 +132,21 @@ export function WikiGraphPanel({
               nodeTypes={nodeTypes}
               fitView
               fitViewOptions={{ padding: 0.2 }}
+              nodesDraggable
+              nodesConnectable={false}
+              nodesFocusable
+              edgesFocusable
+              panOnDrag
+              zoomOnScroll
+              zoomOnPinch
+              zoomOnDoubleClick
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
               onNodeClick={(_event, node) => onNodeSelect?.(node.id)}
             >
               <Background gap={18} size={1} color="#e2e8f0" />
               <MiniMap pannable zoomable nodeColor={(node) => nodeColor((node.data as WikiNodeData).type)} />
-              <Controls showInteractive={false} />
+              <Controls showInteractive />
             </ReactFlow>
           ) : (
             <div className="flex h-full flex-col items-center justify-center text-sm text-slate-400">
