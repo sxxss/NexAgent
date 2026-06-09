@@ -187,10 +187,14 @@ const checks = [
   ["detail", "wiki_repair"],
   ["detail", "Wiki 编译"],
   ["detail", "visibleJobs"],
+  ["detail", "actionableHistoryJobs"],
   ["detail", "hiddenJobCount"],
   ["detail", "showAllJobs"],
   ["detail", "taskTimeValue"],
   ["detail", "rawTime < 10000000000"],
+  ["detail", "taskFileIds"],
+  ["detail", "successfulTaskFileTimes"],
+  ["detail", "isObsoleteHistoryTask"],
   ["detail", "活跃"],
   ["detail", "历史任务"],
   ["sidebar", 'import Link from "next/link"'],
@@ -231,6 +235,7 @@ const absentChecks = [
   ["detail", "return `LLM ${provider}/${model}`;"],
   ["detail", "onRetryFailed={handleProcessAll}"],
   ["detail", "Number(right.updated_at || right.created_at || 0)"],
+  ["detail", "const priorityHistoryJobs = historyJobs.filter((job) => job.status !== \"completed\").slice(0, 3);"],
   ["graphPage", "LLM Wiki"],
 ];
 

@@ -567,6 +567,7 @@ function WikiSourceToolbar({
   onProcessAll,
   onCompileWiki,
   onForceCompileWiki,
+  files,
   jobs,
   onRetry,
   onCancel,
@@ -579,6 +580,7 @@ function WikiSourceToolbar({
   onProcessAll: () => void;
   onCompileWiki: () => Promise<void>;
   onForceCompileWiki: () => Promise<void>;
+  files: FileMeta[];
   jobs: IngestionJob[];
   onRetry: (jobId: string) => void;
   onCancel: (taskId: string) => void;
@@ -595,7 +597,7 @@ function WikiSourceToolbar({
         onCompileWiki={onCompileWiki}
         onForceCompileWiki={onForceCompileWiki}
       />
-      <WikiTaskQueue jobs={jobs} onRetry={onRetry} onCancel={onCancel} />
+      <WikiTaskQueue jobs={jobs} files={files} onRetry={onRetry} onCancel={onCancel} />
     </div>
   );
 }
@@ -678,6 +680,7 @@ function WikiSourceSection({
         onProcessAll={onProcessAll}
         onCompileWiki={onCompileWiki}
         onForceCompileWiki={onForceCompileWiki}
+        files={files}
         jobs={jobs}
         onRetry={onRetry}
         onCancel={onCancel}
@@ -930,12 +933,15 @@ function sourceTypeLabel(file: FileMeta) {
   return "";
 }
 
-function WikiTaskQueue({ jobs, onRetry, onCancel }: { jobs: IngestionJob[]; onRetry: (jobId: string) => void; onCancel: (taskId: string) => void }) {
+function WikiTaskQueue({ jobs, files, onRetry, onCancel }: { jobs: IngestionJob[]; files: FileMeta[]; onRetry: (jobId: string) => void; onCancel: (taskId: string) => void }) {
   const [open, setOpen] = useState(false);
   const [showAllJobs, setShowAllJobs] = useState(false);
+  const currentFileIds = useMemo(() => new Set(files.map((file) => file.file_id)), [files]);
+  const successTimesByFile = useMemo(() => successfulTaskFileTimes(jobs), [jobs]);
   const activeJobs = jobs.filter(isActiveTask);
   const historyJobs = jobs.filter((job) => !isActiveTask(job)).sort((left, right) => taskTimeValue(right) - taskTimeValue(left));
-  const priorityHistoryJobs = historyJobs.filter((job) => job.status !== "completed").slice(0, 3);
+  const actionableHistoryJobs = historyJobs.filter((job) => !isObsoleteHistoryTask(job, currentFileIds, successTimesByFile));
+  const priorityHistoryJobs = actionableHistoryJobs.filter((job) => job.status !== "completed").slice(0, 3);
   const visibleJobs = showAllJobs ? [...activeJobs, ...historyJobs] : [...activeJobs, ...priorityHistoryJobs];
   const hiddenJobCount = Math.max(0, jobs.length - visibleJobs.length);
   const displayCount = activeJobs.length || priorityHistoryJobs.length;
@@ -950,7 +956,7 @@ function WikiTaskQueue({ jobs, onRetry, onCancel }: { jobs: IngestionJob[]; onRe
         <div className={taskQueuePopover}>
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-900">任务队列</h2>
-            <span className="text-xs text-slate-400">{activeJobs.length ? `${activeJobs.length} 活跃` : `${historyJobs.length} 历史任务`}</span>
+            <span className="text-xs text-slate-400">{activeJobs.length ? `${activeJobs.length} 活跃` : `${actionableHistoryJobs.length} 历史任务`}</span>
           </div>
           <div className="max-h-80 space-y-2 overflow-auto">
             {visibleJobs.length ? visibleJobs.map((job) => {
@@ -1003,6 +1009,50 @@ function taskTimeValue(job: IngestionJob): number {
   if (Number.isFinite(rawTime) && rawTime > 0) return rawTime < 10000000000 ? rawTime * 1000 : rawTime;
   const parsed = Date.parse(String(value || ""));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function taskFileIds(job: IngestionJob): string[] {
+  const ids = new Set<string>();
+  const addFileId = (value: unknown) => {
+    if (typeof value === "string" && value.trim()) ids.add(value);
+  };
+
+  const metadataFileIds = job.metadata?.file_ids;
+  if (Array.isArray(metadataFileIds)) metadataFileIds.forEach(addFileId);
+  addFileId(job.metadata?.file_id);
+  addFileId(job.result?.current_file_id);
+
+  const items = job.result?.items;
+  if (Array.isArray(items)) {
+    items.forEach((item) => {
+      if (item && typeof item === "object" && "file_id" in item) {
+        addFileId((item as { file_id?: unknown }).file_id);
+      }
+    });
+  }
+
+  return [...ids];
+}
+
+function successfulTaskFileTimes(jobs: IngestionJob[]): Map<string, number> {
+  const times = new Map<string, number>();
+  jobs.forEach((job) => {
+    if (job.status !== "completed") return;
+    const time = taskTimeValue(job);
+    taskFileIds(job).forEach((fileId) => {
+      times.set(fileId, Math.max(times.get(fileId) ?? 0, time));
+    });
+  });
+  return times;
+}
+
+function isObsoleteHistoryTask(job: IngestionJob, currentFileIds: Set<string>, successTimesByFile: Map<string, number>): boolean {
+  if (isActiveTask(job) || job.status === "completed") return false;
+  const fileIds = taskFileIds(job);
+  if (!fileIds.length) return false;
+  if (fileIds.every((fileId) => !currentFileIds.has(fileId))) return true;
+  const taskTime = taskTimeValue(job);
+  return fileIds.every((fileId) => (successTimesByFile.get(fileId) ?? 0) > taskTime);
 }
 
 function FileList({ files, processingIds, onProcess, onPreview, onDelete }: { files: FileMeta[]; processingIds: Set<string>; onProcess: (fileId: string) => void; onPreview: (fileId: string) => void; onDelete: (fileId: string, filename: string) => void }) {
