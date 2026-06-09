@@ -39,6 +39,7 @@ _ALLOWED_UPLOAD_EXTENSIONS = {
     ".pptx",
     ".rst",
     ".txt",
+    ".xlsx",
     ".yaml",
     ".yml",
 }

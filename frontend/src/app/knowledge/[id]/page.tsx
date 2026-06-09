@@ -424,10 +424,10 @@ function FileUploadCard({ uploading, inputRef, onUpload }: { uploading: boolean;
       onClick={() => { if (!uploading) inputRef.current?.click(); }}
       className={cn("flex flex-col items-center justify-center rounded-2xl border-2 border-dashed bg-white py-12 text-center transition", uploading ? "cursor-wait opacity-80" : "cursor-pointer", dragging ? "border-sky-300 bg-sky-50" : "border-slate-200 hover:border-sky-200 hover:bg-sky-50/30")}
     >
-      <input ref={inputRef} type="file" multiple disabled={uploading} className="hidden" accept=".pdf,.docx,.doc,.pptx,.ppt,.txt,.md,.markdown,.html,.htm,.csv,.json" onChange={(event) => onUpload(event.target.files)} />
+      <input ref={inputRef} type="file" multiple disabled={uploading} className="hidden" accept=".pdf,.docx,.doc,.pptx,.ppt,.txt,.md,.markdown,.html,.htm,.csv,.json,.xlsx" onChange={(event) => onUpload(event.target.files)} />
       {uploading ? <Loader2 size={24} className="animate-spin text-sky-600" /> : <Upload size={24} className="text-slate-300" />}
       <p className="mt-3 text-sm font-semibold text-slate-700">{uploading ? "上传中..." : "点击上传或拖拽文件到此处"}</p>
-      <p className="mt-1 text-xs text-slate-400">支持 PDF、DOCX、PPTX、TXT、Markdown、HTML、CSV、JSON</p>
+      <p className="mt-1 text-xs text-slate-400">支持 PDF、DOCX、PPTX、TXT、Markdown、HTML、CSV、JSON、XLSX</p>
     </div>
   );
 }
@@ -553,10 +553,10 @@ function WikiQuickUpload({
           onClick={() => { if (!uploading) inputRef.current?.click(); }}
           className={cn(uploadDialogDropzone, uploading ? "cursor-wait opacity-80" : "cursor-pointer", dragging ? "border-sky-300 bg-sky-50" : "border-slate-200 bg-white hover:border-sky-200")}
         >
-          <input ref={inputRef} type="file" multiple disabled={uploading} className="hidden" accept=".pdf,.docx,.doc,.pptx,.ppt,.txt,.md,.markdown,.html,.htm,.csv,.json" onChange={(event) => { onUpload(event.target.files); setShowUpload(false); }} />
+          <input ref={inputRef} type="file" multiple disabled={uploading} className="hidden" accept=".pdf,.docx,.doc,.pptx,.ppt,.txt,.md,.markdown,.html,.htm,.csv,.json,.xlsx" onChange={(event) => { onUpload(event.target.files); setShowUpload(false); }} />
           {uploading ? <Loader2 size={24} className="animate-spin text-sky-600" /> : <Upload size={24} className="text-slate-300" />}
           <p className="mt-3 text-sm font-semibold text-slate-700">{uploading ? "上传中..." : "点击上传或拖拽文件到此处"}</p>
-          <p className="mt-1 text-xs text-slate-400">支持 PDF、DOCX、PPTX、TXT、Markdown、HTML、CSV、JSON</p>
+          <p className="mt-1 text-xs text-slate-400">支持 PDF、DOCX、PPTX、TXT、Markdown、HTML、CSV、JSON、XLSX</p>
         </div>
       </Dialog>
     </>

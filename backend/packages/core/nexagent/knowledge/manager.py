@@ -602,9 +602,10 @@ def _parser_capabilities() -> dict:
             engines[name] = {"available": True}
         except Exception as exc:
             engines[name] = {"available": False, "reason": str(exc)}
+    engines["xlsx"] = {"available": True, "reason": "built-in OOXML parser"}
     return {
         "engines": engines,
-        "preferred_order": ["docling", "pymupdf", "pypdf"],
+        "preferred_order": ["docling", "pymupdf", "pypdf", "xlsx"],
         "service_adapters": {
             "mineru": {"configured": bool(os.environ.get("MINERU_API_URL") or os.environ.get("MINERU_API_BASE"))},
             "paddlex": {"configured": bool(os.environ.get("PADDLEX_API_URL") or os.environ.get("PADDLEX_API_BASE"))},

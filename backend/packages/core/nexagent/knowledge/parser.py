@@ -1,4 +1,4 @@
-"""Document parser — extract plain text from PDF, DOCX, PPTX, TXT, MD, HTML.
+"""Document parser — extract plain text from PDF, DOCX, PPTX, XLSX, TXT, MD, HTML.
 
 All parsing is async-friendly: heavy work is delegated to a thread pool so it
 doesn't block the event loop.
@@ -9,9 +9,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import posixpath
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from zipfile import BadZipFile, ZipFile
+from xml.etree import ElementTree as ET
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +78,9 @@ class DocumentParser:
                 content = _parse_docx(str(path))
             case ".pptx" | ".ppt":
                 content = _parse_pptx(str(path))
+            case ".xlsx":
+                content, metadata_extra = _parse_xlsx(path)
+                parser_chain.append({"engine": "xlsx", "status": "ok"})
             case ".html" | ".htm":
                 content = _parse_html(str(path))
             case ".png" | ".jpg" | ".jpeg" | ".bmp" | ".tiff" | ".tif":
@@ -254,6 +260,162 @@ def _parse_pptx(file_path: str) -> str:
     return "\n\n".join(parts)
 
 
+def _parse_xlsx(path: Path) -> tuple[str, dict]:
+    """Extract workbook rows from .xlsx files as Markdown tables."""
+    try:
+        with ZipFile(path) as archive:
+            shared_strings = _xlsx_shared_strings(archive)
+            sheets = _xlsx_sheet_refs(archive)
+            parts: list[str] = []
+            total_rows = 0
+            for sheet_index, (sheet_name, sheet_path) in enumerate(sheets, 1):
+                try:
+                    xml = archive.read(sheet_path)
+                except KeyError:
+                    continue
+                rows = _xlsx_rows(xml, shared_strings)
+                total_rows += len(rows)
+                if rows:
+                    parts.append(f"## Sheet: {sheet_name}\n\n{_xlsx_rows_to_markdown(rows)}")
+                else:
+                    parts.append(f"## Sheet: {sheet_name}\n\n(empty)")
+            content = "\n\n".join(parts)
+            return content, {
+                "parser": "xlsx",
+                "sheet_count": len(sheets),
+                "row_count": total_rows,
+                "degraded": False,
+            }
+    except BadZipFile as exc:
+        raise ValueError(f"{path.name} is not a valid .xlsx file.") from exc
+    except ET.ParseError as exc:
+        raise ValueError(f"{path.name} contains invalid spreadsheet XML.") from exc
+
+
+def _xlsx_shared_strings(archive: ZipFile) -> list[str]:
+    try:
+        xml = archive.read("xl/sharedStrings.xml")
+    except KeyError:
+        return []
+    root = ET.fromstring(xml)
+    strings: list[str] = []
+    for item in root.findall(f".//{{{_XLSX_MAIN_NS}}}si"):
+        strings.append(_xlsx_join_text(item))
+    return strings
+
+
+def _xlsx_sheet_refs(archive: ZipFile) -> list[tuple[str, str]]:
+    workbook = ET.fromstring(archive.read("xl/workbook.xml"))
+    relationships = _xlsx_workbook_relationships(archive)
+    sheets: list[tuple[str, str]] = []
+    for sheet_index, sheet in enumerate(workbook.findall(f".//{{{_XLSX_MAIN_NS}}}sheet"), 1):
+        name = sheet.attrib.get("name") or f"Sheet{sheet_index}"
+        relationship_id = sheet.attrib.get(f"{{{_XLSX_OFFICE_REL_NS}}}id")
+        target = relationships.get(relationship_id or "")
+        sheet_path = _xlsx_resolve_part("xl/workbook.xml", target) if target else f"xl/worksheets/sheet{sheet_index}.xml"
+        sheets.append((name, sheet_path))
+    return sheets
+
+
+def _xlsx_workbook_relationships(archive: ZipFile) -> dict[str, str]:
+    try:
+        xml = archive.read("xl/_rels/workbook.xml.rels")
+    except KeyError:
+        return {}
+    root = ET.fromstring(xml)
+    relationships: dict[str, str] = {}
+    for relationship in root.findall(f".//{{{_PACKAGE_REL_NS}}}Relationship"):
+        relationship_id = relationship.attrib.get("Id")
+        target = relationship.attrib.get("Target")
+        if relationship_id and target:
+            relationships[relationship_id] = target
+    return relationships
+
+
+def _xlsx_resolve_part(base_part: str, target: str) -> str:
+    if target.startswith("/"):
+        return target.lstrip("/")
+    return posixpath.normpath(posixpath.join(posixpath.dirname(base_part), target))
+
+
+def _xlsx_rows(xml: bytes, shared_strings: list[str]) -> list[list[str]]:
+    root = ET.fromstring(xml)
+    rows: list[list[str]] = []
+    for row in root.findall(f".//{{{_XLSX_MAIN_NS}}}sheetData/{{{_XLSX_MAIN_NS}}}row"):
+        values: list[str] = []
+        for cell in row.findall(f"{{{_XLSX_MAIN_NS}}}c"):
+            column_index = _xlsx_column_index(cell.attrib.get("r", ""))
+            while len(values) < column_index:
+                values.append("")
+            values.append(_xlsx_cell_value(cell, shared_strings))
+        while values and not values[-1]:
+            values.pop()
+        if any(values):
+            rows.append(values)
+    return rows
+
+
+def _xlsx_column_index(reference: str) -> int:
+    letters = "".join(char for char in reference if char.isalpha())
+    if not letters:
+        return 0
+    index = 0
+    for char in letters.upper():
+        index = index * 26 + (ord(char) - ord("A") + 1)
+    return max(0, index - 1)
+
+
+def _xlsx_cell_value(cell: ET.Element, shared_strings: list[str]) -> str:
+    cell_type = cell.attrib.get("t")
+    if cell_type == "inlineStr":
+        inline = cell.find(f"{{{_XLSX_MAIN_NS}}}is")
+        return _xlsx_clean_value(_xlsx_join_text(inline) if inline is not None else "")
+
+    value = cell.findtext(f"{{{_XLSX_MAIN_NS}}}v") or ""
+    if cell_type == "s":
+        try:
+            return _xlsx_clean_value(shared_strings[int(value)])
+        except (ValueError, IndexError):
+            return ""
+    if cell_type == "b":
+        return "TRUE" if value == "1" else "FALSE"
+    if cell_type == "str":
+        return _xlsx_clean_value(value)
+    return _xlsx_clean_value(value)
+
+
+def _xlsx_join_text(element: ET.Element | None) -> str:
+    if element is None:
+        return ""
+    return "".join(element.itertext())
+
+
+def _xlsx_clean_value(value: str) -> str:
+    value = value.replace("\r\n", "\n").replace("\r", "\n")
+    lines = [re.sub(r"\s+", " ", line).strip() for line in value.split("\n")]
+    return "\n".join(line for line in lines if line)
+
+
+def _xlsx_rows_to_markdown(rows: list[list[str]]) -> str:
+    width = max(len(row) for row in rows)
+    normalized = [row + [""] * (width - len(row)) for row in rows]
+    header = normalized[0]
+    if not any(header):
+        header = [f"列{index}" for index in range(1, width + 1)]
+    body_rows = normalized[1:]
+    lines = [
+        "| " + " | ".join(_markdown_table_cell(value or f"列{index}") for index, value in enumerate(header, 1)) + " |",
+        "| " + " | ".join("---" for _ in range(width)) + " |",
+    ]
+    for row in body_rows:
+        lines.append("| " + " | ".join(_markdown_table_cell(value) for value in row) + " |")
+    return "\n".join(lines)
+
+
+def _markdown_table_cell(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("|", "\\|").replace("\n", "<br>")
+
+
 def _parse_html(file_path: str) -> str:
     """Extract text from HTML using markdownify (HTML → Markdown)."""
     content = Path(file_path).read_text(encoding="utf-8", errors="replace")
@@ -307,3 +469,8 @@ def _base_metadata(path: Path, content: str, parser: str) -> dict:
         "content_chars": len(content),
         "content_sha256": hashlib.sha256(content.encode("utf-8", errors="ignore")).hexdigest(),
     }
+
+
+_XLSX_MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+_XLSX_OFFICE_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+_PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"

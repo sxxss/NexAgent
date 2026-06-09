@@ -40,6 +40,26 @@ async def test_add_file_sanitizes_name_and_snapshots_processing_params():
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_add_file_accepts_xlsx_uploads():
+    from nexagent.knowledge.manager import reset_manager
+
+    work_dir = _work_dir("xlsx")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb = await manager.create_kb(name="kb", kb_type="milvus")
+
+        file_meta = await manager.add_file(kb.kb_id, "医保问答.xlsx", b"excel bytes")
+
+        assert file_meta.filename == "医保问答.xlsx"
+        assert Path(file_meta.file_path).suffix == ".xlsx"
+        assert Path(file_meta.file_path).read_bytes() == b"excel bytes"
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_add_file_rejects_bad_uploads_without_metadata(monkeypatch):
     from nexagent.knowledge.base import KnowledgeFileError
     from nexagent.knowledge.manager import reset_manager
