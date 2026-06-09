@@ -427,7 +427,7 @@ export default function KnowledgePage() {
 function KBCard({ kb, onSettings, onDelete }: { kb: KBMeta; onSettings: () => void; onDelete: () => void }) {
   const isWiki = kb.kb_type === "wiki";
   const isRag = kb.kb_type === "milvus";
-  const requiresReindex = Boolean(kb.extra?.requires_reindex);
+  const rebuildLabel = reindexBadgeLabel(kb);
   return (
     <Card className="group transition hover:-translate-y-0.5 hover:border-slate-300">
       <CardContent className="p-5">
@@ -440,7 +440,7 @@ function KBCard({ kb, onSettings, onDelete }: { kb: KBMeta; onSettings: () => vo
         </div>
         <div className="mt-4 flex items-start justify-between gap-2">
           <h2 className="truncate text-sm font-semibold text-slate-950">{kb.name}</h2>
-          {requiresReindex ? <Badge variant="warning">需重建</Badge> : null}
+          {rebuildLabel ? <Badge variant="warning">{rebuildLabel}</Badge> : null}
         </div>
         <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{kb.description || "未填写描述"}</p>
         <div className="mt-4 flex flex-wrap gap-1.5">
@@ -458,6 +458,13 @@ function KBCard({ kb, onSettings, onDelete }: { kb: KBMeta; onSettings: () => vo
       </CardContent>
     </Card>
   );
+}
+
+function reindexBadgeLabel(kb: KBMeta): string {
+  if (!kb.extra?.requires_reindex) return "";
+  if (kb.kb_type === "wiki") return "需重编译";
+  if (kb.kb_type === "lightrag") return "图谱需重建";
+  return "索引需重建";
 }
 
 function ModelSettingsDialog({

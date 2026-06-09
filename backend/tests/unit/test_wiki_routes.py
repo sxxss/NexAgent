@@ -24,12 +24,24 @@ async def test_create_kb_accepts_wiki_without_embedding(monkeypatch):
     monkeypatch.setattr(knowledge, "_mgr", lambda: FakeManager())
 
     result = await knowledge.create_kb(
-        knowledge.KBCreateRequest(name="Wiki", description="notes", kb_type="wiki")
+        knowledge.KBCreateRequest(name="Wiki", description="notes", kb_type="wiki", llm_model="chat-model")
     )
 
     assert result == {"kb_id": "wiki-1", "kb_type": "wiki", "name": "Wiki"}
     assert calls["kb_type"] == "wiki"
     assert calls["embed_info"] is None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_create_wiki_kb_requires_llm():
+    with pytest.raises(HTTPException) as exc:
+        await knowledge.create_kb(
+            knowledge.KBCreateRequest(name="Wiki", description="notes", kb_type="wiki")
+        )
+
+    assert exc.value.status_code == 400
+    assert "Wiki 知识库需要配置 LLM" in str(exc.value.detail)
 
 
 @pytest.mark.unit
@@ -120,6 +132,36 @@ async def test_list_kbs_clears_stale_wiki_reindex_flag_when_compile_completed(mo
     extra = result["knowledge_bases"][0]["extra"]
     assert extra["requires_reindex"] is False
     assert extra["model_config"]["requires_reindex"] is False
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_create_lightrag_kb_requires_llm_and_embedding():
+    with pytest.raises(HTTPException) as exc:
+        await knowledge.create_kb(
+            knowledge.KBCreateRequest(
+                name="Graph KB",
+                description="graph",
+                kb_type="lightrag",
+                embed_model="embed-model",
+            )
+        )
+
+    assert exc.value.status_code == 400
+    assert "LightRAG 知识库需要配置 LLM" in str(exc.value.detail)
+
+    with pytest.raises(HTTPException) as embed_exc:
+        await knowledge.create_kb(
+            knowledge.KBCreateRequest(
+                name="Graph KB",
+                description="graph",
+                kb_type="lightrag",
+                llm_model="chat-model",
+            )
+        )
+
+    assert embed_exc.value.status_code == 400
+    assert "LightRAG 知识库需要配置 Embedding" in str(embed_exc.value.detail)
 
 
 @pytest.mark.unit

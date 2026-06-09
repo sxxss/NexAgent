@@ -388,6 +388,28 @@ def _create_chunk_parser_config(req: KBCreateRequest) -> dict[str, Any]:
     return config
 
 
+def _has_llm_config_request(req: KBCreateRequest) -> bool:
+    return any(
+        str(value or "").strip()
+        for value in (req.llm_model, req.llm_provider, req.llm_base_url, req.llm_api_key)
+    )
+
+
+def _has_embedding_config_request(req: KBCreateRequest) -> bool:
+    return any(
+        str(value or "").strip()
+        for value in (req.embed_model, req.embed_base_url, req.embed_api_key)
+    )
+
+
+def _validate_create_kb_model_requirements(req: KBCreateRequest) -> None:
+    if req.kb_type in {"wiki", "lightrag"} and not _has_llm_config_request(req):
+        label = "Wiki" if req.kb_type == "wiki" else "LightRAG"
+        raise HTTPException(status_code=400, detail=f"{label} 知识库需要配置 LLM。")
+    if req.kb_type == "lightrag" and not _has_embedding_config_request(req):
+        raise HTTPException(status_code=400, detail="LightRAG 知识库需要配置 Embedding。")
+
+
 async def _resolve_model_config_patch(patch: dict[str, Any]) -> dict[str, Any]:
     patch = dict(patch)
     provider_model = (
@@ -1183,6 +1205,7 @@ async def list_kbs():
 
 @router.post("/", summary="Create a knowledge base", status_code=201)
 async def create_kb(req: KBCreateRequest):
+    _validate_create_kb_model_requirements(req)
     llm_info = await _build_llm_info(
         llm_model=req.llm_model,
         llm_provider=req.llm_provider,
