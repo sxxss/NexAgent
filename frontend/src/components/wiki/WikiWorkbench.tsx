@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, BookOpen, FileText, GitBranch, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { AlertCircle, FileText, GitBranch, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import {
   compileWikiKb,
   fetchWikiKbGraph,
@@ -22,13 +22,23 @@ import { cn } from "@/lib/utils";
 import { WikiCrystallizePanel } from "./WikiCrystallizePanel";
 import { type WikiGraphOptions, WikiGraphPanel } from "./WikiGraphPanel";
 import { WikiLintPanel } from "./WikiLintPanel";
-import { emptyFilters, type WikiPageFilters, WikiPagePanel } from "./WikiPagePanel";
+import { emptyFilters, type WikiPageFilters, WikiPageDirectory, WikiPagePanel } from "./WikiPagePanel";
 
 type WikiTab = "pages" | "graph" | "lint" | "crystallize";
 
 const defaultGraphOptions: WikiGraphOptions = { q: "", maxEdges: 80, includeWeak: false };
 
-export function WikiWorkbench({ kb, files, reload }: { kb: KBMeta; files: FileMeta[]; reload: () => void | Promise<void> }) {
+export function WikiWorkbench({
+  kb,
+  files,
+  reload,
+  sidebar,
+}: {
+  kb: KBMeta;
+  files: FileMeta[];
+  reload: () => void | Promise<void>;
+  sidebar?: React.ReactNode;
+}) {
   const router = useRouter();
   const [tab, setTab] = useState<WikiTab>("pages");
   const [pages, setPages] = useState<WikiPageSummary[]>([]);
@@ -146,99 +156,102 @@ export function WikiWorkbench({ kb, files, reload }: { kb: KBMeta; files: FileMe
   };
 
   const tabs = useMemo(() => [
-    { id: "pages" as const, label: "页面", icon: FileText, value: pages.length },
-    { id: "graph" as const, label: "图谱", icon: GitBranch, value: graph?.nodes.length ?? 0 },
-    { id: "lint" as const, label: "健康", icon: AlertCircle, value: lint?.summary?.issue_count ?? lint?.issues.length ?? 0 },
-    { id: "crystallize" as const, label: "沉淀", icon: Sparkles, value: files.length },
+    { id: "pages" as const, label: "Wiki 页面", icon: FileText, value: pages.length },
+    { id: "graph" as const, label: "关系图谱", icon: GitBranch, value: graph?.nodes.length ?? 0 },
+    { id: "lint" as const, label: "健康检查", icon: AlertCircle, value: lint?.summary?.issue_count ?? lint?.issues.length ?? 0 },
+    { id: "crystallize" as const, label: "结晶化", icon: Sparkles, value: files.length },
   ], [files.length, graph?.nodes.length, lint?.issues.length, lint?.summary?.issue_count, pages.length]);
 
   return (
-    <div className="min-w-0 rounded-2xl border border-amber-100 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700">
-            <BookOpen size={16} />
-          </span>
-          <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold text-slate-900">Wiki 工作台</h2>
-            <p className="truncate text-xs text-slate-500">{kb.name}</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="warning">{pages.length} pages</Badge>
-          <button type="button" onClick={() => void recompileAll()} disabled={compiling || loading} className={headerButton}>
-            {compiling ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            重新编译
-          </button>
-          <button type="button" onClick={() => void refresh()} disabled={refreshing || loading} className={iconButton} title="刷新 Wiki">
-            {refreshing || loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-          </button>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2 border-b border-slate-100 px-4 py-3">
-        {tabs.map((item) => {
-          const Icon = item.icon;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setTab(item.id)}
-              className={cn(
-                "inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition",
-                tab === item.id ? "border-amber-200 bg-amber-50 text-amber-800" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
-              )}
-            >
-              <Icon size={14} />
-              {item.label}
-              <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] text-slate-500">{item.value}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {error ? <div className="mx-4 mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</div> : null}
-
-      <div className="p-4">
-        {loading ? (
-          <div className="flex min-h-80 items-center justify-center text-sm text-slate-400">
-            <Loader2 size={18} className="mr-2 animate-spin text-amber-600" />
-            加载 Wiki...
-          </div>
-        ) : null}
-        {!loading && tab === "pages" ? (
-          <WikiPagePanel
-            kbId={kb.kb_id}
+    <div className="grid h-full min-h-0 gap-3 xl:grid-cols-[minmax(430px,0.92fr)_minmax(560px,1fr)]">
+      <aside className="min-h-0 overflow-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="space-y-3">
+          {sidebar}
+          <WikiPageDirectory
             pages={pages}
             files={files}
             selectedPageId={selectedPageId}
-            selectedPage={selectedPage}
             filters={pageFilters}
             onFilterChange={setPageFilters}
             onSelect={(pageId) => void selectPage(pageId)}
-            onReload={refresh}
           />
-        ) : null}
-        {!loading && tab === "graph" ? (
-          <WikiGraphPanel
-            graph={graph}
-            options={graphOptions}
-            onOptionsChange={setGraphOptions}
-            onNodeSelect={(pageId) => void handleGraphNodeSelect(pageId)}
-            onOpenPage={() => router.push(`/knowledge/${kb.kb_id}/wiki/graph`)}
-            onReload={refresh}
-          />
-        ) : null}
-        {!loading && tab === "lint" ? (
-          <WikiLintPanel
-            kbId={kb.kb_id}
-            lint={lint}
-            onReload={refresh}
-            onIssueAction={(issue) => void handleIssueAction(issue)}
-          />
-        ) : null}
-        {!loading && tab === "crystallize" ? <WikiCrystallizePanel kbId={kb.kb_id} files={files} onCreated={(pageId) => void refresh(pageId)} /> : null}
-      </div>
+        </div>
+      </aside>
+
+      <section className="min-h-0 min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5">
+          <div className="flex min-w-0 items-center gap-7">
+            {tabs.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setTab(item.id)}
+                className={cn(wikiWorkbenchTab, tab === item.id ? "border-sky-500 text-sky-700" : "border-transparent text-slate-700 hover:text-sky-700")}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 py-3">
+            <Badge variant="secondary">{pages.length} 页</Badge>
+            <button type="button" onClick={() => void recompileAll()} disabled={compiling || loading} className={headerButton}>
+              {compiling ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              重新编译
+            </button>
+            <button type="button" onClick={() => void refresh()} disabled={refreshing || loading} className={iconButton} title="刷新 Wiki">
+              {refreshing || loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            </button>
+          </div>
+        </div>
+
+        {error ? <div className="mx-5 mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</div> : null}
+
+        <div className="min-h-0 overflow-auto">
+          {loading ? (
+            <div className="flex min-h-80 items-center justify-center text-sm text-slate-400">
+              <Loader2 size={18} className="mr-2 animate-spin text-sky-600" />
+              加载 Wiki...
+            </div>
+          ) : null}
+          {!loading && tab === "pages" ? (
+            <WikiPagePanel
+              kbId={kb.kb_id}
+              pages={pages}
+              files={files}
+              selectedPage={selectedPage}
+              onSelect={(pageId) => void selectPage(pageId)}
+              onReload={refresh}
+            />
+          ) : null}
+          {!loading && tab === "graph" ? (
+            <div className="p-4">
+              <WikiGraphPanel
+                graph={graph}
+                options={graphOptions}
+                onOptionsChange={setGraphOptions}
+                onNodeSelect={(pageId) => void handleGraphNodeSelect(pageId)}
+                onOpenPage={() => router.push(`/knowledge/${kb.kb_id}/wiki/graph`)}
+                onReload={refresh}
+              />
+            </div>
+          ) : null}
+          {!loading && tab === "lint" ? (
+            <div className="p-4">
+              <WikiLintPanel
+                kbId={kb.kb_id}
+                lint={lint}
+                onReload={refresh}
+                onIssueAction={(issue) => void handleIssueAction(issue)}
+              />
+            </div>
+          ) : null}
+          {!loading && tab === "crystallize" ? (
+            <div className="p-4">
+              <WikiCrystallizePanel kbId={kb.kb_id} files={files} onCreated={(pageId) => void refresh(pageId)} />
+            </div>
+          ) : null}
+        </div>
+      </section>
     </div>
   );
 }
@@ -257,3 +270,4 @@ function graphParams(options: WikiGraphOptions): Record<string, string> {
 
 const iconButton = "inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 disabled:opacity-40";
 const headerButton = "inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40";
+const wikiWorkbenchTab = "inline-flex h-14 items-center border-b-2 px-0 text-base font-semibold transition";

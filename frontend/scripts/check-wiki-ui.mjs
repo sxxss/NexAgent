@@ -22,11 +22,16 @@ const checks = [
   ["workbench", "pageFilters"],
   ["workbench", "handleGraphNodeSelect"],
   ["workbench", "handleIssueAction"],
+  ["workbench", "sidebar"],
+  ["workbench", "WikiPageDirectory"],
+  ["workbench", "wikiWorkbenchTab"],
+  ["detail", "WikiKnowledgeCard"],
   ["detail", "WikiQuickUpload"],
   ["detail", "WikiFileList"],
   ["detail", "WikiTaskQueue"],
-  ["detail", "xl:grid-cols-[340px_minmax(0,1fr)]"],
+  ["detail", "wikiSidebar"],
   ["page", "wiki-link"],
+  ["page", "export function WikiPageDirectory"],
   ["page", "text-blue-700"],
   ["page", "acceptGeneratedWikiKbPage"],
   ["page", "discardGeneratedWikiKbPage"],
@@ -44,6 +49,8 @@ const checks = [
 
 const absentChecks = [
   ["page", "page.excerpt"],
+  ["detail", "xl:grid-cols-[340px_minmax(0,1fr)]"],
+  ["page", "xl:grid-cols-[360px_minmax(0,1fr)]"],
 ];
 
 const failures = [];

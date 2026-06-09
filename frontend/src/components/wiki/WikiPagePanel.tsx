@@ -15,7 +15,6 @@ import {
   type WikiPageSummary,
   type WikiPageType,
 } from "@/lib/api";
-import { Badge } from "@/components/ui/badge";
 import { cn, formatDate } from "@/lib/utils";
 
 type PageMode = "preview" | "edit";
@@ -31,20 +30,14 @@ export function WikiPagePanel({
   kbId,
   pages,
   files,
-  selectedPageId,
   selectedPage,
-  filters,
-  onFilterChange,
   onSelect,
   onReload,
 }: {
   kbId: string;
   pages: WikiPageSummary[];
   files: FileMeta[];
-  selectedPageId: string;
   selectedPage: WikiPageDetail | null;
-  filters: WikiPageFilters;
-  onFilterChange: (filters: WikiPageFilters) => void;
   onSelect: (pageId: string) => void;
   onReload: (pageId?: string) => Promise<void>;
 }) {
@@ -60,13 +53,8 @@ export function WikiPagePanel({
     setMode("preview");
   }, [selectedPage?.id, selectedPage?.content]);
 
-  const sourceFilter = filters.source_file_id;
   const pageLookup = useMemo(() => buildPageLookup(pages), [pages]);
   const renderedContent = useMemo(() => renderWikiLinks(selectedPage?.content ?? "", pageLookup), [pageLookup, selectedPage?.content]);
-
-  const updateFilter = (key: keyof WikiPageFilters, value: string) => {
-    onFilterChange({ ...filters, [key]: value });
-  };
 
   const save = async () => {
     if (!selectedPage) return;
@@ -125,7 +113,7 @@ export function WikiPagePanel({
     }
   };
 
-  if (!pages.length && !filters.q && !filters.type && !filters.status && !filters.source_file_id) {
+  if (!pages.length) {
     return (
       <div className="flex min-h-80 flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 text-center">
         <FileText size={28} className="text-slate-300" />
@@ -136,71 +124,7 @@ export function WikiPagePanel({
   }
 
   return (
-    <div className="grid min-h-[620px] gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
-      <aside className="min-h-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-        <div className="border-b border-slate-200 bg-white px-3 py-3">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-xs font-semibold text-slate-700">页面目录</h3>
-            <span className="text-[11px] text-slate-400">{pages.length}</span>
-          </div>
-          <div className="mt-3 grid gap-2">
-            <input
-              value={filters.q}
-              onChange={(event) => updateFilter("q", event.target.value)}
-              placeholder="搜索标题或正文"
-              className={filterInput}
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <select value={filters.type} onChange={(event) => updateFilter("type", event.target.value)} className={filterInput}>
-                <option value="">全部类型</option>
-                {pageTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-              </select>
-              <select value={filters.status} onChange={(event) => updateFilter("status", event.target.value)} className={filterInput}>
-                <option value="">全部状态</option>
-                {pageStatuses.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-              </select>
-            </div>
-            <select value={sourceFilter} onChange={(event) => updateFilter("source_file_id", event.target.value)} className={filterInput}>
-              <option value="">全部来源</option>
-              {files.map((file) => <option key={file.file_id} value={file.file_id}>{file.filename}</option>)}
-            </select>
-            {filters.q || filters.type || filters.status || filters.source_file_id ? (
-              <button type="button" onClick={() => onFilterChange(emptyFilters())} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-500 hover:bg-slate-50">
-                <X size={13} />
-                清空筛选
-              </button>
-            ) : null}
-          </div>
-        </div>
-        <div className="max-h-[680px] overflow-auto p-2">
-          {pages.length ? pages.map((page) => (
-            <button
-              key={page.id}
-              type="button"
-              onClick={() => onSelect(page.id)}
-              className={cn(
-                "mb-2 block w-full rounded-lg border px-3 py-2 text-left transition",
-                page.id === selectedPageId ? "border-amber-200 bg-white shadow-sm" : "border-transparent bg-transparent hover:bg-white",
-              )}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <p className="min-w-0 truncate text-sm font-semibold text-slate-800">{page.title}</p>
-                {page.has_candidate ? <ShieldAlert size={14} className="shrink-0 text-amber-500" /> : null}
-              </div>
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                <Badge variant="secondary">{pageTypeLabel(page.type)}</Badge>
-                <Badge variant={confidenceVariant(page.confidence)}>{page.confidence}</Badge>
-                {page.status ? <Badge variant="info">{pageStatusLabel(page.status)}</Badge> : null}
-              </div>
-              <p className="mt-2 truncate text-[11px] text-slate-400">{page.updated_at ? formatDate(page.updated_at) : page.path}</p>
-            </button>
-          )) : (
-            <div className="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-8 text-center text-xs text-slate-400">没有匹配页面</div>
-          )}
-        </div>
-      </aside>
-
-      <section className="min-w-0 rounded-xl border border-slate-200 bg-white">
+      <section className="min-w-0">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
           <div className="min-w-0">
             <h3 className="truncate text-sm font-semibold text-slate-900">{selectedPage?.title ?? "选择页面"}</h3>
@@ -289,7 +213,87 @@ export function WikiPagePanel({
           </div>
         )}
       </section>
-    </div>
+  );
+}
+
+export function WikiPageDirectory({
+  pages,
+  files,
+  selectedPageId,
+  filters,
+  onFilterChange,
+  onSelect,
+}: {
+  pages: WikiPageSummary[];
+  files: FileMeta[];
+  selectedPageId: string;
+  filters: WikiPageFilters;
+  onFilterChange: (filters: WikiPageFilters) => void;
+  onSelect: (pageId: string) => void;
+}) {
+  const sourceFilter = filters.source_file_id;
+  const updateFilter = (key: keyof WikiPageFilters, value: string) => {
+    onFilterChange({ ...filters, [key]: value });
+  };
+
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white">
+      <div className="border-b border-slate-100 px-3 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800"><FileText size={14} />页面</h3>
+          <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">{pages.length}</span>
+        </div>
+        <div className="mt-3 grid gap-2">
+          <input
+            value={filters.q}
+            onChange={(event) => updateFilter("q", event.target.value)}
+            placeholder="搜索页面"
+            className={filterInput}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <select value={filters.type} onChange={(event) => updateFilter("type", event.target.value)} className={filterInput}>
+              <option value="">全部类型</option>
+              {pageTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            </select>
+            <select value={filters.status} onChange={(event) => updateFilter("status", event.target.value)} className={filterInput}>
+              <option value="">全部状态</option>
+              {pageStatuses.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            </select>
+          </div>
+          <select value={sourceFilter} onChange={(event) => updateFilter("source_file_id", event.target.value)} className={filterInput}>
+            <option value="">全部来源</option>
+            {files.map((file) => <option key={file.file_id} value={file.file_id}>{file.filename}</option>)}
+          </select>
+          {filters.q || filters.type || filters.status || filters.source_file_id ? (
+            <button type="button" onClick={() => onFilterChange(emptyFilters())} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-500 hover:bg-slate-50">
+              <X size={13} />
+              清空筛选
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <div className="max-h-[420px] overflow-auto py-2">
+        {pages.length ? pages.map((page) => (
+          <button
+            key={page.id}
+            type="button"
+            onClick={() => onSelect(page.id)}
+            className={cn(
+              "flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition",
+              page.id === selectedPageId ? "bg-sky-50 text-sky-800" : "text-slate-700 hover:bg-slate-50",
+            )}
+          >
+            <span className="min-w-0 truncate text-sm font-semibold">{page.title}</span>
+            <span className="flex shrink-0 items-center gap-1.5">
+              {page.has_candidate ? <ShieldAlert size={13} className="text-amber-500" /> : null}
+              <span className="text-xs text-slate-400">{pageTypeLabel(page.type)}</span>
+            </span>
+          </button>
+        )) : (
+          <div className="mx-3 rounded-lg border border-dashed border-slate-200 bg-white px-3 py-8 text-center text-xs text-slate-400">没有匹配页面</div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -359,23 +363,6 @@ function pageTypeLabel(type: string) {
     query: "问答",
     note: "笔记",
   }[type] ?? type;
-}
-
-function pageStatusLabel(status: string) {
-  return {
-    generated: "生成页",
-    manual_edited: "人工编辑",
-    pending_candidate: "候选待处理",
-    needs_review: "需要复核",
-  }[status] ?? status;
-}
-
-function confidenceVariant(confidence: string): "secondary" | "info" | "success" | "warning" | "error" {
-  if (confidence === "EXTRACTED") return "success";
-  if (confidence === "INFERRED") return "info";
-  if (confidence === "AMBIGUOUS") return "warning";
-  if (confidence === "UNVERIFIED") return "secondary";
-  return "secondary";
 }
 
 const pageTypes: Array<{ value: WikiPageType; label: string }> = [

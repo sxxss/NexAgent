@@ -6,7 +6,6 @@ import { useParams, useRouter } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
-  BookOpen,
   CheckCircle,
   ChevronDown,
   ChevronRight,
@@ -296,60 +295,31 @@ export default function KBDetailPage() {
 
   if (isWiki) {
     return (
-      <div className="flex h-full min-w-0 flex-col bg-slate-100">
-        <header className="border-b border-slate-200 bg-white px-6 py-4">
-          <div className="mb-3 flex items-center gap-1.5 text-xs text-slate-400">
-            <button onClick={() => router.push("/knowledge")} className="hover:text-slate-600">知识库</button>
-            <ChevronRight size={11} />
-            <span className="text-slate-600">{kb.name}</span>
-          </div>
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
-                <BookOpen size={19} />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-slate-950">{kb.name}</h1>
-                <p className="mt-1 text-sm text-slate-500">{kb.description || "未填写描述"}</p>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <Badge variant="warning">LLM Wiki</Badge>
-                  <Badge variant="secondary">{files.length} 个文件</Badge>
-                  <Badge variant="success">{indexedCount} 已编译</Badge>
-                  {activeJob ? <Badge variant="info">处理中 {taskCompleted(activeJob) + taskFailed(activeJob)}/{activeJob.total_steps}</Badge> : null}
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={handleProcessAll} disabled={!pendingCount || uploading} className={cn(outlineButton, pendingCount && "border-amber-200 text-amber-800")}>
-                <ListChecks size={14} />
-                编译待处理 {pendingCount || ""}
-              </button>
-              <button type="button" onClick={() => router.push(`/knowledge/${id}/wiki/graph`)} className={cn(outlineButton, "border-amber-200 text-amber-800")}>
-                <Network size={14} />
-                图谱浏览
-              </button>
-              <button type="button" onClick={() => router.push("/knowledge")} className={outlineButton}><ArrowLeft size={14} />返回</button>
-              <button type="button" onClick={() => void loadData()} className={iconButton}><RefreshCw size={14} /></button>
-            </div>
-          </div>
-        </header>
-
-        <main className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-5">
-          <div className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
-            <aside className="min-w-0 space-y-3 xl:sticky xl:top-4 xl:max-h-[calc(100vh-188px)] xl:overflow-auto xl:pr-1">
+      <div className="h-full min-w-0 bg-slate-50 p-2 lg:p-3">
+        <WikiWorkbench
+          kb={kb}
+          files={files}
+          reload={loadData}
+          sidebar={
+            <div className={wikiSidebar}>
+              <WikiKnowledgeCard
+                kb={kb}
+                fileCount={files.length}
+                indexedCount={indexedCount}
+                activeJob={activeJob}
+                onBack={() => router.push("/knowledge")}
+                onOpenGraph={() => router.push(`/knowledge/${id}/wiki/graph`)}
+                onRefresh={() => void loadData()}
+              />
               <WikiQuickUpload uploading={uploading} pendingCount={pendingCount} inputRef={fileInputRef} onUpload={handleUpload} onProcessAll={handleProcessAll} />
               <UploadResultList results={uploadResults} />
               <WikiModelPanel kb={kb} chatModels={chatModels} onKbUpdated={(next) => setKb(next)} />
               <WikiFileList files={files} processingIds={processingIds} onProcess={handleProcess} onPreview={handlePreview} onDelete={handleDelete} />
               {preview || previewLoading ? <PreviewPanel preview={preview} loading={previewLoading} onClose={() => setPreview(null)} /> : null}
               <WikiTaskQueue jobs={jobs.slice(0, 6)} onRetry={(jobId) => void retryIngestionJob(jobId).then(loadData)} onCancel={(taskId) => void cancelTask(taskId).then(loadData)} />
-            </aside>
-
-            <section className="min-w-0">
-              <WikiWorkbench kb={kb} files={files} reload={loadData} />
-            </section>
-          </div>
-        </main>
+            </div>
+          }
+        />
       </div>
     );
   }
@@ -481,6 +451,50 @@ function UploadResultList({ results }: { results: UploadResult[] }) {
   );
 }
 
+function WikiKnowledgeCard({
+  kb,
+  fileCount,
+  indexedCount,
+  activeJob,
+  onBack,
+  onOpenGraph,
+  onRefresh,
+}: {
+  kb: KBMeta;
+  fileCount: number;
+  indexedCount: number;
+  activeJob?: IngestionJob;
+  onBack: () => void;
+  onOpenGraph: () => void;
+  onRefresh: () => void;
+}) {
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2">
+            <button type="button" onClick={onBack} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800" title="返回知识库">
+              <ArrowLeft size={16} />
+            </button>
+            <h1 className="truncate text-lg font-bold text-slate-950">{kb.name}</h1>
+          </div>
+          <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600">{kb.description || "未填写描述"}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button type="button" onClick={onOpenGraph} className={wikiIconButton} title="图谱浏览"><Network size={14} /></button>
+          <button type="button" onClick={onRefresh} className={wikiIconButton} title="刷新"><RefreshCw size={14} /></button>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Badge variant="teal">LLM Wiki</Badge>
+        <Badge variant="secondary">{fileCount} 个文件</Badge>
+        <Badge variant="success">{indexedCount} 已编译</Badge>
+        {activeJob ? <Badge variant="info">处理中 {taskCompleted(activeJob) + taskFailed(activeJob)}/{activeJob.total_steps}</Badge> : null}
+      </div>
+    </section>
+  );
+}
+
 function WikiQuickUpload({
   uploading,
   pendingCount,
@@ -540,33 +554,26 @@ function WikiFileList({ files, processingIds, onProcess, onPreview, onDelete }: 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-slate-900">文档管理</h2>
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-900"><FileText size={14} />素材</h2>
         <span className="text-xs text-slate-400">{files.length} files</span>
       </div>
-      <div className="max-h-[360px] space-y-2 overflow-auto pr-1">
+      <div className="max-h-[300px] divide-y divide-slate-100 overflow-auto">
         {files.map((file) => {
           const status = statusMap[file.status];
           const Icon = status.icon;
           const processing = processingIds.has(file.file_id) || file.progress?.is_running;
           return (
-            <div key={file.file_id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2.5">
-              <div className="flex min-w-0 items-start gap-2">
-                <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-slate-400"><FileText size={15} /></div>
+            <div key={file.file_id} className="px-1 py-3">
+              <div className="flex min-w-0 items-center gap-3">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-slate-800" title={file.filename}>{file.filename}</p>
-                  <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
-                    <Badge variant={status.variant}><Icon size={11} className={processing ? "animate-spin" : ""} />{status.label}</Badge>
-                    <span className="text-[11px] text-slate-400">{formatBytes(file.file_size)}</span>
-                    <span className="text-[11px] text-slate-400">{file.chunk_count || 0} chunks</span>
-                  </div>
+                  <p className="truncate text-sm font-medium text-slate-800" title={file.filename}>{file.filename}</p>
+                  <p className="mt-1 truncate text-xs text-slate-400">{formatBytes(file.file_size)} · {file.chunk_count || 0} chunks · {formatDate(file.updated_at || file.created_at)}</p>
                 </div>
-              </div>
-              <div className="mt-2 flex items-center justify-between gap-2">
-                <span className="min-w-0 truncate text-[11px] text-slate-400">{formatDate(file.updated_at || file.created_at)}</span>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  <button type="button" onClick={() => onPreview(file.file_id)} className={wikiIconButton} title="预览"><Eye size={13} /></button>
-                  <button type="button" onClick={() => onProcess(file.file_id)} disabled={!file.progress?.can_process && !file.progress?.can_index} className={wikiIconButton} title="处理"><Play size={13} /></button>
-                  <button type="button" onClick={() => onDelete(file.file_id, file.filename)} className={cn(wikiIconButton, "hover:text-rose-600")} title="删除"><Trash2 size={13} /></button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Badge variant={status.variant}><Icon size={11} className={processing ? "animate-spin" : ""} />{status.label}</Badge>
+                  <button type="button" onClick={() => onPreview(file.file_id)} className={wikiInlineIconButton} title="预览"><Eye size={13} /></button>
+                  <button type="button" onClick={() => onProcess(file.file_id)} disabled={!file.progress?.can_process && !file.progress?.can_index} className={wikiInlineIconButton} title="处理"><Play size={13} /></button>
+                  <button type="button" onClick={() => onDelete(file.file_id, file.filename)} className={cn(wikiInlineIconButton, "hover:text-rose-600")} title="删除"><Trash2 size={13} /></button>
                 </div>
               </div>
               {file.error ? <p className="mt-2 break-words rounded-md bg-rose-50 px-2 py-1.5 text-[11px] leading-4 text-rose-700">{file.error}</p> : null}
@@ -1160,4 +1167,6 @@ const outlineButton = "inline-flex h-9 items-center gap-2 rounded-lg border bord
 const primaryButton = "inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-3 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50";
 const iconButton = "inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 disabled:opacity-40";
 const wikiIconButton = "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 disabled:opacity-40";
+const wikiInlineIconButton = "inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-35";
+const wikiSidebar = "space-y-3";
 const tinyButton = "rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100";
