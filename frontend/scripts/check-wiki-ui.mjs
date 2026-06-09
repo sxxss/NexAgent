@@ -12,6 +12,7 @@ const files = {
   graph: "src/components/wiki/WikiGraphPanel.tsx",
   graphPage: "src/app/knowledge/[id]/wiki/graph/page.tsx",
   lint: "src/components/wiki/WikiLintPanel.tsx",
+  sidebar: "src/components/Sidebar.tsx",
 };
 
 const read = (key) => fs.readFileSync(path.join(root, files[key]), "utf8");
@@ -33,21 +34,26 @@ const checks = [
   ["workbench", "loadWikiGraph"],
   ["workbench", "loadWikiLint"],
   ["workbench", "ensureTabData"],
+  ["workbench", "renderResources"],
+  ["workbench", "WikiResourceContext"],
   ["list", "ModelSettingsDialog"],
   ["list", "onSettings"],
   ["detail", "WikiKnowledgeCard"],
+  ["detail", "WikiSourceToolbar"],
   ["detail", "WikiQuickUpload"],
   ["detail", "WikiFileList"],
   ["detail", "WikiTaskQueue"],
   ["detail", "showUpload"],
   ["detail", "uploadDialogDropzone"],
+  ["detail", "wikiUploadDialogTrigger"],
+  ["detail", "taskQueueTrigger"],
   ["detail", "taskQueuePopover"],
   ["detail", "wikiSidebar"],
+  ["detail", "activeSourceFileId"],
+  ["detail", "onToggleSourceFilter"],
   ["page", "wiki-link"],
-  ["page", "wiki-new:"],
   ["page", "urlTransform={preserveWikiUrl}"],
   ["page", "function preserveWikiUrl"],
-  ["page", "crystallizeWikiKbPage"],
   ["page", "export function WikiPageDirectory"],
   ["page", "compactFilterBar"],
   ["page", "text-blue-700"],
@@ -89,6 +95,9 @@ const checks = [
   ["detail", "showAllJobs"],
   ["detail", "活跃"],
   ["detail", "历史任务"],
+  ["sidebar", 'import Link from "next/link"'],
+  ["sidebar", "<Link"],
+  ["sidebar", "prefetch={false}"],
 ];
 
 const absentChecks = [
@@ -99,6 +108,13 @@ const absentChecks = [
   ["detail", "Wiki LLM 配置"],
   ["detail", "任务{jobs.length"],
   ["workbench", "const [nextPages, nextGraph, nextLint] = await Promise.all"],
+  ["page", "wiki-new:"],
+  ["page", "createLinkedPage"],
+  ["page", "crystallizeWikiKbPage"],
+  ["page", "创建中..."],
+  ["sidebar", "no-html-link-for-pages"],
+  ["sidebar", "<a\n"],
+  ["sidebar", "</a>"],
 ];
 
 const failures = [];

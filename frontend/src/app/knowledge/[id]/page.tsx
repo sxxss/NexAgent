@@ -62,7 +62,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { WikiWorkbench } from "@/components/wiki/WikiWorkbench";
+import { WikiWorkbench, type WikiResourceContext } from "@/components/wiki/WikiWorkbench";
 import { cn, formatBytes, formatDate } from "@/lib/utils";
 
 interface ProviderModelOption {
@@ -312,19 +312,39 @@ export default function KBDetailPage() {
                 onOpenGraph={() => router.push(`/knowledge/${id}/wiki/graph`)}
                 onRefresh={() => void loadData()}
               />
-              <div className="flex items-center gap-2">
-                <WikiQuickUpload uploading={uploading} pendingCount={pendingCount} inputRef={fileInputRef} onUpload={handleUpload} onProcessAll={handleProcessAll} />
-                <WikiTaskQueue jobs={jobs.slice(0, 6)} onRetry={(jobId) => void retryIngestionJob(jobId).then(loadData)} onCancel={(taskId) => void cancelTask(taskId).then(loadData)} />
-              </div>
-              <UploadResultList results={uploadResults} />
             </div>
           }
-          resources={
+          resources={({ filters, setFilters }: WikiResourceContext) => {
+            const activeSourceFileId = filters.source_file_id;
+            const onToggleSourceFilter = (fileId: string) => {
+              setFilters({ ...filters, source_file_id: activeSourceFileId === fileId ? "" : fileId });
+            };
+            return (
             <>
-              <WikiFileList files={files} processingIds={processingIds} onProcess={handleProcess} onPreview={handlePreview} onDelete={handleDelete} />
+              <WikiSourceToolbar
+                uploading={uploading}
+                pendingCount={pendingCount}
+                inputRef={fileInputRef}
+                onUpload={handleUpload}
+                onProcessAll={handleProcessAll}
+                jobs={jobs.slice(0, 6)}
+                onRetry={(jobId) => void retryIngestionJob(jobId).then(loadData)}
+                onCancel={(taskId) => void cancelTask(taskId).then(loadData)}
+              />
+              <UploadResultList results={uploadResults} />
+              <WikiFileList
+                files={files}
+                processingIds={processingIds}
+                activeSourceFileId={activeSourceFileId}
+                onToggleSourceFilter={onToggleSourceFilter}
+                onProcess={handleProcess}
+                onPreview={handlePreview}
+                onDelete={handleDelete}
+              />
               {preview || previewLoading ? <PreviewPanel preview={preview} loading={previewLoading} onClose={() => setPreview(null)} /> : null}
             </>
-          }
+            );
+          }}
         />
       </div>
     );
@@ -501,6 +521,33 @@ function WikiKnowledgeCard({
   );
 }
 
+function WikiSourceToolbar({
+  uploading,
+  pendingCount,
+  inputRef,
+  onUpload,
+  onProcessAll,
+  jobs,
+  onRetry,
+  onCancel,
+}: {
+  uploading: boolean;
+  pendingCount: number;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  onUpload: (files: FileList | null) => void;
+  onProcessAll: () => void;
+  jobs: IngestionJob[];
+  onRetry: (jobId: string) => void;
+  onCancel: (taskId: string) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 bg-white px-3 py-2">
+      <WikiQuickUpload uploading={uploading} pendingCount={pendingCount} inputRef={inputRef} onUpload={onUpload} onProcessAll={onProcessAll} />
+      <WikiTaskQueue jobs={jobs} onRetry={onRetry} onCancel={onCancel} />
+    </div>
+  );
+}
+
 function WikiQuickUpload({
   uploading,
   pendingCount,
@@ -518,12 +565,12 @@ function WikiQuickUpload({
   const [showUpload, setShowUpload] = useState(false);
   return (
     <>
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center gap-1.5">
         <button
           type="button"
           onClick={() => setShowUpload(true)}
           disabled={uploading}
-          className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-slate-950 px-3 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+          className={wikiUploadDialogTrigger}
         >
           {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
           上传
@@ -532,10 +579,11 @@ function WikiQuickUpload({
           type="button"
           onClick={onProcessAll}
           disabled={!pendingCount || uploading}
-          className={cn(outlineButton, "h-9 shrink-0 border-amber-200 text-amber-800")}
+          className={cn(wikiToolbarIconButton, "border-amber-200 text-amber-800")}
+          title={pendingCount ? `编译 ${pendingCount} 个待处理素材` : "没有待编译素材"}
         >
           <ListChecks size={14} />
-          编译{pendingCount ? ` ${pendingCount}` : ""}
+          {pendingCount ? <span className="text-[11px]">{pendingCount}</span> : null}
         </button>
       </div>
       <Dialog open={showUpload} onClose={() => setShowUpload(false)} title="上传文件" description="选择或拖拽文件到 Wiki 素材库。">
@@ -563,7 +611,23 @@ function WikiQuickUpload({
   );
 }
 
-function WikiFileList({ files, processingIds, onProcess, onPreview, onDelete }: { files: FileMeta[]; processingIds: Set<string>; onProcess: (fileId: string) => void; onPreview: (fileId: string) => void; onDelete: (fileId: string, filename: string) => void }) {
+function WikiFileList({
+  files,
+  processingIds,
+  activeSourceFileId,
+  onToggleSourceFilter,
+  onProcess,
+  onPreview,
+  onDelete,
+}: {
+  files: FileMeta[];
+  processingIds: Set<string>;
+  activeSourceFileId: string;
+  onToggleSourceFilter: (fileId: string) => void;
+  onProcess: (fileId: string) => void;
+  onPreview: (fileId: string) => void;
+  onDelete: (fileId: string, filename: string) => void;
+}) {
   if (!files.length) {
     return (
       <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center">
@@ -573,29 +637,35 @@ function WikiFileList({ files, processingIds, onProcess, onPreview, onDelete }: 
     );
   }
   return (
-    <section className="bg-white px-3 py-3">
+    <section className="bg-white px-3 pb-3 pt-2">
       <div className="mb-1 flex items-center justify-between gap-2">
         <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-900"><FileText size={14} />素材</h2>
         <span className="text-xs text-slate-400">{files.length} files</span>
       </div>
-      <div className="max-h-[300px] divide-y divide-slate-100 overflow-auto">
+      <div className="max-h-[260px] space-y-1.5 overflow-auto">
         {files.map((file) => {
           const status = statusMap[file.status];
           const Icon = status.icon;
           const processing = processingIds.has(file.file_id) || file.progress?.is_running;
           return (
-            <div key={file.file_id} className="px-1 py-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="min-w-0 flex-1">
+            <div
+              key={file.file_id}
+              className={cn(
+                "rounded-lg border px-2.5 py-2 transition",
+                activeSourceFileId === file.file_id ? "border-sky-200 bg-sky-50" : "border-transparent bg-slate-50 hover:border-slate-200",
+              )}
+            >
+              <div className="flex min-w-0 items-start justify-between gap-2">
+                <button type="button" onClick={() => onToggleSourceFilter(file.file_id)} className="min-w-0 flex-1 text-left">
                   <p className="truncate text-sm font-medium text-slate-800" title={file.filename}>{file.filename}</p>
                   <p className="mt-1 truncate text-xs text-slate-400">{formatBytes(file.file_size)} · {file.chunk_count || 0} chunks · {formatDate(file.updated_at || file.created_at)}</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <Badge variant={status.variant}><Icon size={11} className={processing ? "animate-spin" : ""} />{status.label}</Badge>
-                  <button type="button" onClick={() => onPreview(file.file_id)} className={wikiInlineIconButton} title="预览"><Eye size={13} /></button>
-                  <button type="button" onClick={() => onProcess(file.file_id)} disabled={!file.progress?.can_process && !file.progress?.can_index} className={wikiInlineIconButton} title="处理"><Play size={13} /></button>
-                  <button type="button" onClick={() => onDelete(file.file_id, file.filename)} className={cn(wikiInlineIconButton, "hover:text-rose-600")} title="删除"><Trash2 size={13} /></button>
-                </div>
+                </button>
+                <Badge variant={status.variant}><Icon size={11} className={processing ? "animate-spin" : ""} />{status.label}</Badge>
+              </div>
+              <div className="mt-2 flex items-center justify-end gap-1">
+                <button type="button" onClick={() => onPreview(file.file_id)} className={wikiInlineIconButton} title="预览"><Eye size={13} /></button>
+                <button type="button" onClick={() => onProcess(file.file_id)} disabled={!file.progress?.can_process && !file.progress?.can_index} className={wikiInlineIconButton} title="处理"><Play size={13} /></button>
+                <button type="button" onClick={() => onDelete(file.file_id, file.filename)} className={cn(wikiInlineIconButton, "hover:text-rose-600")} title="删除"><Trash2 size={13} /></button>
               </div>
               {file.error ? <p className="mt-2 break-words rounded-md bg-rose-50 px-2 py-1.5 text-[11px] leading-4 text-rose-700">{file.error}</p> : null}
             </div>
@@ -617,9 +687,9 @@ function WikiTaskQueue({ jobs, onRetry, onCancel }: { jobs: IngestionJob[]; onRe
   const displayCount = activeJobs.length || priorityHistoryJobs.length;
   return (
     <div className="relative shrink-0">
-      <button type="button" onClick={() => setOpen((next) => !next)} className={cn(outlineButton, "h-9 px-2.5")}>
+      <button type="button" onClick={() => setOpen((next) => !next)} className={taskQueueTrigger} title="任务队列">
         <ListChecks size={14} />
-        {activeJobs.length ? `活跃 ${activeJobs.length}` : `任务 ${displayCount}`}
+        <span className="min-w-4 text-center text-[11px]">{displayCount}</span>
         {activeJobs.length ? <span className="ml-0.5 h-2 w-2 rounded-full bg-sky-500" /> : null}
       </button>
       {open ? (
@@ -1177,7 +1247,10 @@ const primaryButton = "inline-flex h-10 w-full items-center justify-center gap-2
 const iconButton = "inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 disabled:opacity-40";
 const wikiIconButton = "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 disabled:opacity-40";
 const wikiInlineIconButton = "inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-35";
+const wikiUploadDialogTrigger = "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-slate-950 px-2.5 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50";
+const wikiToolbarIconButton = "inline-flex h-8 items-center justify-center gap-1 rounded-md border bg-white px-2 text-xs font-semibold transition hover:bg-slate-50 disabled:opacity-45";
+const taskQueueTrigger = "inline-flex h-8 items-center justify-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-45";
 const wikiSidebar = "space-y-3";
 const uploadDialogDropzone = "flex min-h-52 flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-8 text-center transition";
-const taskQueuePopover = "absolute left-0 z-30 mt-2 w-[360px] rounded-xl border border-slate-200 bg-white p-3 shadow-xl";
+const taskQueuePopover = "absolute right-0 z-30 mt-2 w-[340px] rounded-xl border border-slate-200 bg-white p-3 shadow-xl";
 const tinyButton = "rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100";

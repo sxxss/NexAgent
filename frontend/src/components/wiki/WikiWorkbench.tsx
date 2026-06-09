@@ -28,6 +28,13 @@ type WikiTab = "pages" | "graph" | "lint" | "crystallize";
 
 const defaultGraphOptions: WikiGraphOptions = { q: "", maxEdges: 80, includeWeak: false };
 
+export interface WikiResourceContext {
+  filters: WikiPageFilters;
+  setFilters: (filters: WikiPageFilters) => void;
+}
+
+type WikiResources = React.ReactNode | ((context: WikiResourceContext) => React.ReactNode);
+
 export function WikiWorkbench({
   kb,
   files,
@@ -39,7 +46,7 @@ export function WikiWorkbench({
   files: FileMeta[];
   reload: () => void | Promise<void>;
   sidebar?: React.ReactNode;
-  resources?: React.ReactNode;
+  resources?: WikiResources;
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<WikiTab>("pages");
@@ -217,13 +224,20 @@ export function WikiWorkbench({
     { id: "crystallize" as const, label: "结晶化", icon: Sparkles, value: files.length },
   ], [files.length, graph?.nodes.length, lint?.issues.length, lint?.summary?.issue_count, pages.length]);
 
+  const renderResources = useCallback(() => {
+    if (typeof resources === "function") {
+      return resources({ filters: pageFilters, setFilters: setPageFilters });
+    }
+    return resources;
+  }, [pageFilters, resources]);
+
   return (
-    <div className="grid h-full min-h-0 gap-3 xl:grid-cols-[minmax(430px,0.92fr)_minmax(560px,1fr)]">
-      <aside className="min-h-0 overflow-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-        <div className="space-y-3">
+    <div className="grid h-full min-h-0 gap-3 xl:grid-cols-[minmax(360px,0.82fr)_minmax(640px,1.18fr)]">
+      <aside className="min-h-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="flex h-full min-h-0 flex-col gap-3">
           {sidebar}
           <WikiResourcePane
-            resources={resources}
+            resources={renderResources()}
             pageDirectory={
               <WikiPageDirectory
                 pages={pages}
@@ -318,10 +332,10 @@ export function WikiWorkbench({
 
 function WikiResourcePane({ resources, pageDirectory }: { resources?: React.ReactNode; pageDirectory: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white">
-      <div className="grid gap-0 divide-y divide-slate-100">
-        {resources ? <div>{resources}</div> : null}
-        <div>{pageDirectory}</div>
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="flex min-h-0 flex-1 flex-col divide-y divide-slate-100">
+        {resources ? <div className="shrink-0">{resources}</div> : null}
+        <div className="min-h-0 flex-1">{pageDirectory}</div>
       </div>
     </section>
   );

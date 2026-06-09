@@ -7,7 +7,6 @@ import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   acceptGeneratedWikiKbPage,
-  crystallizeWikiKbPage,
   deleteWikiKbPage,
   discardGeneratedWikiKbPage,
   updateWikiKbPage,
@@ -114,27 +113,6 @@ export function WikiPagePanel({
     }
   };
 
-  const createLinkedPage = async (title: string) => {
-    if (!title.trim()) return;
-    setActing(`create:${title}`);
-    setError("");
-    try {
-      const sourceTitle = selectedPage?.title || "Wiki";
-      const page = await crystallizeWikiKbPage(kbId, {
-        title: title.trim(),
-        type: "topic",
-        confidence: "UNVERIFIED",
-        content: `# ${title.trim()}\n\n## Summary\n待补充。\n\n## Notes\n- 从 [[${sourceTitle}]] 创建。\n\n## Sources\n- [[${sourceTitle}]]`,
-        sources: selectedPage?.sources ?? [],
-      });
-      await onReload(page.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "创建 Wiki 页面失败");
-    } finally {
-      setActing("");
-    }
-  };
-
   if (!pages.length) {
     return (
       <div className="flex min-h-80 flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 text-center">
@@ -226,19 +204,6 @@ export function WikiPagePanel({
                       const pageId = decodeURIComponent(href.slice(5));
                       return <button type="button" className="wiki-link font-semibold text-blue-700 underline decoration-blue-300 underline-offset-2 transition hover:text-blue-800" onClick={() => onSelect(pageId)}>{children}</button>;
                     }
-                    if (href?.startsWith("wiki-new:")) {
-                      const title = decodeURIComponent(href.slice(9));
-                      return (
-                        <button
-                          type="button"
-                          className="wiki-link font-semibold text-blue-700 underline decoration-blue-300 underline-offset-2 transition hover:text-blue-800 disabled:opacity-60"
-                          disabled={Boolean(acting)}
-                          onClick={() => void createLinkedPage(title)}
-                        >
-                          {acting === `create:${title}` ? "创建中..." : children}
-                        </button>
-                      );
-                    }
                     return <a href={href} target="_blank" rel="noreferrer" className="font-medium text-blue-700 underline decoration-blue-200 underline-offset-2 hover:text-blue-800">{children}</a>;
                   },
                 }}
@@ -267,14 +232,15 @@ export function WikiPageDirectory({
   onFilterChange: (filters: WikiPageFilters) => void;
   onSelect: (pageId: string) => void;
 }) {
-  const sourceFilter = filters.source_file_id;
   const updateFilter = (key: keyof WikiPageFilters, value: string) => {
     onFilterChange({ ...filters, [key]: value });
   };
+  const sourceFilter = filters.source_file_id;
+  const sourceFile = files.find((file) => file.file_id === sourceFilter);
 
   return (
-    <section className="bg-white">
-      <div className="border-b border-slate-100 px-3 py-3">
+    <section className="flex min-h-0 flex-1 flex-col bg-white">
+      <div className="shrink-0 border-b border-slate-100 px-3 py-3">
         <div className="flex items-center justify-between gap-2">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800"><FileText size={14} />页面</h3>
           <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">{pages.length}</span>
@@ -294,33 +260,37 @@ export function WikiPageDirectory({
             <option value="">状态</option>
             {pageStatuses.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
           </select>
-          <select value={sourceFilter} onChange={(event) => updateFilter("source_file_id", event.target.value)} className={cn(filterInput, "w-28")}>
-            <option value="">全部来源</option>
-            {files.map((file) => <option key={file.file_id} value={file.file_id}>{file.filename}</option>)}
-          </select>
           {filters.q || filters.type || filters.status || filters.source_file_id ? (
             <button type="button" onClick={() => onFilterChange(emptyFilters())} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50" title="清空筛选">
               <X size={13} />
             </button>
           ) : null}
         </div>
+        {sourceFile ? (
+          <button
+            type="button"
+            onClick={() => updateFilter("source_file_id", "")}
+            className="mt-2 flex max-w-full items-center gap-1.5 rounded-md bg-sky-50 px-2 py-1 text-left text-[11px] font-semibold text-sky-700"
+            title="清除来源筛选"
+          >
+            <span className="truncate">来源：{sourceFile.filename}</span>
+            <X size={12} className="shrink-0" />
+          </button>
+        ) : null}
       </div>
-      <div className="max-h-[420px] overflow-auto py-2">
+      <div className="min-h-0 flex-1 overflow-auto py-2">
         {pages.length ? pages.map((page) => (
           <button
             key={page.id}
             type="button"
             onClick={() => onSelect(page.id)}
             className={cn(
-              "flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition",
+              "flex w-full items-center gap-2 px-3 py-2.5 text-left transition",
               page.id === selectedPageId ? "bg-sky-50 text-sky-800" : "text-slate-700 hover:bg-slate-50",
             )}
           >
             <span className="min-w-0 truncate text-sm font-semibold">{page.title}</span>
-            <span className="flex shrink-0 items-center gap-1.5">
-              {page.has_candidate ? <ShieldAlert size={13} className="text-amber-500" /> : null}
-              <span className="text-xs text-slate-400">{pageTypeLabel(page.type)}</span>
-            </span>
+            {page.has_candidate ? <ShieldAlert size={13} className="shrink-0 text-amber-500" /> : null}
           </button>
         )) : (
           <div className="mx-3 rounded-lg border border-dashed border-slate-200 bg-white px-3 py-8 text-center text-xs text-slate-400">没有匹配页面</div>
@@ -367,12 +337,12 @@ function renderWikiLinks(content: string, pageLookup: Map<string, string>) {
   return content.replace(/\[\[([^\]#|]+)(?:[|#][^\]]*)?\]\]/g, (_match, rawTitle: string) => {
     const title = String(rawTitle || "").trim();
     const pageId = pageLookup.get(normalizeWikiKey(title));
-    return pageId ? `[${title}](wiki:${encodeURIComponent(pageId)})` : `[${title}](wiki-new:${encodeURIComponent(title)})`;
+    return pageId ? `[${title}](wiki:${encodeURIComponent(pageId)})` : title;
   });
 }
 
 function preserveWikiUrl(value: string) {
-  if (value.startsWith("wiki:") || value.startsWith("wiki-new:")) return value;
+  if (value.startsWith("wiki:")) return value;
   return defaultUrlTransform(value);
 }
 
