@@ -14,6 +14,9 @@ interface DialogProps {
 }
 
 export function Dialog({ open, onClose, children, title, description, className, contentClassName }: DialogProps) {
+  const titleId = React.useId();
+  const descriptionId = React.useId();
+
   React.useEffect(() => {
     const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     if (open) document.addEventListener("keydown", handleKey);
@@ -32,6 +35,10 @@ export function Dialog({ open, onClose, children, title, description, className,
 
       {/* Dialog panel */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
+        aria-describedby={description ? descriptionId : undefined}
         className={cn(
           "relative z-10 w-full max-w-md overflow-hidden rounded-2xl shadow-2xl",
           "dialog-pop-in border border-zinc-200 bg-white transition-all duration-200 ease-out dark:border-zinc-700 dark:bg-zinc-900",
@@ -42,9 +49,9 @@ export function Dialog({ open, onClose, children, title, description, className,
         {title && (
           <div className="flex items-start justify-between border-b border-zinc-100 px-6 py-4 dark:border-zinc-800">
             <div>
-              <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{title}</h2>
+              <h2 id={titleId} className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{title}</h2>
               {description && (
-                <p className="mt-0.5 text-xs text-zinc-500">{description}</p>
+                <p id={descriptionId} className="mt-0.5 text-xs text-zinc-500">{description}</p>
               )}
             </div>
             <button
