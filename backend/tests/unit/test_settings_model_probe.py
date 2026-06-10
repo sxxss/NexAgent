@@ -6,10 +6,11 @@ import pytest
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_model_probe_accepts_chat_models(monkeypatch):
-    from app.gateway.routers import settings
     from nexagent.db import crypto as db_crypto
     from nexagent.db import models as db_models
     from nexagent.db import session as db_session
+
+    from app.gateway.routers import settings
 
     class FakeSession:
         async def __aenter__(self):

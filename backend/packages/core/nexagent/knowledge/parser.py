@@ -318,7 +318,9 @@ def _xlsx_sheet_refs(archive: ZipFile) -> list[tuple[str, str]]:
         name = sheet.attrib.get("name") or f"Sheet{sheet_index}"
         relationship_id = sheet.attrib.get(f"{{{_XLSX_OFFICE_REL_NS}}}id")
         target = relationships.get(relationship_id or "")
-        sheet_path = _xlsx_resolve_part("xl/workbook.xml", target) if target else f"xl/worksheets/sheet{sheet_index}.xml"
+        sheet_path = (
+            _xlsx_resolve_part("xl/workbook.xml", target) if target else f"xl/worksheets/sheet{sheet_index}.xml"
+        )
         sheets.append((name, sheet_path))
     return sheets
 

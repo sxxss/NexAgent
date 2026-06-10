@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import logging
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -540,7 +540,8 @@ def _format_lint(target: _WikiTarget, lint: dict) -> str:
     compile_status = (lint.get("compile_status") or {}).get("status") or "idle"
     lines = [
         f"Wiki 健康检查：{target.kb_name} ({target.kb_id})",
-        f"问题：{summary.get('issue_count', len(issues))}，页面：{summary.get('page_count', 0)}，编译状态：{compile_status}",
+        f"问题：{summary.get('issue_count', len(issues))}，页面：{summary.get('page_count', 0)}，"
+        f"编译状态：{compile_status}",
     ]
     if not issues:
         lines.append("未发现问题。")

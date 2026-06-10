@@ -140,7 +140,9 @@ async def test_create_wiki_page_route_creates_manual_note(monkeypatch):
     calls = {}
 
     class FakeBackend:
-        async def create_wiki_page(self, kb_id, *, title, content, page_type="note", sources=None, confidence="UNVERIFIED"):
+        async def create_wiki_page(
+            self, kb_id, *, title, content, page_type="note", sources=None, confidence="UNVERIFIED"
+        ):
             calls["create"] = {
                 "kb_id": kb_id,
                 "title": title,

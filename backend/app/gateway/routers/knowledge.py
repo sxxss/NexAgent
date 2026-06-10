@@ -736,7 +736,13 @@ def _mode_for_request(req: SearchRequest, kb_type: str) -> str:
     if raw == "bm25":
         raw = "keyword"
     allowed = _available_modes(kb_type)
-    default = "wiki" if kb_type == KBType.WIKI.value else "lightrag_hybrid" if kb_type == KBType.LIGHTRAG.value else "hybrid"
+    default = (
+        "wiki"
+        if kb_type == KBType.WIKI.value
+        else "lightrag_hybrid"
+        if kb_type == KBType.LIGHTRAG.value
+        else "hybrid"
+    )
     mode = raw or default
     if mode not in allowed:
         raise HTTPException(
@@ -1024,9 +1030,17 @@ async def _run_wiki_compile_task(task_id: str) -> None:
     force = bool(task.metadata.get("force"))
     retry_failed = bool(task.metadata.get("retry_failed"))
     if task.cancel_requested or task.status == "cancelled":
-        update_task(task_id, status="cancelled", current_step="cancelled", error="Task was cancelled before it started.")
+        update_task(
+            task_id, status="cancelled", current_step="cancelled", error="Task was cancelled before it started."
+        )
         return
-    update_task(task_id, status="running", progress=5.0, current_step="正在编译 Wiki", result={"completed": 0, "failed": 0, "items": []})
+    update_task(
+        task_id,
+        status="running",
+        progress=5.0,
+        current_step="正在编译 Wiki",
+        result={"completed": 0, "failed": 0, "items": []},
+    )
     try:
         if is_cancel_requested(task_id):
             update_task(task_id, status="cancelled", current_step="cancelled", error="Task was cancelled.")
@@ -1048,7 +1062,12 @@ async def _run_wiki_compile_task(task_id: str) -> None:
         )
     except Exception as exc:
         logger.exception("Wiki compile task %s failed", task_id)
-        update_task(task_id, status="failed", error=str(exc), result={"completed": 0, "failed": 1, "items": [{"status": "error", "error": str(exc)}]})
+        update_task(
+            task_id,
+            status="failed",
+            error=str(exc),
+            result={"completed": 0, "failed": 1, "items": [{"status": "error", "error": str(exc)}]},
+        )
 
 
 async def _run_wiki_repair_task(task_id: str) -> None:
@@ -1065,9 +1084,17 @@ async def _run_wiki_repair_task(task_id: str) -> None:
     issue_types = [str(item) for item in issue_types] if isinstance(issue_types, list) else None
     page_ids = [str(item) for item in page_ids] if isinstance(page_ids, list) else None
     if task.cancel_requested or task.status == "cancelled":
-        update_task(task_id, status="cancelled", current_step="cancelled", error="Task was cancelled before it started.")
+        update_task(
+            task_id, status="cancelled", current_step="cancelled", error="Task was cancelled before it started."
+        )
         return
-    update_task(task_id, status="running", progress=5.0, current_step="正在生成 Wiki AI 修复候选", result={"completed": 0, "failed": 0, "items": []})
+    update_task(
+        task_id,
+        status="running",
+        progress=5.0,
+        current_step="正在生成 Wiki AI 修复候选",
+        result={"completed": 0, "failed": 0, "items": []},
+    )
     try:
         if is_cancel_requested(task_id):
             update_task(task_id, status="cancelled", current_step="cancelled", error="Task was cancelled.")
@@ -1102,7 +1129,12 @@ async def _run_wiki_repair_task(task_id: str) -> None:
         )
     except Exception as exc:
         logger.exception("Wiki repair task %s failed", task_id)
-        update_task(task_id, status="failed", error=str(exc), result={"completed": 0, "failed": 1, "items": [{"status": "error", "error": str(exc)}]})
+        update_task(
+            task_id,
+            status="failed",
+            error=str(exc),
+            result={"completed": 0, "failed": 1, "items": [{"status": "error", "error": str(exc)}]},
+        )
 
 
 def _queue_wiki_compile(kb_id: str, file_ids: list[str] | None, force: bool, retry_failed: bool):
@@ -1155,7 +1187,8 @@ def _retry_ingestion_task(task):
         str(item["file_id"])
         for item in result.get("items", [])
         if item.get("file_id")
-        and str(item.get("status")) in {"error", "parse_error", "index_error", "error_graphing", "indexed_with_graph_degraded"}
+        and str(item.get("status"))
+        in {"error", "parse_error", "index_error", "error_graphing", "indexed_with_graph_degraded"}
     ]
     file_ids = failed_ids or [str(file_id) for file_id in task.metadata.get("file_ids", [])]
     if not file_ids:
@@ -1318,7 +1351,9 @@ async def knowledge_status():
 async def hybrid_search(req: HybridSearchRequest):
     mgr = None if _prod_enabled() else _mgr()
     kb_ids = req.kb_ids or (
-        [kb.kb_id for kb in await _prod_service().list_kbs()] if _prod_enabled() else [kb.kb_id for kb in mgr.list_kbs()]
+        [kb.kb_id for kb in await _prod_service().list_kbs()]
+        if _prod_enabled()
+        else [kb.kb_id for kb in mgr.list_kbs()]
     )
     mode = str(req.search_mode or req.mode or "hybrid").lower()
     if mode == "bm25":
@@ -1584,7 +1619,9 @@ async def retry_ingestion_job(job_id: str):
         if job:
             file_ids = (job.get("metadata") or {}).get("file_ids") or []
             file_id = file_ids[0] if file_ids else job.get("file_id")
-            new_job = await _prod_service().create_job(str(job.get("kb_id") or ""), file_id, str(job.get("job_type") or "ingest"))
+            new_job = await _prod_service().create_job(
+                str(job.get("kb_id") or ""), file_id, str(job.get("job_type") or "ingest")
+            )
             return {"task": new_job, "job": new_job, "retried_from": job_id, "queued": 1}
     from nexagent.services.task_service import retry_task
 
@@ -1825,14 +1862,28 @@ async def process_all_files(kb_id: str, req: ProcessAllRequest | None = None):
         retry_errors = True if req is None else req.retry_errors
         retryable = {"uploaded", "parsed"}
         if retry_errors:
-            retryable.update({"parse_error", "index_error", "error_parsing", "error_indexing", "error_graphing", "indexed_with_graph_degraded"})
+            retryable.update(
+                {
+                    "parse_error",
+                    "index_error",
+                    "error_parsing",
+                    "error_indexing",
+                    "error_graphing",
+                    "indexed_with_graph_degraded",
+                }
+            )
         files = await _prod_service().list_files(kb_id)
         jobs = [
             await _prod_service().create_job(kb_id, f.file_id, "ingest")
             for f in files
             if f.status.value in retryable
         ]
-        return {"task": jobs[0] if len(jobs) == 1 else None, "job": jobs[0] if len(jobs) == 1 else None, "jobs": jobs, "queued": len(jobs)}
+        return {
+            "task": jobs[0] if len(jobs) == 1 else None,
+            "job": jobs[0] if len(jobs) == 1 else None,
+            "jobs": jobs,
+            "queued": len(jobs),
+        }
     if await _is_local_wiki_kb(kb_id):
         mgr, _ = _kb_or_404(kb_id)
         retry_errors = True if req is None else req.retry_errors
@@ -2189,7 +2240,11 @@ async def process_file(kb_id: str, file_id: str):
             f = await _prod_service().get_file(kb_id, file_id)
             if f is None:
                 raise HTTPException(status_code=404, detail=f"File not found: {file_id}")
-            parsed = f if f.status.value not in {"uploaded", "parse_error"} else await _prod_service().parse_file(kb_id, file_id)
+            parsed = (
+                f
+                if f.status.value not in {"uploaded", "parse_error"}
+                else await _prod_service().parse_file(kb_id, file_id)
+            )
             indexed = await _prod_service().index_file(kb_id, file_id)
             return {"parsed": parsed.to_dict(), "indexed": indexed.to_dict()}
         except KnowledgeFileError as exc:
@@ -2373,7 +2428,13 @@ async def graph_summary(kb_id: str):
             "entity_count": 0,
             "relation_count": 0,
             "degraded": True,
-            "warnings": [{"code": "legacy_graph_unavailable", "message": "Legacy local KB does not expose production semantic graph.", "action": "create_production_kb"}],
+            "warnings": [
+                {
+                    "code": "legacy_graph_unavailable",
+                    "message": "Legacy local KB does not expose production semantic graph.",
+                    "action": "create_production_kb",
+                }
+            ],
         }
     mgr, _ = _kb_or_404(kb_id)
     try:
@@ -2424,7 +2485,13 @@ async def export_graph(kb_id: str, limit: int = Query(default=200, ge=1, le=1000
             "edges": [],
             "stats": {"nodes": 0, "edges": 0},
             "degraded": True,
-            "warnings": [{"code": "legacy_graph_unavailable", "message": "Legacy local KB is read-only and has no production semantic graph.", "action": "create_production_kb"}],
+            "warnings": [
+                {
+                    "code": "legacy_graph_unavailable",
+                    "message": "Legacy local KB is read-only and has no production semantic graph.",
+                    "action": "create_production_kb",
+                }
+            ],
             "error_code": "legacy_graph_unavailable",
         }
     mgr, _ = _kb_or_404(kb_id)

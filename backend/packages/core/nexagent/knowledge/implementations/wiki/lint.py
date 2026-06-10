@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-
 AI_REPAIRABLE_ISSUES = {
     "broken_link",
     "ambiguous_link",
@@ -58,7 +57,11 @@ class WikiLintMixin:
                     linked_ids.add(targets[0]["id"])
 
         for page in pages:
-            if page["id"] not in linked_ids and not self._extract_wikilinks(page["content"]) and page["type"] != "source":
+            if (
+                page["id"] not in linked_ids
+                and not self._extract_wikilinks(page["content"])
+                and page["type"] != "source"
+            ):
                 issues.append(self._lint_issue("orphan_page", page["id"], "warning"))
         state = self._load_state(kb_id)
         for page_id in sorted(state.get("candidates", {})):

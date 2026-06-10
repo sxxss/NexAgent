@@ -343,7 +343,11 @@ class LightRagKB(KnowledgeBase):
                     selected.add(str(edge.get("target")))
                 if len(edges) >= limit:
                     break
-        nodes = [node for node in graph.get("nodes", []) if node.get("id") in selected or node.get("name") in selected][:limit]
+        nodes = [
+            node
+            for node in graph.get("nodes", [])
+            if node.get("id") in selected or node.get("name") in selected
+        ][:limit]
         return {
             "node_id": node_id,
             "depth": depth,
@@ -362,7 +366,8 @@ class LightRagKB(KnowledgeBase):
         graph_source = "local_co_occurs_fallback"
         if lightrag.get("status") == "ok":
             warnings.append(
-                "Native LightRAG indexing succeeded, but this API export is still using the local graph projection until semantic graph export is available."
+                "Native LightRAG indexing succeeded, but this API export is still using the local graph "
+                "projection until semantic graph export is available."
             )
             error_code = "semantic_graph_export_unavailable"
         else:
@@ -418,7 +423,11 @@ class LightRagKB(KnowledgeBase):
                     "files": files,
                 }
             )
-        return {"nodes": nodes, "edges": edges, "stats": data.get("stats") or {"nodes": len(nodes), "edges": len(edges)}}
+        return {
+            "nodes": nodes,
+            "edges": edges,
+            "stats": data.get("stats") or {"nodes": len(nodes), "edges": len(edges)},
+        }
 
     def import_graph(self, kb_meta: KBMeta, graph_data: dict, source: str = "manual") -> dict:
         graph = self._get_local_graph(kb_meta)

@@ -218,7 +218,9 @@ class ProductionKnowledgeService:
                 "requires_reindex": True,
             }
 
-    async def add_file(self, kb_id: str, filename: str, content: bytes, processing_params: dict | None = None) -> FileMeta:
+    async def add_file(
+        self, kb_id: str, filename: str, content: bytes, processing_params: dict | None = None
+    ) -> FileMeta:
         safe_name = _sanitize_upload_filename(filename)
         _validate_upload_content(content, safe_name)
         checksum = hashlib.sha256(content).hexdigest()
@@ -315,7 +317,9 @@ class ProductionKnowledgeService:
             markdown = parsed.content or ""
             parsed_object = f"{kb_id}/parsed/{file_id}.md"
             cfg = get_config().knowledge
-            write = self.object_store.put_bytes(cfg.parsed_bucket, parsed_object, markdown.encode("utf-8"), "text/markdown")
+            write = self.object_store.put_bytes(
+                cfg.parsed_bucket, parsed_object, markdown.encode("utf-8"), "text/markdown"
+            )
             async with AsyncSessionLocal() as session:
                 updated = await _require_file_record(session, kb_id, file_id)
                 updated.parsed_uri = write.uri
@@ -372,7 +376,9 @@ class ProductionKnowledgeService:
                 record.processing_params or {},
             )
             raw_chunks = chunk_markdown(markdown, file_id=file_id, filename=record.filename, processing_params=params)
-            chunks = [_stable_chunk(kb_id, file_id, record.filename, raw, index) for index, raw in enumerate(raw_chunks)]
+            chunks = [
+                _stable_chunk(kb_id, file_id, record.filename, raw, index) for index, raw in enumerate(raw_chunks)
+            ]
             manifest = {
                 "kb_id": kb_id,
                 "file_id": file_id,
@@ -404,10 +410,18 @@ class ProductionKnowledgeService:
             graph_manifest = {"status": "unavailable", "error_code": "", "error_message": ""}
             if kb.kb_type == KBType.MILVUS.value:
                 index_manifest = await self._index_milvus(kb_meta, tmp_file, chunks)
-                status = FileStatus.INDEXED.value if index_manifest["status"] == "ready" else FileStatus.INDEXED_WITH_GRAPH_DEGRADED.value
+                status = (
+                    FileStatus.INDEXED.value
+                    if index_manifest["status"] == "ready"
+                    else FileStatus.INDEXED_WITH_GRAPH_DEGRADED.value
+                )
             else:
                 graph_manifest = await self._index_lightrag(kb_meta, tmp_file, markdown)
-                status = FileStatus.GRAPH_INDEXED.value if graph_manifest["status"] == "ready" else FileStatus.INDEXED_WITH_GRAPH_DEGRADED.value
+                status = (
+                    FileStatus.GRAPH_INDEXED.value
+                    if graph_manifest["status"] == "ready"
+                    else FileStatus.INDEXED_WITH_GRAPH_DEGRADED.value
+                )
 
             async with AsyncSessionLocal() as session:
                 updated = await _require_file_record(session, kb_id, file_id)
@@ -415,8 +429,12 @@ class ProductionKnowledgeService:
                 updated.chunk_count = len(chunks)
                 updated.chunk_manifest_uri = manifest_uri
                 updated.processing_params = params
-                updated.error_code = "" if status in {FileStatus.INDEXED.value, FileStatus.GRAPH_INDEXED.value} else "degraded_index"
-                updated.error_message = "" if not updated.error_code else "Index completed with degraded production backend."
+                updated.error_code = (
+                    "" if status in {FileStatus.INDEXED.value, FileStatus.GRAPH_INDEXED.value} else "degraded_index"
+                )
+                updated.error_message = (
+                    "" if not updated.error_code else "Index completed with degraded production backend."
+                )
                 await _upsert_index_manifest(session, kb_meta, index_manifest)
                 await _upsert_graph_manifest(session, kb_meta, graph_manifest)
                 await session.commit()
@@ -452,7 +470,9 @@ class ProductionKnowledgeService:
         return await self.reindex_file(kb_id, file_id)
 
     async def create_job(self, kb_id: str, file_id: str | None, job_type: str = "ingest") -> dict:
-        job = KnowledgeJobRecord(kb_id=kb_id, file_id=file_id, job_type=job_type, status="queued", current_step="queued")
+        job = KnowledgeJobRecord(
+            kb_id=kb_id, file_id=file_id, job_type=job_type, status="queued", current_step="queued"
+        )
         job.input_snapshot = {"kb_id": kb_id, "file_id": file_id, "job_type": job_type}
         job.logs = []
         async with AsyncSessionLocal() as session:
@@ -599,7 +619,13 @@ class ProductionKnowledgeService:
             "degraded": bool(graph and graph.status != "ready"),
             "warnings": []
             if graph and graph.status == "ready"
-            else [{"code": "semantic_graph_unavailable", "message": "Neo4j/LightRAG semantic graph is not ready.", "action": "rebuild_graph"}],
+            else [
+                {
+                    "code": "semantic_graph_unavailable",
+                    "message": "Neo4j/LightRAG semantic graph is not ready.",
+                    "action": "rebuild_graph",
+                }
+            ],
         }
 
     async def search_graph(self, kb_id: str, query: str, limit: int = 20) -> dict:
@@ -626,7 +652,12 @@ class ProductionKnowledgeService:
                     break
         nodes = [node for node in data.get("nodes", []) if node.get("id") in node_ids][:limit]
         edge_ids = {edge.get("id") for edge in edges}
-        return {**data, "nodes": nodes, "edges": [edge for edge in edges if edge.get("id") in edge_ids], "center": node_id}
+        return {
+            **data,
+            "nodes": nodes,
+            "edges": [edge for edge in edges if edge.get("id") in edge_ids],
+            "center": node_id,
+        }
 
     async def export_graph(self, kb_id: str, limit: int = 200) -> dict:
         from nexagent.knowledge.neo4j_store import Neo4jGraphStore
@@ -643,7 +674,9 @@ class ProductionKnowledgeService:
                 "edges": [],
                 "stats": {"nodes": 0, "edges": 0, "files": []},
                 "degraded": True,
-                "warnings": [{"code": "semantic_graph_unavailable", "message": str(exc), "action": "start_neo4j_rebuild_graph"}],
+                "warnings": [
+                    {"code": "semantic_graph_unavailable", "message": str(exc), "action": "start_neo4j_rebuild_graph"}
+                ],
                 "error_code": "semantic_graph_unavailable",
             }
 

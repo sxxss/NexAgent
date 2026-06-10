@@ -6,8 +6,8 @@ from typing import Any
 
 from nexagent.knowledge.implementations.wiki.constants import (
     NOISE_WIKILINKS,
-    WIKILINK_RE,
     WIKI_PAGE_TYPES,
+    WIKILINK_RE,
 )
 
 

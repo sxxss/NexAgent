@@ -175,7 +175,11 @@ def get_chunk_preset_options() -> list[dict[str, str]]:
         {"value": CHUNK_PRESET_QA, "label": "QA", "description": "Question-answer pair chunking."},
         {"value": CHUNK_PRESET_BOOK, "label": "Book", "description": "Heading-aware long document chunking."},
         {"value": CHUNK_PRESET_LAWS, "label": "Laws", "description": "Article and clause-aware legal text chunking."},
-        {"value": CHUNK_PRESET_PAPER, "label": "Paper", "description": "Paper section, abstract, table and figure-aware chunking."},
+        {
+            "value": CHUNK_PRESET_PAPER,
+            "label": "Paper",
+            "description": "Paper section, abstract, table and figure-aware chunking.",
+        },
     ]
 
 

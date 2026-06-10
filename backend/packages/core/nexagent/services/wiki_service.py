@@ -72,7 +72,9 @@ def _normalize_crystallize_page_type(page_type: str | None) -> str:
     return normalized
 
 
-async def _crystallize_into_wiki_kb(kb_id: str, title: str, markdown: str, *, thread_id: str, page_type: str) -> dict[str, Any]:
+async def _crystallize_into_wiki_kb(
+    kb_id: str, title: str, markdown: str, *, thread_id: str, page_type: str
+) -> dict[str, Any]:
     from nexagent.knowledge.manager import get_manager
 
     normalized_page_type = _normalize_crystallize_page_type(page_type)

@@ -806,7 +806,9 @@ async def test_provider_model(req: ModelProbeRequest):
         models = provider.models or []
         configured = next((item for item in configs if item.get("id") == model_id), None)
         if model_id not in models and configured is None:
-            raise HTTPException(status_code=404, detail=f"Model '{model_id}' is not configured on provider '{provider_id}'")
+            raise HTTPException(
+                status_code=404, detail=f"Model '{model_id}' is not configured on provider '{provider_id}'"
+            )
         if configured and configured.get("type") != req.capability:
             raise HTTPException(
                 status_code=400,
@@ -826,7 +828,14 @@ async def test_provider_model(req: ModelProbeRequest):
         else:
             result = await _probe_rerank_model(provider_type, model_id, api_key, base_url, req.sample_text)
         latency_ms = int((time.monotonic() - start) * 1000)
-        return {"ok": True, "provider_id": provider_id, "model_id": model_id, "capability": req.capability, "latency_ms": latency_ms, **result}
+        return {
+            "ok": True,
+            "provider_id": provider_id,
+            "model_id": model_id,
+            "capability": req.capability,
+            "latency_ms": latency_ms,
+            **result,
+        }
     except Exception as exc:
         latency_ms = int((time.monotonic() - start) * 1000)
         return {

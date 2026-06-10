@@ -23,7 +23,9 @@ class ObjectWriteResult:
 
 
 class ObjectStore:
-    def put_bytes(self, bucket: str, object_name: str, data: bytes, content_type: str = "application/octet-stream") -> ObjectWriteResult:
+    def put_bytes(
+        self, bucket: str, object_name: str, data: bytes, content_type: str = "application/octet-stream"
+    ) -> ObjectWriteResult:
         raise NotImplementedError
 
     def get_bytes(self, uri: str) -> bytes:
@@ -50,7 +52,9 @@ class MinioObjectStore(ObjectStore):
             secure=cfg.object_store_secure,
         )
 
-    def put_bytes(self, bucket: str, object_name: str, data: bytes, content_type: str = "application/octet-stream") -> ObjectWriteResult:
+    def put_bytes(
+        self, bucket: str, object_name: str, data: bytes, content_type: str = "application/octet-stream"
+    ) -> ObjectWriteResult:
         self._ensure_bucket(bucket)
         self._client.put_object(bucket, object_name, io.BytesIO(data), length=len(data), content_type=content_type)
         return ObjectWriteResult(uri=f"minio://{bucket}/{object_name}", bucket=bucket, object_name=object_name)
@@ -86,11 +90,15 @@ class LocalObjectStore(ObjectStore):
         self.root = root
         root.mkdir(parents=True, exist_ok=True)
 
-    def put_bytes(self, bucket: str, object_name: str, data: bytes, content_type: str = "application/octet-stream") -> ObjectWriteResult:
+    def put_bytes(
+        self, bucket: str, object_name: str, data: bytes, content_type: str = "application/octet-stream"
+    ) -> ObjectWriteResult:
         path = self.root / bucket / object_name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
-        return ObjectWriteResult(uri=f"local-object://{bucket}/{object_name}", bucket=bucket, object_name=object_name, degraded=True)
+        return ObjectWriteResult(
+            uri=f"local-object://{bucket}/{object_name}", bucket=bucket, object_name=object_name, degraded=True
+        )
 
     def get_bytes(self, uri: str) -> bytes:
         bucket, object_name = _parse_object_uri(uri)

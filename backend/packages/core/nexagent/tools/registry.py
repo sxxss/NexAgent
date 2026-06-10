@@ -74,7 +74,9 @@ _BUILTIN_SPECS: dict[str, ToolSpec] = {
     ),
     "crystallize_attachments_to_wiki": ToolSpec(
         name="crystallize_attachments_to_wiki",
-        description="Register conversation upload/output files as Wiki knowledge base source materials after confirmation.",
+        description=(
+            "Register conversation upload/output files as Wiki knowledge base source materials after confirmation."
+        ),
         category="knowledge",
         module="nexagent.tools.builtin.wiki",
         factory="get_crystallize_attachments_to_wiki_tool",
