@@ -92,6 +92,60 @@ async def test_wiki_pages_are_frontmatter_markdown_and_manual_pages_get_candidat
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_wiki_manual_page_creation_defaults_to_note_and_manual_edit():
+    from nexagent.knowledge.manager import reset_manager
+
+    work_dir = _work_dir("manual-page")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", description="Useful knowledge", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+
+        page = await backend.create_wiki_page(
+            kb_meta.kb_id,
+            title="新概念",
+            content="# 新概念\n\n从页面链接直接创建。",
+        )
+
+        assert page["id"] == "note:新概念"
+        assert page["type"] == "note"
+        assert page["title"] == "新概念"
+        assert page["confidence"] == "UNVERIFIED"
+        assert page["manual_edited"] is True
+        assert page["status"] == "manual_edited"
+        assert page["content"] == "# 新概念\n\n从页面链接直接创建。"
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_deleting_manual_wiki_page_does_not_require_recompile():
+    from nexagent.knowledge.manager import reset_manager
+
+    work_dir = _work_dir("delete-manual-page")
+    try:
+        manager = reset_manager(str(work_dir))
+        kb_meta = await manager.create_kb(name="Wiki", description="Useful knowledge", kb_type="wiki")
+        backend = manager._find_backend(kb_meta.kb_id)
+        page = await backend.create_wiki_page(
+            kb_meta.kb_id,
+            title="临时手工页",
+            content="# 临时手工页\n\n无需源文档重编译。",
+        )
+
+        await backend.delete_wiki_page(kb_meta.kb_id, page["id"])
+        lint = backend.lint_wiki(kb_meta.kb_id)
+
+        assert all(issue["type"] != "wiki_stale_after_delete" for issue in lint["issues"])
+    finally:
+        reset_manager()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_wiki_kb_indexes_markdown_into_pages_and_searches(monkeypatch):
     from nexagent.knowledge.manager import reset_manager
     from nexagent.knowledge.models import FileStatus

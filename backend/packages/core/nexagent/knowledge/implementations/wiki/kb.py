@@ -79,11 +79,14 @@ class WikiKB(
             raise ValueError(f"Wiki page {page_id} not found")
         frontmatter, content = self._read_page(path)
         summary = self._page_summary(kb_id, path, frontmatter, content)
+        candidates = self._load_state(kb_id).get("candidates", {})
+        summary["has_candidate"] = summary["id"] in candidates
+        summary["status"] = self._page_status(summary, frontmatter)
         return {
             **summary,
             "content": content,
             "frontmatter": frontmatter,
-            "candidate": self._load_state(kb_id).get("candidates", {}).get(page_id),
+            "candidate": candidates.get(page_id),
         }
 
     async def update_wiki_page(
@@ -261,16 +264,38 @@ class WikiKB(
         path = self._find_page_path(kb_id, page_id)
         if path is None:
             raise ValueError(f"Wiki page {page_id} not found")
+        frontmatter, _content = self._read_page(path)
+        requires_recompile = bool(frontmatter.get("sources")) or frontmatter.get("type") == "source"
         state = self._load_state(kb_id)
         state.get("candidates", {}).pop(page_id, None)
-        state["needs_recompile"] = True
-        state["recompile_reason"] = "page_deleted"
+        if requires_recompile:
+            state["needs_recompile"] = True
+            state["recompile_reason"] = "page_deleted"
         self._save_state(kb_id, state)
         path.unlink(missing_ok=True)
         self._refresh_index(kb_id)
         return {"message": "deleted", "page_id": page_id}
 
     async def crystallize_wiki_text(
+        self,
+        kb_id: str,
+        title: str,
+        content: str,
+        page_type: str = "note",
+        sources: list[str] | None = None,
+        confidence: str = "UNVERIFIED",
+    ) -> dict:
+        return await self.create_or_update_wiki_page(
+            kb_id,
+            page_type=page_type,
+            title=title,
+            content=content,
+            sources=sources or [],
+            confidence=confidence,
+            manual_edited=True,
+        )
+
+    async def create_wiki_page(
         self,
         kb_id: str,
         title: str,

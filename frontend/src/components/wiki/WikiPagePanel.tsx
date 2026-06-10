@@ -33,6 +33,7 @@ export function WikiPagePanel({
   selectedPage,
   loading = false,
   onSelect,
+  onCreatePage,
   onReload,
 }: {
   kbId: string;
@@ -41,12 +42,14 @@ export function WikiPagePanel({
   selectedPage: WikiPageDetail | null;
   loading?: boolean;
   onSelect: (pageId: string) => void;
+  onCreatePage: (title: string) => Promise<void>;
   onReload: (pageId?: string) => Promise<void>;
 }) {
   const [mode, setMode] = useState<PageMode>("preview");
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [acting, setActing] = useState("");
+  const [creatingLink, setCreatingLink] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -112,6 +115,19 @@ export function WikiPagePanel({
       setError(err instanceof Error ? err.message : "删除 Wiki 页面失败");
     } finally {
       setActing("");
+    }
+  };
+
+  const createLinkedPage = async (title: string) => {
+    if (!title || creatingLink) return;
+    setCreatingLink(title);
+    setError("");
+    try {
+      await onCreatePage(title);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "创建 Wiki 页面失败");
+    } finally {
+      setCreatingLink("");
     }
   };
 
@@ -211,6 +227,20 @@ export function WikiPagePanel({
                     const pageId = resolveWikiHref(href, pageLookup);
                     if (pageId) {
                       return <button type="button" className="wiki-link font-semibold text-blue-700 underline decoration-blue-300 underline-offset-2 transition hover:text-blue-800" onClick={() => onSelect(pageId)}>{children}</button>;
+                    }
+                    const newTitle = resolveNewWikiTitle(href);
+                    if (newTitle) {
+                      return (
+                        <button
+                          type="button"
+                          className="wiki-link font-semibold text-blue-700 underline decoration-blue-300 underline-offset-2 transition hover:text-blue-800 disabled:cursor-wait disabled:opacity-60"
+                          onClick={() => void createLinkedPage(newTitle)}
+                          disabled={creatingLink === newTitle}
+                          title="创建 Wiki 页面"
+                        >
+                          {children}
+                        </button>
+                      );
                     }
                     return <a href={href} target="_blank" rel="noreferrer" className="font-medium text-blue-700 underline decoration-blue-200 underline-offset-2 hover:text-blue-800">{children}</a>;
                   },
@@ -352,7 +382,8 @@ function renderWikiLinks(content: string, pageLookup: ReturnType<typeof buildPag
   return content.replace(/\[\[([^\]#|]+)(?:[|#][^\]]*)?\]\]/g, (_match, rawTitle: string) => {
     const title = String(rawTitle || "").trim();
     const pageId = pageLookup.keyLookup.get(normalizeWikiKey(title));
-    return pageId ? `[${title}](wiki:${encodeURIComponent(pageId)})` : title;
+    const label = escapeMarkdownLinkLabel(title);
+    return pageId ? `[${label}](wiki:${encodeURIComponent(pageId)})` : `[${label}](wiki-new:${encodeURIComponent(title)})`;
   });
 }
 
@@ -362,9 +393,18 @@ function resolveWikiHref(href: string | undefined, pageLookup: ReturnType<typeof
   return pageLookup.pathLookup.get(normalizeWikiPath(href)) ?? "";
 }
 
+function resolveNewWikiTitle(href: string | undefined) {
+  if (!href?.startsWith("wiki-new:")) return "";
+  return safeDecodeURIComponent(href.slice(9)).trim();
+}
+
 function preserveWikiUrl(value: string) {
-  if (value.startsWith("wiki:")) return value;
+  if (value.startsWith("wiki:") || value.startsWith("wiki-new:")) return value;
   return defaultUrlTransform(value);
+}
+
+function escapeMarkdownLinkLabel(value: string) {
+  return value.replace(/\\/g, "\\\\").replace(/\[/g, "\\[").replace(/\]/g, "\\]");
 }
 
 function normalizeWikiKey(value = "") {

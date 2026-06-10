@@ -1250,6 +1250,19 @@ export async function fetchWikiKbPage(kbId: string, pageId: string): Promise<Wik
   return res.json();
 }
 
+export async function createWikiKbPage(
+  kbId: string,
+  body: { title: string; content?: string; page_type?: WikiPageType; sources?: string[]; confidence?: string },
+): Promise<WikiPageDetail> {
+  const res = await fetch(`${BASE}/knowledge/${kbId}/wiki/pages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await apiErrorMessage(res));
+  return res.json();
+}
+
 export async function updateWikiKbPage(
   kbId: string,
   pageId: string,

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AlertCircle, FileText, GitBranch, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import {
   compileWikiKb,
+  createWikiKbPage,
   fetchWikiKbGraph,
   fetchWikiKbLint,
   fetchWikiKbPage,
@@ -227,6 +228,14 @@ export function WikiWorkbench({
     await selectPage(pageId);
   }, [selectPage]);
 
+  const createLinkedPage = useCallback(async (title: string) => {
+    setError("");
+    const page = await createWikiKbPage(kb.kb_id, { title, page_type: "note" });
+    invalidateDerivedWikiData();
+    setTab("pages");
+    await refresh(page.id);
+  }, [invalidateDerivedWikiData, kb.kb_id, refresh]);
+
   const handleIssueAction = useCallback(async (issue: WikiLintPayload["issues"][number]) => {
     if (issue.repair_action === "recompile" || issue.action === "recompile") {
       setCompiling(true);
@@ -343,6 +352,7 @@ export function WikiWorkbench({
               selectedPage={selectedPage}
               loading={pageLoading}
               onSelect={(pageId) => void selectPage(pageId)}
+              onCreatePage={createLinkedPage}
               onReload={refresh}
             />
           ) : null}

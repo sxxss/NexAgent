@@ -136,6 +136,49 @@ async def test_list_kbs_clears_stale_wiki_reindex_flag_when_compile_completed(mo
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_create_wiki_page_route_creates_manual_note(monkeypatch):
+    calls = {}
+
+    class FakeBackend:
+        async def create_wiki_page(self, kb_id, *, title, content, page_type="note", sources=None, confidence="UNVERIFIED"):
+            calls["create"] = {
+                "kb_id": kb_id,
+                "title": title,
+                "content": content,
+                "page_type": page_type,
+                "sources": sources,
+                "confidence": confidence,
+            }
+            return {
+                "id": "note:新页面",
+                "title": title,
+                "type": page_type,
+                "content": content,
+                "manual_edited": True,
+                "confidence": confidence,
+            }
+
+    monkeypatch.setattr(knowledge, "_local_wiki_kb_or_404", lambda kb_id: (None, None, FakeBackend()))
+
+    result = await knowledge.create_wiki_page(
+        "wiki-1",
+        {"title": "新页面", "content": "", "page_type": "note"},
+    )
+
+    assert calls["create"] == {
+        "kb_id": "wiki-1",
+        "title": "新页面",
+        "content": "# 新页面\n\n",
+        "page_type": "note",
+        "sources": [],
+        "confidence": "UNVERIFIED",
+    }
+    assert result["id"] == "note:新页面"
+    assert result["manual_edited"] is True
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_create_lightrag_kb_requires_llm_and_embedding():
     with pytest.raises(HTTPException) as exc:
         await knowledge.create_kb(

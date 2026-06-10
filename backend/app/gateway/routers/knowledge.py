@@ -1423,6 +1423,30 @@ async def list_wiki_pages(
     return backend.list_wiki_pages(kb_id, page_type=type, q=q, status=status, source_file_id=source_file_id)
 
 
+@router.post("/{kb_id}/wiki/pages", summary="Create Wiki page")
+async def create_wiki_page(kb_id: str, body: dict[str, Any]):
+    _mgr, _kb, backend = _local_wiki_kb_or_404(kb_id)
+    title = str(body.get("title") or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Wiki 页面标题不能为空")
+    page_type = str(body.get("page_type") or body.get("type") or "note").strip() or "note"
+    confidence = str(body.get("confidence") or "UNVERIFIED").strip().upper() or "UNVERIFIED"
+    raw_sources = body.get("sources") if isinstance(body.get("sources"), list) else []
+    sources = [str(item).strip() for item in raw_sources if str(item).strip()]
+    content = str(body.get("content") or "").strip() or f"# {title}\n\n"
+    try:
+        return await backend.create_wiki_page(
+            kb_id,
+            title=title,
+            content=content,
+            page_type=page_type,
+            sources=sources,
+            confidence=confidence,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/{kb_id}/wiki/pages/{page_id}", summary="Get Wiki page")
 async def get_wiki_page(kb_id: str, page_id: str):
     _mgr, _kb, backend = _local_wiki_kb_or_404(kb_id)
