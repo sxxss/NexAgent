@@ -20,6 +20,7 @@ import {
   RefreshCw,
   Save,
   Search,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
   Upload,
@@ -122,6 +123,7 @@ export default function KBDetailPage() {
   const [searchWarnings, setSearchWarnings] = useState<SearchWarning[]>([]);
   const [searchError, setSearchError] = useState("");
   const [savingQueryConfig, setSavingQueryConfig] = useState(false);
+  const [showWikiSettings, setShowWikiSettings] = useState(false);
 
   const [providers, setProviders] = useState<ModelProvider[]>([]);
 
@@ -329,6 +331,7 @@ export default function KBDetailPage() {
                 activeJob={activeJob}
                 onBack={() => router.push("/knowledge")}
                 onOpenGraph={() => router.push(`/knowledge/${id}/wiki/graph`)}
+                onSettings={() => setShowWikiSettings(true)}
                 onRefresh={() => void loadData()}
               />
             </div>
@@ -381,6 +384,16 @@ export default function KBDetailPage() {
                 onClosePreview={() => setPreview(null)}
               />
             );
+          }}
+        />
+        <WikiLlmSettingsDialog
+          open={showWikiSettings}
+          kb={kb}
+          chatModels={chatModels}
+          onClose={() => setShowWikiSettings(false)}
+          onSaved={async () => {
+            setShowWikiSettings(false);
+            await loadData();
           }}
         />
       </div>
@@ -521,6 +534,7 @@ function WikiCompactHeader({
   activeJob,
   onBack,
   onOpenGraph,
+  onSettings,
   onRefresh,
 }: {
   kb: KBMeta;
@@ -529,6 +543,7 @@ function WikiCompactHeader({
   activeJob?: IngestionJob;
   onBack: () => void;
   onOpenGraph: () => void;
+  onSettings: () => void;
   onRefresh: () => void;
 }) {
   return (
@@ -545,6 +560,7 @@ function WikiCompactHeader({
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <button type="button" onClick={onOpenGraph} className={wikiIconButton} title="图谱浏览"><Network size={14} /></button>
+          <button type="button" onClick={onSettings} className={wikiIconButton} title="知识库设置"><SlidersHorizontal size={14} /></button>
           <button type="button" onClick={onRefresh} className={wikiIconButton} title="刷新"><RefreshCw size={14} /></button>
         </div>
       </div>
@@ -555,6 +571,121 @@ function WikiCompactHeader({
         {activeJob ? <Badge variant="info">处理中 {taskCompleted(activeJob) + taskFailed(activeJob)}/{activeJob.total_steps}</Badge> : null}
       </div>
     </section>
+  );
+}
+
+function WikiLlmSettingsDialog({
+  open,
+  kb,
+  chatModels,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  kb: KBMeta;
+  chatModels: ProviderModelOption[];
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [llmModel, setLlmModel] = useState(kbLlmModelValue(kb));
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [probeResult, setProbeResult] = useState<ModelProbeResult | null>(null);
+  const [probeError, setProbeError] = useState("");
+  const [error, setError] = useState("");
+  const selectedLLM = chatModels.find((item) => item.value === llmModel);
+
+  useEffect(() => {
+    if (!open) return;
+    setLlmModel(kbLlmModelValue(kb));
+    setProbeResult(null);
+    setProbeError("");
+    setError("");
+  }, [kb, open]);
+
+  const testModel = async () => {
+    if (!selectedLLM) return;
+    setTesting(true);
+    setProbeResult(null);
+    setProbeError("");
+    try {
+      const result = await testProviderModel({
+        provider_id: selectedLLM.providerId,
+        model_id: selectedLLM.modelId,
+        capability: "chat",
+        sample_text: "NexAgent wiki model test",
+      });
+      setProbeResult(result);
+    } catch (err) {
+      setProbeError(err instanceof Error ? err.message : "模型检测失败");
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const save = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      await updateKBModelConfig(kb.kb_id, { llm_model: llmModel });
+      await onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存 Wiki LLM 配置失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} title="Wiki 知识库设置" description="配置用于页面编译、主题抽取和对话沉淀的 LLM。">
+      <div className="space-y-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-900">{kb.name}</p>
+              <p className="mt-1 text-xs text-slate-500">Wiki 不需要 Embedding；文件内容会编译为页面、双链和关系图。</p>
+            </div>
+            <Badge variant="teal">Wiki</Badge>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+            <Field label="LLM 模型">
+              <ModelPicker
+                value={llmModel}
+                options={chatModels}
+                placeholder={kb.llm_info?.model || "选择 LLM 模型"}
+                onChange={(option) => {
+                  setLlmModel(option.value);
+                  setProbeResult(null);
+                  setProbeError("");
+                }}
+              />
+            </Field>
+            <button
+              type="button"
+              className={cn(outlineButton, "mt-6 justify-center")}
+              disabled={!selectedLLM || testing}
+              onClick={() => void testModel()}
+            >
+              {testing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+              检测模型
+            </button>
+          </div>
+          <ProbeNotice result={probeResult} error={probeError} />
+        </div>
+
+        {error ? <div className="rounded-xl border border-rose-100 bg-rose-50 p-3 text-xs text-rose-700">{error}</div> : null}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className={outlineButton}>取消</button>
+          <button type="button" onClick={() => void save()} disabled={saving || !llmModel} className={primarySmallButton}>
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            保存设置
+          </button>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 
