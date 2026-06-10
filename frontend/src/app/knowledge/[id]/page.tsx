@@ -1073,8 +1073,9 @@ function WikiTaskQueue({ jobs, files, onRetry, onCancel }: { jobs: IngestionJob[
   const historyJobs = jobs.filter((job) => !isActiveTask(job)).sort((left, right) => taskTimeValue(right) - taskTimeValue(left));
   const actionableHistoryJobs = historyJobs.filter((job) => !isObsoleteHistoryTask(job, currentFileIds, successTimesByFile));
   const priorityHistoryJobs = actionableHistoryJobs.filter((job) => job.status !== "completed").slice(0, 3);
-  const visibleJobs = showAllJobs ? [...activeJobs, ...historyJobs] : [...activeJobs, ...priorityHistoryJobs];
-  const hiddenJobCount = Math.max(0, jobs.length - visibleJobs.length);
+  const visibleHistoryJobs = showAllJobs ? actionableHistoryJobs : priorityHistoryJobs;
+  const visibleJobs = [...activeJobs, ...visibleHistoryJobs];
+  const hiddenJobCount = Math.max(0, actionableHistoryJobs.length - priorityHistoryJobs.length);
   const displayCount = activeJobs.length || priorityHistoryJobs.length;
   return (
     <div className="relative shrink-0">
