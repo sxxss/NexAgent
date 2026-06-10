@@ -296,7 +296,7 @@ export function WikiGraphPanel({
             onLayoutModeChange={changeLayoutMode}
             onApplyOptions={applyGraphOptions}
           />
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+          <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_260px]">
             <GraphCanvas
               nodes={displayNodes}
               edges={displayEdges}
@@ -389,8 +389,8 @@ function WikiGraphExplorerShell({
   onEdgeClick: (edgeKey: string) => void;
 }) {
   return (
-    <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[260px_minmax(0,1fr)_320px]">
-      <aside className="min-h-0 overflow-auto rounded-xl border border-slate-200 bg-white p-3">
+    <div className="grid min-h-0 flex-1 gap-3 2xl:grid-cols-[260px_minmax(0,1fr)_320px]">
+      <aside className="order-2 min-h-0 overflow-auto rounded-xl border border-slate-200 bg-white p-3 2xl:order-1">
         <section className="space-y-3 border-b border-slate-100 pb-4">
           <div>
             <h4 className="text-sm font-semibold text-slate-900">关系范围</h4>
@@ -413,7 +413,7 @@ function WikiGraphExplorerShell({
               min={20}
               max={300}
               value={draftOptions.maxEdges}
-              onChange={(event) => onDraftOptionsChange({ maxEdges: Number(event.target.value) || 80 })}
+              onChange={(event) => onDraftOptionsChange({ maxEdges: Number(event.target.value) || 40 })}
               className={numberInput}
             />
           </label>
@@ -455,7 +455,7 @@ function WikiGraphExplorerShell({
         </section>
       </aside>
 
-      <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <section className="order-1 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-slate-200 bg-white 2xl:order-2">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
           <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
             <Network size={16} className="text-indigo-600" />
@@ -482,7 +482,7 @@ function WikiGraphExplorerShell({
         />
       </section>
 
-      <aside className="min-h-0 overflow-auto rounded-xl border border-slate-200 bg-white p-3">
+      <aside className="order-3 min-h-0 overflow-auto rounded-xl border border-slate-200 bg-white p-3">
         <section className="space-y-3 border-b border-slate-100 pb-4">
           <h4 className="text-sm font-semibold text-slate-900">当前节点</h4>
           {selectedNode ? (
@@ -594,7 +594,7 @@ function CompactGraphControls({
           min={20}
           max={300}
           value={draftOptions.maxEdges}
-          onChange={(event) => onDraftOptionsChange({ maxEdges: Number(event.target.value) || 80 })}
+          onChange={(event) => onDraftOptionsChange({ maxEdges: Number(event.target.value) || 40 })}
           className="h-6 w-16 rounded border border-slate-200 px-1.5 text-xs outline-none"
         />
       </label>
@@ -847,7 +847,7 @@ function WikiNode({ data }: NodeProps<WikiNodeData>) {
 function normalizeGraphOptions(options?: WikiGraphOptions): WikiGraphOptions {
   return {
     q: options?.q ?? "",
-    maxEdges: options?.maxEdges ?? 80,
+    maxEdges: options?.maxEdges ?? 40,
     includeWeak: options?.includeWeak ?? false,
     layoutMode: options?.layoutMode ?? "community",
     typeFilters: options?.typeFilters ?? [],
@@ -924,9 +924,13 @@ function buildFlowGraph(graph: WikiGraphPayload | null, layoutMode: GraphLayoutM
       id: graphEdgeKey(edge),
       source: edge.source,
       target: edge.target,
-      label: edge.signals?.wikilink ? "双链" : "",
-      animated: Boolean(edge.signals?.source_overlap),
-      style: { stroke: edge.signals?.wikilink ? "#4f46e5" : "#94a3b8", strokeWidth: Math.max(1, Math.min(4, edge.weight)) },
+      label: "",
+      animated: false,
+      style: {
+        stroke: edge.signals?.wikilink ? "#6366f1" : "#94a3b8",
+        strokeOpacity: edge.signals?.wikilink ? 0.42 : 0.28,
+        strokeWidth: edge.signals?.wikilink ? 1.4 : 1,
+      },
       labelStyle: { fill: "#4f46e5", fontSize: 10, fontWeight: 700 },
     }));
   return { nodes, edges, degrees };
@@ -972,9 +976,23 @@ function graphNodePosition({
       y: Math.sin(angle) * bandRadius + radius + 260,
     };
   }
+  if (communityCount <= 1) {
+    const innerCount = total <= 12 ? 0 : Math.min(8, Math.ceil(total * 0.32));
+    const isInner = innerCount > 0 && index < innerCount;
+    const ringSlot = isInner ? index : index - innerCount;
+    const slots = isInner ? innerCount : Math.max(1, total - innerCount);
+    const outerRadius = Math.max(320, Math.min(440, total * 16));
+    const innerRadius = Math.max(180, Math.min(240, total * 8));
+    const ringRadius = innerCount ? (isInner ? innerRadius : outerRadius) : Math.max(220, Math.min(360, total * 28));
+    const angle = (ringSlot / Math.max(1, slots)) * Math.PI * 2 + (isInner ? 0.22 : 0);
+    return {
+      x: Math.cos(angle) * ringRadius + outerRadius + 280,
+      y: Math.sin(angle) * ringRadius + outerRadius + 240,
+    };
+  }
   const communityAngle = (((node.community ?? 1) - 1) / Math.max(1, communityCount)) * Math.PI * 2;
   const localAngle = (communityIndex / Math.max(1, communitySize)) * Math.PI * 2;
-  const localRadius = Math.max(80, Math.min(180, communitySize * 28));
+  const localRadius = Math.max(130, Math.min(320, communitySize * 34));
   return {
     x: Math.cos(communityAngle) * radius + Math.cos(localAngle) * localRadius + radius + 260,
     y: Math.sin(communityAngle) * radius + Math.sin(localAngle) * localRadius + radius + 180 + index * 0.01,

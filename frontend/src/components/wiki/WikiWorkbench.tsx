@@ -27,7 +27,7 @@ import { emptyFilters, type WikiPageFilters, WikiPageDirectory, WikiPagePanel } 
 
 type WikiTab = "pages" | "graph" | "lint" | "crystallize";
 
-const defaultGraphOptions: WikiGraphOptions = { q: "", maxEdges: 80, includeWeak: false };
+const defaultGraphOptions: WikiGraphOptions = { q: "", maxEdges: 40, includeWeak: false };
 
 export interface WikiResourceContext {
   filters: WikiPageFilters;
@@ -402,7 +402,7 @@ function WikiResourcePane({ resources, pageDirectory }: { resources?: React.Reac
 
 function graphParams(options: WikiGraphOptions): Record<string, string> {
   return {
-    max_edges: String(Math.max(20, Math.min(300, options.maxEdges || 80))),
+    max_edges: String(Math.max(20, Math.min(300, options.maxEdges || 40))),
     include_weak: String(Boolean(options.includeWeak)),
     ...(options.q.trim() ? { q: options.q.trim() } : {}),
   };
