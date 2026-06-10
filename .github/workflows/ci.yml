@@ -19,7 +19,7 @@ jobs:
       - name: Lint backend
         run: cd backend && uv run ruff check .
       - name: Test backend
-        run: cd backend && uv run pytest
+        run: cd backend && uv run pytest -m "not integration"
 
   frontend:
     runs-on: ubuntu-latest

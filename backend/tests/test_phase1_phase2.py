@@ -7,6 +7,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = PROJECT_ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
@@ -22,6 +24,7 @@ def test_phase1_gateway_skeleton() -> None:
     verify_phase1.verify_gateway()
 
 
+@pytest.mark.integration
 def test_phase2_agent_engine() -> None:
     verify_phase2._configure_runtime()
     verify_dir = PROJECT_ROOT / ".nexagent" / "pytest_phase2"

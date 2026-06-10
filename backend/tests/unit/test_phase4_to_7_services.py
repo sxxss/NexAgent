@@ -53,7 +53,7 @@ async def test_subagent_submit_status(monkeypatch):
     async def fake_invoke_chat(*args, **kwargs):
         return {"response": "done", "thread_id": "t1"}
 
-    async def fake_resolve(task):
+    async def fake_resolve(task, **kwargs):
         return "chatbot", {"tools": ["none"], "model": "fake"}
 
     monkeypatch.setattr("nexagent.services.chat_service.invoke_chat", fake_invoke_chat)

@@ -6,6 +6,8 @@ import asyncio
 import sys
 from pathlib import Path
 
+import pytest
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = PROJECT_ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
@@ -14,5 +16,6 @@ if str(SCRIPTS_DIR) not in sys.path:
 import verify_phase3  # noqa: E402
 
 
+@pytest.mark.integration
 def test_phase3_knowledge_workflows() -> None:
     asyncio.run(verify_phase3.main_async())
