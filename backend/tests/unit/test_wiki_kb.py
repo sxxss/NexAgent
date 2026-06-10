@@ -236,44 +236,24 @@ async def test_wiki_compile_clears_stale_reindex_flag(monkeypatch):
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_wiki_llm_compile_invocation_times_out(monkeypatch):
-    from nexagent.knowledge.implementations.wiki import compile as compile_module
+async def test_wiki_llm_compile_invocation_has_no_fixed_timeout(monkeypatch):
     from nexagent.knowledge.manager import reset_manager
 
     class SlowLLM:
         async def ainvoke(self, messages):
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.02)
+            return SimpleNamespace(content="ok")
 
-    work_dir = _work_dir("compile-timeout")
+    work_dir = _work_dir("compile-no-fixed-timeout")
     try:
         manager = reset_manager(str(work_dir))
         kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
         backend = manager._find_backend(kb_meta.kb_id)
-        monkeypatch.delenv("NEXAGENT_WIKI_LLM_TIMEOUT_S", raising=False)
-        monkeypatch.setattr(compile_module, "DEFAULT_WIKI_LLM_TIMEOUT_S", 0.01)
+        monkeypatch.setenv("NEXAGENT_WIKI_LLM_TIMEOUT_S", "0.001")
 
-        with pytest.raises(TimeoutError, match="Wiki 知识库编译超时"):
-            await backend._invoke_wiki_llm(SlowLLM(), [])
-    finally:
-        reset_manager()
-        shutil.rmtree(work_dir, ignore_errors=True)
+        response = await backend._invoke_wiki_llm(SlowLLM(), [])
 
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_wiki_llm_timeout_env_cannot_lower_default(monkeypatch):
-    from nexagent.knowledge.implementations.wiki import compile as compile_module
-    from nexagent.knowledge.manager import reset_manager
-
-    work_dir = _work_dir("compile-timeout-floor")
-    try:
-        manager = reset_manager(str(work_dir))
-        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
-        backend = manager._find_backend(kb_meta.kb_id)
-        monkeypatch.setattr(compile_module, "DEFAULT_WIKI_LLM_TIMEOUT_S", 90.0)
-        monkeypatch.setenv("NEXAGENT_WIKI_LLM_TIMEOUT_S", "30")
-
-        assert backend._wiki_llm_timeout_s() == 90.0
+        assert response.content == "ok"
     finally:
         reset_manager()
         shutil.rmtree(work_dir, ignore_errors=True)
@@ -560,36 +540,34 @@ async def test_wiki_compile_creates_fallback_entities_for_linked_source_terms(mo
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_wiki_compile_falls_back_to_local_pages_when_llm_times_out(monkeypatch):
+async def test_wiki_compile_records_failure_when_llm_times_out(monkeypatch):
     from nexagent.knowledge.manager import reset_manager
 
     async def fake_compile(_kb_id, _file_id, _file_meta, _markdown):
-        raise TimeoutError("Wiki 知识库编译超时（90s）")
+        raise TimeoutError("provider timed out")
 
-    work_dir = _work_dir("compile-local-fallback")
+    work_dir = _work_dir("compile-timeout-failure")
     try:
         manager = reset_manager(str(work_dir))
-        kb_meta = await manager.create_kb(name="Wiki", kb_type="wiki")
+        kb_meta = await manager.create_kb(name="Wiki", description="Project memory", kb_type="wiki")
+        file_meta = await manager.add_file(
+            kb_meta.kb_id,
+            "NexAgent 开源产品开发计划.md",
+            "# NexAgent 开源产品开发计划\n\n## MVP\n\nNexAgent 采用 MVP 策略。".encode(),
+        )
+        await manager.parse_file(kb_meta.kb_id, file_meta.file_id)
         backend = manager._find_backend(kb_meta.kb_id)
         monkeypatch.setattr(backend, "_compile_markdown_with_llm", fake_compile)
 
-        pages = await backend._compile_markdown_file(
-            kb_meta.kb_id,
-            "file-1",
-            SimpleNamespace(filename="NexAgent 开源产品开发计划.md"),
-            "# NexAgent 开源产品开发计划\n\n## MVP\n\nNexAgent 采用 MVP 策略。",
-        )
+        result = await backend.compile_wiki(kb_meta.kb_id, force=True)
+        pages = backend.list_wiki_pages(kb_meta.kb_id)["pages"]
 
-        page_ids = {page["id"] for page in pages}
-        source = backend.get_wiki_page(kb_meta.kb_id, "source:nexagent-开源产品开发计划")
-        topic = backend.get_wiki_page(kb_meta.kb_id, "topic:mvp")
-
-        assert "source:nexagent-开源产品开发计划" in page_ids
-        assert "topic:mvp" in page_ids
-        assert source["confidence"] == "UNVERIFIED"
-        assert topic["confidence"] == "UNVERIFIED"
-        assert "本地降级" in source["content"]
-        assert "NexAgent 采用 MVP 策略" in topic["content"]
+        assert result["processed"] == 0
+        assert result["failed"] == 1
+        assert result["items"] == [
+            {"file_id": file_meta.file_id, "status": "error", "error": "provider timed out"}
+        ]
+        assert pages == []
     finally:
         reset_manager()
         shutil.rmtree(work_dir, ignore_errors=True)

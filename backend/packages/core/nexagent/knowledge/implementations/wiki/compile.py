@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import asyncio
 import json
-import os
 import re
 import textwrap
 from datetime import UTC, datetime
@@ -16,8 +14,6 @@ from nexagent.knowledge.implementations.wiki.constants import (
     WIKI_PROMPT_VERSION,
 )
 
-DEFAULT_WIKI_LLM_TIMEOUT_S = 90.0
-
 
 class WikiCompileMixin:
     async def _compile_markdown_file(
@@ -27,10 +23,7 @@ class WikiCompileMixin:
         file_meta,
         markdown: str,
     ) -> list[dict]:
-        try:
-            compiled = await self._compile_markdown_with_llm(kb_id, file_id, file_meta, markdown)
-        except TimeoutError as exc:
-            compiled = self._local_compiled_payload(file_meta, markdown, str(exc))
+        compiled = await self._compile_markdown_with_llm(kb_id, file_id, file_meta, markdown)
         source = compiled.get("source") or {}
         title = self._clean_wiki_title(source.get("title") or Path(file_meta.filename).stem or file_id)
         topics = self._clean_page_items(compiled.get("topics"), "topics")[:8]
@@ -161,21 +154,7 @@ class WikiCompileMixin:
             return normalized
 
     async def _invoke_wiki_llm(self, llm, messages: list) -> Any:
-        timeout_s = self._wiki_llm_timeout_s()
-        try:
-            return await asyncio.wait_for(llm.ainvoke(messages), timeout=timeout_s)
-        except TimeoutError as exc:
-            raise TimeoutError(f"Wiki 知识库编译超时（{timeout_s:g}s）") from exc
-
-    def _wiki_llm_timeout_s(self) -> float:
-        raw = os.getenv("NEXAGENT_WIKI_LLM_TIMEOUT_S", "").strip()
-        if not raw:
-            return DEFAULT_WIKI_LLM_TIMEOUT_S
-        try:
-            value = float(raw)
-        except ValueError:
-            return DEFAULT_WIKI_LLM_TIMEOUT_S
-        return max(value, DEFAULT_WIKI_LLM_TIMEOUT_S) if value > 0 else DEFAULT_WIKI_LLM_TIMEOUT_S
+        return await llm.ainvoke(messages)
 
     def _read_purpose(self, kb_id: str) -> str:
         path = self._db_root(kb_id) / "purpose.md"
@@ -234,63 +213,6 @@ class WikiCompileMixin:
             """
         ).strip()
         return [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
-
-    def _local_compiled_payload(self, file_meta, markdown: str, reason: str) -> dict:
-        filename = str(getattr(file_meta, "filename", "") or "")
-        headings = self._extract_headings(markdown)
-        source_title = self._clean_wiki_title(headings[0] if headings else Path(filename).stem)
-        summary = self._summarize(markdown)
-        topic_titles = [
-            heading
-            for heading in headings
-            if self._normalize_link_key(heading) != self._normalize_link_key(source_title)
-        ][:8]
-        topics = [
-            {
-                "title": title,
-                "summary": self._section_excerpt(markdown, title),
-                "content": (
-                    f"本页由本地降级生成，原因：{reason}\n\n"
-                    f"{self._section_excerpt(markdown, title)}"
-                ),
-                "confidence": "UNVERIFIED",
-            }
-            for title in topic_titles
-        ]
-        known_keys = {
-            self._normalize_link_key(source_title),
-            *(self._normalize_link_key(title) for title in topic_titles),
-        }
-        entities = []
-        for entity in self._extract_entities(markdown):
-            key = self._normalize_link_key(entity)
-            if not key or key in known_keys:
-                continue
-            known_keys.add(key)
-            entities.append(
-                {
-                    "title": entity,
-                    "summary": f"源文档中出现的实体：{entity}",
-                    "content": (
-                        f"本页由本地降级生成，原因：{reason}\n\n"
-                        f"{entity} 与 [[{source_title}]] 相关。"
-                    ),
-                    "confidence": "UNVERIFIED",
-                }
-            )
-            if len(entities) >= 12:
-                break
-        return {
-            "source": {
-                "title": source_title,
-                "summary": f"本地降级生成：{summary}",
-                "key_points": topic_titles or [summary[:120]],
-                "claims": [],
-                "confidence": "UNVERIFIED",
-            },
-            "topics": topics,
-            "entities": entities,
-        }
 
     def _build_repair_prompt(self, bad_output: str, error: str) -> list[dict]:
         return [
@@ -671,24 +593,6 @@ class WikiCompileMixin:
                 }
             )
         return fallback
-
-    def _section_excerpt(self, markdown: str, title: str) -> str:
-        title_key = self._normalize_link_key(title)
-        lines = (markdown or "").splitlines()
-        collecting = False
-        collected: list[str] = []
-        for line in lines:
-            match = re.match(r"^#{1,6}\s+(.+)$", line.strip())
-            if match:
-                current_key = self._normalize_link_key(match.group(1).strip(" #"))
-                if collecting and current_key != title_key:
-                    break
-                collecting = current_key == title_key
-                continue
-            if collecting:
-                collected.append(line)
-        excerpt = "\n".join(collected).strip()
-        return excerpt[:1200] if excerpt else self._summarize(markdown)
 
     def _normalize_wikilinks(
         self,
