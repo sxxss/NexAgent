@@ -58,6 +58,47 @@ class MemoryStore:
 _cache: dict[str, MemoryStore] | None = None
 
 
+def memory_enabled() -> bool:
+    """Master switch — whether long-term memory is active at all."""
+    try:
+        from nexagent.config import get_config
+
+        return bool(get_config().memory.enabled)
+    except Exception:
+        return True
+
+
+def injection_enabled() -> bool:
+    """Whether saved facts may be injected into the system prompt."""
+    try:
+        from nexagent.config import get_config
+
+        cfg = get_config().memory
+        return bool(cfg.enabled and cfg.injection_enabled)
+    except Exception:
+        return True
+
+
+def extraction_enabled() -> bool:
+    """Whether new facts may be extracted from conversations."""
+    try:
+        from nexagent.config import get_config
+
+        cfg = get_config().memory
+        return bool(cfg.enabled and cfg.extraction_enabled)
+    except Exception:
+        return True
+
+
+def _max_facts() -> int:
+    try:
+        from nexagent.config import get_config
+
+        return max(1, int(get_config().memory.max_facts))
+    except Exception:
+        return 100
+
+
 def _path() -> Path:
     from nexagent.config import get_config
 
@@ -65,7 +106,7 @@ def _path() -> Path:
     if configured:
         return Path(configured)
     root = Path(os.environ.get("NEXAGENT_DATA_DIR", ".nexagent"))
-    storage = getattr(get_config(), "memory_storage_path", "")
+    storage = getattr(get_config().memory, "storage_path", "")
     return Path(storage) if storage else root / "memory.json"
 
 
@@ -144,7 +185,16 @@ def delete_fact(user_id: str, fact_id: str) -> bool:
     return True
 
 
-def top_facts_for_prompt(user_id: str, limit: int = 15) -> str:
+def top_facts_for_prompt(user_id: str, limit: int | None = None) -> str:
+    if not injection_enabled():
+        return ""
+    if limit is None:
+        try:
+            from nexagent.config import get_config
+
+            limit = max(1, int(get_config().memory.max_injection_facts))
+        except Exception:
+            limit = 15
     store = get_memory(user_id)
     facts = sorted(store.facts, key=lambda fact: (fact.confidence, fact.created_at), reverse=True)[:limit]
     parts = []
@@ -163,8 +213,9 @@ def _touch(store: MemoryStore) -> None:
     store.history.update_count += 1
 
 
-def _trim(store: MemoryStore, max_facts: int = 100) -> None:
-    store.facts = sorted(store.facts, key=lambda fact: (fact.confidence, fact.created_at), reverse=True)[:max_facts]
+def _trim(store: MemoryStore, max_facts: int | None = None) -> None:
+    limit = max_facts if max_facts is not None else _max_facts()
+    store.facts = sorted(store.facts, key=lambda fact: (fact.confidence, fact.created_at), reverse=True)[:limit]
 
 
 def _normalize(value: str) -> str:

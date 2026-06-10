@@ -45,6 +45,8 @@ async def extract_and_save(
     if not items:
         return []
 
+    min_confidence = _min_confidence()
+
     saved = []
     try:
         from nexagent.agents.memory import upsert_fact
@@ -53,6 +55,8 @@ async def extract_and_save(
 
         async with AsyncSessionLocal() as session:
             for item in items:
+                if float(item.get("importance", 0.5)) < min_confidence:
+                    continue
                 entry = MemoryEntry(
                     id=str(uuid.uuid4()),
                     user_id=user_id,
@@ -80,12 +84,34 @@ async def extract_and_save(
     return saved
 
 
+def _min_confidence() -> float:
+    try:
+        from nexagent.config import get_config
+
+        return float(get_config().memory.min_confidence)
+    except Exception:
+        return 0.0
+
+
+def _extraction_model(model_name: str) -> str:
+    """Prefer the configured memory model; fall back to the conversation model."""
+    try:
+        from nexagent.config import get_config
+
+        configured = get_config().memory.model_name
+        if configured:
+            return configured
+    except Exception:
+        pass
+    return model_name
+
+
 async def _extract(model_name: str, conversation: str) -> list[dict]:
     from langchain_core.messages import HumanMessage
 
     from nexagent.models.factory import load_chat_model_async
 
-    llm = await load_chat_model_async(model_name)
+    llm = await load_chat_model_async(_extraction_model(model_name))
     prompt = _EXTRACTION_PROMPT.format(conversation=conversation[:3000])
     response = await llm.ainvoke([HumanMessage(content=prompt)])
 

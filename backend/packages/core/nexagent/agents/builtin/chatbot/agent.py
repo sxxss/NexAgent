@@ -260,10 +260,11 @@ def _build_system_prompt(context: BaseContext) -> str:
         "assets/ instead of putting everything in SKILL.md. Put reusable automation in scripts/ as ordinary files "
         "that can be run from the standard `/mnt/skills/<skill-id>/scripts/...` runtime path."
     )
-    if context.user_id:
+    if context.user_id and context.memory_enabled:
         try:
             from nexagent.agents.memory import top_facts_for_prompt
 
+            # top_facts_for_prompt already honors the global injection switch.
             memory_block = top_facts_for_prompt(context.user_id)
             if memory_block:
                 base += "\n\n## Long-Term Memory\nUse these facts when relevant:\n" + memory_block

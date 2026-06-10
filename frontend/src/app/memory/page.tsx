@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
-import { createMemory, deleteMemory, fetchMemories, fetchMemoryStats, updateMemory, type MemoryEntry } from "@/lib/api";
+import { createMemory, deleteMemory, fetchMemories, fetchMemoryConfig, fetchMemoryStats, updateMemory, updateMemoryConfig, type MemoryConfig, type MemoryEntry } from "@/lib/api";
 
 const USER_ID = "default";
 
@@ -48,7 +48,9 @@ export default function MemoryPage() {
       />
 
       <main className="min-h-0 flex-1 overflow-y-auto p-6">
-        <div className="grid gap-4 md:grid-cols-4">
+        <MemoryConfigPanel />
+
+        <div className="mt-5 grid gap-4 md:grid-cols-4">
           <Stat label="全部记忆" value={stats.total} icon={Brain} />
           <Stat label="事实" value={stats.by_type.fact ?? 0} icon={Lightbulb} />
           <Stat label="偏好" value={stats.by_type.preference ?? 0} icon={Star} />
@@ -127,6 +129,72 @@ function MemoryModal({ open, initial, onClose, onSaved }: { open: boolean; initi
         <button type="button" disabled={!form.key.trim() || !form.value.trim() || mutation.isPending} onClick={() => mutation.mutate()} className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-slate-950 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50">保存</button>
       </div>
     </Dialog>
+  );
+}
+
+function MemoryConfigPanel() {
+  const queryClient = useQueryClient();
+  const configQuery = useQuery({ queryKey: ["memory-config"], queryFn: fetchMemoryConfig });
+  const mutation = useMutation({
+    mutationFn: (patch: Partial<MemoryConfig>) => updateMemoryConfig({ ...(configQuery.data as MemoryConfig), ...patch }),
+    onSuccess: (data) => queryClient.setQueryData(["memory-config"], data),
+  });
+
+  const config = configQuery.data;
+  const saving = mutation.isPending;
+  const on = config?.enabled ?? false;
+
+  return (
+    <Card>
+      <CardContent className="p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${on ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-400"}`}><Brain size={18} /></div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold text-slate-950">长期记忆总开关</h2>
+                <Badge variant="secondary">{on ? "已启用" : "已关闭"}</Badge>
+              </div>
+              <p className="mt-1 max-w-xl text-xs leading-5 text-slate-500">关闭后，所有 Agent 都不会再注入或抽取长期记忆（已保存的记忆不会被删除）。也可在 config.yaml 或环境变量 NEXAGENT_MEMORY_ENABLED 中配置。</p>
+            </div>
+          </div>
+          <Toggle checked={on} disabled={!config || saving} onChange={(v) => mutation.mutate({ enabled: v })} />
+        </div>
+
+        <div className={`mt-4 grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2 ${on ? "" : "pointer-events-none opacity-50"}`}>
+          <SubToggle label="记忆召回（注入提示词）" desc="把已保存的事实注入到系统提示中" checked={config?.injection_enabled ?? false} disabled={!config || !on || saving} onChange={(v) => mutation.mutate({ injection_enabled: v })} />
+          <SubToggle label="记忆抽取（写入新记忆）" desc="对话结束后自动从内容中提取要点" checked={config?.extraction_enabled ?? false} disabled={!config || !on || saving} onChange={(v) => mutation.mutate({ extraction_enabled: v })} />
+        </div>
+        {mutation.isError ? <p className="mt-3 text-xs text-rose-600">保存失败，请重试。</p> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SubToggle({ label, desc, checked, disabled, onChange }: { label: string; desc: string; checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
+      <div className="min-w-0">
+        <p className="text-xs font-semibold text-slate-700">{label}</p>
+        <p className="mt-0.5 text-[11px] leading-4 text-slate-400">{desc}</p>
+      </div>
+      <Toggle checked={checked} disabled={disabled} onChange={onChange} />
+    </div>
+  );
+}
+
+function Toggle({ checked, disabled, onChange }: { checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${checked ? "bg-emerald-500" : "bg-slate-300"}`}
+    >
+      <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${checked ? "translate-x-5" : "translate-x-0.5"}`} />
+    </button>
   );
 }
 

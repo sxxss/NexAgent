@@ -222,6 +222,31 @@ class TracingConfig:
 
 
 @dataclass
+class MemoryConfig:
+    """Global long-term memory mechanism (DeerFlow-inspired).
+
+    ``enabled`` is the master switch. ``injection_enabled`` / ``extraction_enabled``
+    give finer control over recall (injecting saved facts into the system prompt)
+    and writing (extracting new facts from conversations). All of them are gated
+    by ``enabled`` first, and additionally by each Agent's ``memory_enabled`` flag.
+    """
+
+    enabled: bool = True
+    injection_enabled: bool = True
+    extraction_enabled: bool = True
+    # Maximum facts kept per user in the JSON fact store.
+    max_facts: int = 100
+    # Maximum facts injected into the system prompt per turn.
+    max_injection_facts: int = 15
+    # Discard extracted facts below this confidence/importance.
+    min_confidence: float = 0.0
+    # Model used for extraction. Empty means reuse the conversation model.
+    model_name: str = ""
+    # Override path for the JSON fact store. Empty means the default location.
+    storage_path: str = ""
+
+
+@dataclass
 class AppConfig:
     """Root application configuration."""
 
@@ -233,6 +258,7 @@ class AppConfig:
     mcp_servers: list[MCPServerConfig] = field(default_factory=list)
     sandbox: SandboxConfig = field(default_factory=SandboxConfig)
     tracing: TracingConfig = field(default_factory=TracingConfig)
+    memory: MemoryConfig = field(default_factory=MemoryConfig)
     debug: bool = False
     config_version: int = CONFIG_VERSION
 
@@ -729,6 +755,18 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
         ),
     )
 
+    memory_raw = raw.get("memory", {}) if isinstance(raw.get("memory"), dict) else {}
+    memory = MemoryConfig(
+        enabled=_as_bool(_env_or_config("NEXAGENT_MEMORY_ENABLED", memory_raw.get("enabled"), "true")),
+        injection_enabled=_as_bool(memory_raw.get("injection_enabled", True)),
+        extraction_enabled=_as_bool(memory_raw.get("extraction_enabled", True)),
+        max_facts=int(memory_raw.get("max_facts", 100) or 100),
+        max_injection_facts=int(memory_raw.get("max_injection_facts", 15) or 15),
+        min_confidence=float(memory_raw.get("min_confidence", 0.0) or 0.0),
+        model_name=str(memory_raw.get("model_name", "") or ""),
+        storage_path=str(memory_raw.get("storage_path", "") or ""),
+    )
+
     _config = AppConfig(
         models=models,
         knowledge=knowledge,
@@ -738,6 +776,7 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
         mcp_servers=mcp_servers,
         sandbox=sandbox,
         tracing=tracing,
+        memory=memory,
         debug=raw.get("debug", False),
         config_version=int(raw.get("config_version", CONFIG_VERSION)),
         skills_dir=raw.get("skills_dir", ""),

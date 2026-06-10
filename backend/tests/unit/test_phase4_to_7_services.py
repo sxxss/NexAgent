@@ -22,6 +22,32 @@ def test_fact_memory_store_dedupes(monkeypatch):
 
 
 @pytest.mark.unit
+def test_memory_master_switch_gates_injection(monkeypatch):
+    from nexagent.agents.memory import injection_enabled, reload_memory, top_facts_for_prompt, upsert_fact
+    from nexagent.config import reset_config_cache
+
+    base = Path(__file__).resolve().parents[2] / ".test-artifacts" / "memory-switch"
+    base.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("NEXAGENT_MEMORY_PATH", str(base / "memory.json"))
+    reload_memory()
+    upsert_fact("u2", "Prefers Python", category="preference", confidence=0.9)
+
+    # Master switch ON -> facts are injectable.
+    monkeypatch.setenv("NEXAGENT_MEMORY_ENABLED", "1")
+    reset_config_cache()
+    assert injection_enabled() is True
+    assert "Prefers Python" in top_facts_for_prompt("u2")
+
+    # Master switch OFF -> injection suppressed regardless of stored facts.
+    monkeypatch.setenv("NEXAGENT_MEMORY_ENABLED", "0")
+    reset_config_cache()
+    assert injection_enabled() is False
+    assert top_facts_for_prompt("u2") == ""
+
+    reset_config_cache()
+
+
+@pytest.mark.unit
 def test_api_key_create_verify_and_revoke(monkeypatch):
     from app.gateway.auth.manager import create_api_key, revoke_api_key, verify_api_key
 

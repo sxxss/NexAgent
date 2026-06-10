@@ -654,8 +654,12 @@ async def _save_memory_from_turn(
     assistant_message: str,
 ) -> None:
     try:
+        from nexagent.agents.memory import extraction_enabled
         from nexagent.agents.middlewares.memory_extractor import extract_and_save
 
+        # Master switch (config.memory.enabled + extraction_enabled) gates writes.
+        if not extraction_enabled():
+            return
         conversation = f"User: {user_message}\nAssistant: {assistant_message}"
         await extract_and_save(user_id, agent_id, model_name, conversation)
     except Exception as exc:

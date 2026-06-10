@@ -213,6 +213,11 @@ class BaseContext:
         },
     )
 
+    memory_enabled: bool = field(
+        default=False,
+        metadata={"hide": True, "description": "Whether long-term memory is enabled for this Agent."},
+    )
+
     def update_from_dict(self, data: dict) -> None:
         """Apply a dict of values onto this context (ignores unknown keys)."""
         for key, value in data.items():

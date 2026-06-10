@@ -119,6 +119,16 @@ class ImageConfigUpdate(BaseModel):
     size: str = "1024x1024"
 
 
+class MemoryConfigUpdate(BaseModel):
+    enabled: bool = True
+    injection_enabled: bool = True
+    extraction_enabled: bool = True
+    max_facts: int = 100
+    max_injection_facts: int = 15
+    min_confidence: float = 0.0
+    model_name: str = ""
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _invalidate_model_cache() -> None:
@@ -438,6 +448,52 @@ async def update_search_config(body: SearchConfigUpdate):
     _write_config_yaml(data, path)
     reset_config_cache()
     return _search_config_payload()
+
+
+def _memory_config_payload() -> dict:
+    from nexagent.config import get_config
+
+    cfg = get_config().memory
+    return {
+        "enabled": cfg.enabled,
+        "injection_enabled": cfg.injection_enabled,
+        "extraction_enabled": cfg.extraction_enabled,
+        "max_facts": cfg.max_facts,
+        "max_injection_facts": cfg.max_injection_facts,
+        "min_confidence": cfg.min_confidence,
+        "model_name": cfg.model_name,
+    }
+
+
+@router.get("/memory")
+async def get_memory_config():
+    return _memory_config_payload()
+
+
+@router.put("/memory")
+async def update_memory_config(body: MemoryConfigUpdate):
+    from nexagent.config import reset_config_cache
+
+    if not 1 <= body.max_facts <= 1000:
+        raise HTTPException(status_code=422, detail="max_facts must be between 1 and 1000")
+    if not 1 <= body.max_injection_facts <= 100:
+        raise HTTPException(status_code=422, detail="max_injection_facts must be between 1 and 100")
+    if not 0.0 <= body.min_confidence <= 1.0:
+        raise HTTPException(status_code=422, detail="min_confidence must be between 0.0 and 1.0")
+
+    data, path = _read_config_yaml()
+    section = dict(data.get("memory") or {})
+    section["enabled"] = body.enabled
+    section["injection_enabled"] = body.injection_enabled
+    section["extraction_enabled"] = body.extraction_enabled
+    section["max_facts"] = body.max_facts
+    section["max_injection_facts"] = body.max_injection_facts
+    section["min_confidence"] = body.min_confidence
+    section["model_name"] = body.model_name.strip()
+    data["memory"] = section
+    _write_config_yaml(data, path)
+    reset_config_cache()
+    return _memory_config_payload()
 
 
 def _speech_config_payload() -> dict:

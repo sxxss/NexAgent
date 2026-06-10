@@ -393,6 +393,22 @@ function AgentFormPanel({
               </label>
             )}
           />
+          <Controller
+            control={form.control}
+            name="memory_enabled"
+            render={({ field }) => (
+              <label className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm">
+                <span className="flex flex-col gap-0.5">
+                  <span className="flex items-center gap-2 text-slate-700">
+                    <Brain size={14} />
+                    启用长期记忆
+                  </span>
+                  <span className="pl-6 text-[11px] leading-4 text-slate-400">自动记住并在后续对话中调用关于用户的事实（需在「记忆」页保持总开关开启）</span>
+                </span>
+                <input type="checkbox" checked={field.value} onChange={(event) => field.onChange(event.target.checked)} />
+              </label>
+            )}
+          />
           <button
             type="submit"
             disabled={saving}

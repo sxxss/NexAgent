@@ -87,3 +87,16 @@ sandbox:
   enabled: true
   timeout_seconds: 30
   max_output_chars: 8000
+
+# Long-term memory (global). `enabled` is the master switch; turning it off
+# disables both memory injection and extraction for every Agent regardless of
+# their per-Agent `memory_enabled` flag. Also overridable via the
+# NEXAGENT_MEMORY_ENABLED env var (which takes precedence over this file).
+memory:
+  enabled: true            # master switch
+  injection_enabled: true  # inject saved facts into the system prompt (recall)
+  extraction_enabled: true # extract new facts from conversations (write)
+  max_facts: 100           # max facts stored per user
+  max_injection_facts: 15  # max facts injected per turn
+  min_confidence: 0.0      # drop extracted facts below this importance (0.0-1.0)
+  model_name: ''           # model used for extraction; empty reuses the chat model

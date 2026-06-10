@@ -1762,6 +1762,32 @@ export async function fetchMemoryStats(userId: string): Promise<{ total: number;
   return res.json();
 }
 
+export interface MemoryConfig {
+  enabled: boolean;
+  injection_enabled: boolean;
+  extraction_enabled: boolean;
+  max_facts: number;
+  max_injection_facts: number;
+  min_confidence: number;
+  model_name: string;
+}
+
+export async function fetchMemoryConfig(): Promise<MemoryConfig> {
+  const res = await fetch(`${BASE}/settings/memory`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function updateMemoryConfig(body: MemoryConfig): Promise<MemoryConfig> {
+  const res = await fetch(`${BASE}/settings/memory`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`);
+  return res.json();
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
 export async function fetchDashboardSummary(days = 7): Promise<DashboardSummary | null> {
