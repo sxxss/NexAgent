@@ -13,8 +13,8 @@ import posixpath
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from zipfile import BadZipFile, ZipFile
 from xml.etree import ElementTree as ET
+from zipfile import BadZipFile, ZipFile
 
 logger = logging.getLogger(__name__)
 
@@ -76,19 +76,25 @@ class DocumentParser:
                     parser_chain.append({"engine": "pypdf", "status": "ok"})
             case ".docx" | ".doc":
                 content = _parse_docx(str(path))
+                parser_chain.append({"engine": "docx", "status": "ok"})
             case ".pptx" | ".ppt":
                 content = _parse_pptx(str(path))
+                parser_chain.append({"engine": "pptx", "status": "ok"})
             case ".xlsx":
                 content, metadata_extra = _parse_xlsx(path)
                 parser_chain.append({"engine": "xlsx", "status": "ok"})
             case ".html" | ".htm":
                 content = _parse_html(str(path))
+                parser_chain.append({"engine": "html", "status": "ok"})
             case ".png" | ".jpg" | ".jpeg" | ".bmp" | ".tiff" | ".tif":
                 content = _parse_image(str(path), use_ocr=config.use_ocr)
+                parser_chain.append({"engine": "ocr", "status": "ok"})
             case ".md" | ".markdown" | ".txt" | ".rst" | ".csv" | ".json" | ".yaml" | ".yml":
                 content = _parse_text(str(path))
+                parser_chain.append({"engine": "text", "status": "ok"})
             case _:
                 content = _parse_text(str(path))
+                parser_chain.append({"engine": "text", "status": "ok"})
 
         metadata = _base_metadata(path, content, "fallback")
         if parser_chain:

@@ -18,10 +18,32 @@ def test_document_parser_returns_parsed_document_for_text():
     parsed = DocumentParser().parse(path)
 
     assert parsed.content == "# Title\n\nBody"
-    assert parsed.metadata["parser"] == "fallback"
+    assert parsed.metadata["parser"] == "text"
+    assert parsed.metadata["parser_chain"] == [{"engine": "text", "status": "ok"}]
     assert parsed.metadata["filename"] == "note.md"
     assert parsed.metadata["content_chars"] == len(parsed.content)
     assert parsed.metadata["content_sha256"]
+
+
+@pytest.mark.unit
+def test_document_parser_records_docx_fallback_success():
+    pytest.importorskip("docx")
+    from docx import Document
+    from nexagent.knowledge.parser import DocumentParser, ParseConfig
+
+    work_dir = Path(__file__).resolve().parents[2] / ".test-artifacts" / "parser"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    path = work_dir / "consent.docx"
+    doc = Document()
+    doc.add_paragraph("导师责任")
+    doc.add_paragraph("暑期留宿申请")
+    doc.save(path)
+
+    parsed = DocumentParser().parse(path, ParseConfig(prefer_docling=False))
+
+    assert "导师责任" in parsed.content
+    assert parsed.metadata["parser"] == "docx"
+    assert parsed.metadata["parser_chain"] == [{"engine": "docx", "status": "ok"}]
 
 
 @pytest.mark.unit
