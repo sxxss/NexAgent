@@ -554,10 +554,53 @@ export interface SkillHistoryRecord {
   matches?: number;
   scanner?: { decision?: string; reason?: string };
 }
+export type CreatorKind = "agent" | "skill";
+
 export interface CreatorDraftResponse {
-  kind: "agent" | "skill" | "mcp";
+  kind: CreatorKind;
   summary: string;
   draft: Record<string, unknown>;
+  quality: CreatorQuality;
+  resource_plan: CreatorResourcePlan;
+}
+export interface CreatorChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+export interface CreatorQualityCheck {
+  id: string;
+  label: string;
+  status: "pass" | "review" | "fail" | string;
+  message: string;
+}
+export interface CreatorQuality {
+  score: number;
+  status: "ready" | "review" | "blocked" | string;
+  checks: CreatorQualityCheck[];
+  missing: string[];
+  warnings: string[];
+  recommendation: string;
+}
+export interface CreatorResourceItem {
+  kind: "tool" | "knowledge" | "skill" | "mcp" | "dependency" | string;
+  id: string;
+  label: string;
+  purpose: string;
+}
+export interface CreatorResourcePlan {
+  summary: string;
+  counts: Record<string, number>;
+  items: CreatorResourceItem[];
+}
+export interface CreatorChatResponse {
+  kind: CreatorKind;
+  thread_id: string;
+  message: string;
+  ready_to_save: boolean;
+  summary: string;
+  draft: Record<string, unknown>;
+  quality: CreatorQuality;
+  resource_plan: CreatorResourcePlan;
 }
 export interface SystemInfo {
   status: string; service: string; version: string;
@@ -2012,13 +2055,30 @@ export async function generateVideo(prompt: string, model?: string) {
   return res.json();
 }
 
-export async function draftCreator(kind: "agent" | "skill" | "mcp", goal: string, details: Record<string, string> = {}): Promise<CreatorDraftResponse> {
+export async function chatCreator(body: {
+  kind: CreatorKind;
+  message: string;
+  thread_id?: string;
+  messages?: CreatorChatMessage[];
+  draft?: Record<string, unknown>;
+  model?: string;
+}): Promise<CreatorChatResponse> {
+  const res = await fetch(`${BASE}/creator/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function draftCreator(kind: CreatorKind, goal: string, details: Record<string, string> = {}): Promise<CreatorDraftResponse> {
   const res = await fetch(`${BASE}/creator/${kind}/draft`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ goal, details }) });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`);
   return res.json();
 }
 
-export async function saveCreator(kind: "agent" | "skill" | "mcp", draft: Record<string, unknown>): Promise<{ saved: unknown; message: string }> {
+export async function saveCreator(kind: CreatorKind, draft: Record<string, unknown>): Promise<{ saved: unknown; message: string }> {
   const res = await fetch(`${BASE}/creator/${kind}/save`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draft }) });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`);
   return res.json();
