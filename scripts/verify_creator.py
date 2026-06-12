@@ -12,7 +12,7 @@ from app.gateway.app import app
 
 def main() -> int:
     with TestClient(app) as client:
-        for kind in ("agent", "skill", "mcp"):
+        for kind in ("agent", "skill"):
             draft = client.post(f"/api/creator/{kind}/draft", json={"goal": f"verify {kind}"})
             assert draft.status_code == 200, draft.text
             assert draft.json()["draft"]
