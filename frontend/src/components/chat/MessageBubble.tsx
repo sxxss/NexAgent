@@ -87,13 +87,13 @@ export function MessageBubble({ message }: { message: Message }) {
 
 function UserBubble({ message }: { message: Message }) {
   return (
-    <div className="flex justify-end py-2 animate-fade-up">
-      <div className="flex max-w-[78%] min-w-0 items-end gap-2.5">
-        <div className="min-w-0 rounded-2xl rounded-br-md bg-[#4f46e5] px-4 py-3 text-sm leading-[1.75] text-white shadow-[0_10px_22px_rgba(79,70,229,0.22)]">
+    <div className="flex justify-end py-1.5 animate-fade-up">
+      <div className="flex max-w-[min(84%,760px)] min-w-0 items-end gap-2">
+        <div className="min-w-0 rounded-2xl rounded-br-md bg-[#4f46e5] px-3.5 py-2.5 text-sm leading-7 text-white shadow-[0_8px_18px_rgba(79,70,229,0.20)]">
           <p className="whitespace-pre-wrap break-words">{cleanDisplayText(message.content)}</p>
         </div>
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#eef2ff] text-[#4f46e5] shadow-sm">
-          <User size={13} />
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#eef2ff] text-[#4f46e5] shadow-sm">
+          <User size={12} />
         </div>
       </div>
     </div>
@@ -116,15 +116,15 @@ function AssistantBubble({ message }: { message: Message }) {
   const showFinalCard = Boolean(displayContent || !message.isStreaming || !hasProcess);
 
   return (
-    <div className="flex items-start gap-3 py-2 animate-fade-up">
-      <div className="relative mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#4f46e5] text-white shadow-[0_10px_22px_rgba(79,70,229,0.22)]">
-        <Bot size={14} />
+    <div className="flex items-start gap-2.5 py-1.5 animate-fade-up">
+      <div className="relative mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#4f46e5] text-white shadow-[0_8px_18px_rgba(79,70,229,0.20)]">
+        <Bot size={13} />
         {message.isStreaming ? (
           <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-[#4f46e5]" />
         ) : null}
       </div>
 
-      <div className="min-w-0 max-w-[86%] flex-1 overflow-hidden">
+      <div className="min-w-0 max-w-[min(92%,920px)] flex-1 overflow-hidden">
         {hasProcess ? (
           <ThinkingBubble
             content={message.thinkingContent}
@@ -141,7 +141,7 @@ function AssistantBubble({ message }: { message: Message }) {
         {message.runtime ? <RuntimeResources runtime={message.runtime} /> : null}
 
         {showFinalCard ? (
-        <div className="min-w-0 overflow-hidden rounded-2xl rounded-tl-md border border-white/80 bg-white/88 px-4 py-3.5 text-sm leading-[1.75] text-slate-800 shadow-[0_12px_28px_rgba(83,101,132,0.09)]">
+        <div className="min-w-0 overflow-hidden rounded-2xl rounded-tl-md border border-slate-200/70 bg-white/74 px-4 py-3 text-sm leading-7 text-slate-800 shadow-[0_8px_20px_rgba(83,101,132,0.06)]">
           <div className="markdown-body">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayContent || (message.isStreaming ? "" : "")}</ReactMarkdown>
           </div>

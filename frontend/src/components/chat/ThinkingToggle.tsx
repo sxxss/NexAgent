@@ -62,7 +62,7 @@ export function ThinkingToggle({
         onClick={() => onOpenChange(!open)}
         title="思考模式"
         className={cn(
-          "flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-semibold shadow-sm transition",
+          "flex h-8 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-semibold shadow-sm transition",
           "border-slate-200 bg-white/80 text-slate-700 hover:border-[#c7d2fe] hover:bg-white hover:text-[#3730a3]",
         )}
       >

@@ -825,11 +825,11 @@ export default function ChatPage() {
   );
 
   const layoutClass = cn(
-    "grid h-full min-w-0 grid-cols-1 gap-3 overflow-hidden p-3 md:gap-4 md:p-4",
-    conversationCollapsed && inspectorCollapsed && "lg:grid-cols-[56px_minmax(0,1fr)]",
-    conversationCollapsed && !inspectorCollapsed && "lg:grid-cols-[56px_minmax(0,1fr)] xl:grid-cols-[56px_minmax(0,1fr)_320px]",
-    !conversationCollapsed && inspectorCollapsed && "lg:grid-cols-[236px_minmax(0,1fr)]",
-    !conversationCollapsed && !inspectorCollapsed && "lg:grid-cols-[236px_minmax(0,1fr)] xl:grid-cols-[236px_minmax(0,1fr)_320px]",
+    "grid h-full min-w-0 grid-cols-1 gap-2 overflow-hidden p-2 md:gap-3 md:p-3",
+    conversationCollapsed && inspectorCollapsed && "lg:grid-cols-[48px_minmax(0,1fr)]",
+    conversationCollapsed && !inspectorCollapsed && "lg:grid-cols-[48px_minmax(0,1fr)] xl:grid-cols-[48px_minmax(0,1fr)_300px]",
+    !conversationCollapsed && inspectorCollapsed && "lg:grid-cols-[220px_minmax(0,1fr)]",
+    !conversationCollapsed && !inspectorCollapsed && "lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)_300px]",
   );
 
   return (
@@ -849,17 +849,17 @@ export default function ChatPage() {
         }}
       />
 
-      <section className="relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-3xl border border-white/80 bg-white/60 shadow-[0_18px_46px_rgba(83,101,132,0.10)] backdrop-blur">
-        <header className="border-b border-slate-200/70 px-5 py-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex h-9 overflow-hidden rounded-xl border border-slate-200 bg-white/70 p-0.5 shadow-sm">
+      <section className="relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[22px] border border-white/75 bg-white/58 shadow-[0_14px_34px_rgba(83,101,132,0.09)] backdrop-blur">
+        <header className="border-b border-slate-200/70 px-3 py-2 sm:px-4">
+          <div className="no-scrollbar flex min-w-0 items-center gap-1.5 overflow-x-auto">
+            <div className="inline-flex h-8 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white/70 p-0.5 shadow-sm">
               {CHAT_MODES.map((mode) => (
                 <button
                   key={mode.id}
                   type="button"
                   onClick={() => switchMode(mode.id)}
                   className={cn(
-                    "px-3 text-xs font-semibold transition",
+                    "px-2.5 text-xs font-semibold transition",
                     selectedChatMode === mode.id
                       ? "brand-gradient rounded-[10px] text-white shadow-[0_8px_18px_rgba(79,70,229,0.28)]"
                       : "text-slate-500 hover:text-slate-800",
@@ -990,47 +990,48 @@ export default function ChatPage() {
               />
             </div>
 
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex shrink-0 items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => setInspectorCollapsed((value) => !value)}
                 title={inspectorCollapsed ? "编辑本次运行配置" : "隐藏配置栏"}
+                aria-label={inspectorCollapsed ? "编辑本次运行配置" : "隐藏配置栏"}
                 className={cn(
-                  "hidden h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold shadow-sm xl:inline-flex",
+                  "hidden h-8 w-8 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm xl:inline-flex",
                   inspectorCollapsed
                     ? "border-slate-200 bg-white/80 text-slate-700 hover:bg-white"
                     : "border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100",
                 )}
               >
                 {inspectorCollapsed ? <SlidersHorizontal size={14} /> : <PanelRightClose size={14} />}
-                {inspectorCollapsed ? "配置" : "隐藏配置"}
               </button>
               <button
                 type="button"
                 onClick={() => setShowVoiceCall(true)}
                 title="发起语音通话"
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-600 shadow-sm hover:bg-emerald-100"
+                aria-label="发起语音通话"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-xs font-semibold text-emerald-600 shadow-sm hover:bg-emerald-100"
               >
                 <Phone size={14} />
-                通话
               </button>
               <button
                 type="button"
                 onClick={() => setShowWiki(true)}
                 disabled={messages.length === 0}
                 title="把当前对话沉淀为 Wiki 知识页面"
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 text-xs font-semibold text-indigo-600 shadow-sm hover:bg-indigo-100 disabled:opacity-40"
+                aria-label="把当前对话沉淀为 Wiki 知识页面"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 text-xs font-semibold text-indigo-600 shadow-sm hover:bg-indigo-100 disabled:opacity-40"
               >
                 <BookOpen size={14} />
-                沉淀 Wiki
               </button>
               <button
                 type="button"
                 onClick={startNew}
-                className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white/80 px-3.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-white"
+                title="新对话"
+                aria-label="新对话"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white/80 text-xs font-semibold text-slate-700 shadow-sm hover:bg-white"
               >
                 <Plus size={14} />
-                新对话
               </button>
             </div>
           </div>
@@ -1055,7 +1056,7 @@ export default function ChatPage() {
               onStarter={(prompt) => void send(prompt)}
             />
           ) : (
-            <div className="mx-auto w-full max-w-5xl px-5 pt-5 pb-40">
+            <div className="chat-compact mx-auto w-full max-w-[1120px] px-3 pt-3 pb-32 sm:px-4 lg:px-5">
               {messages.map((message) => (
                 <MessageBubble key={message.id} message={message} />
               ))}
@@ -1065,8 +1066,8 @@ export default function ChatPage() {
         </div>
 
         {/* Floating composer — overlays the message scroll area instead of a full bottom bar. */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 px-4">
-          <div className="pointer-events-auto mx-auto w-full max-w-5xl">
+        <div className="pointer-events-none absolute inset-x-0 bottom-2 z-20 px-3 sm:px-4">
+          <div className="pointer-events-auto mx-auto w-full max-w-[1120px]">
             <div className="mb-1 flex items-center justify-end">
               <ProfilePicker
                 refNode={profilePickerRef}
@@ -1184,11 +1185,11 @@ function ConversationPanel({
 
   if (collapsed) {
     return (
-      <aside className="hidden min-h-0 flex-col items-center overflow-hidden rounded-3xl border border-white/80 bg-white/64 py-3 shadow-[0_18px_46px_rgba(83,101,132,0.10)] backdrop-blur lg:flex">
+      <aside className="hidden min-h-0 flex-col items-center overflow-hidden rounded-[22px] border border-white/75 bg-white/62 py-2.5 shadow-[0_14px_34px_rgba(83,101,132,0.09)] backdrop-blur lg:flex">
         <button
           type="button"
           onClick={onToggle}
-          className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[#eef2ff] text-[#4f46e5] hover:bg-[#e0e7ff]"
+          className="flex h-8 w-8 items-center justify-center rounded-2xl bg-[#eef2ff] text-[#4f46e5] hover:bg-[#e0e7ff]"
           title="展开对话记录"
           aria-label="展开对话记录"
         >
@@ -1203,7 +1204,7 @@ function ConversationPanel({
         <button
           type="button"
           onClick={onNew}
-          className="mt-4 flex h-9 w-9 items-center justify-center rounded-2xl border border-slate-200 bg-white/80 text-slate-600 hover:bg-white"
+          className="mt-4 flex h-8 w-8 items-center justify-center rounded-2xl border border-slate-200 bg-white/80 text-slate-600 hover:bg-white"
           title="新对话"
           aria-label="新对话"
         >
@@ -1214,8 +1215,8 @@ function ConversationPanel({
   }
 
   return (
-    <aside className="hidden min-h-0 flex-col overflow-hidden rounded-3xl border border-white/80 bg-white/64 shadow-[0_18px_46px_rgba(83,101,132,0.10)] backdrop-blur lg:flex">
-      <div className="border-b border-slate-200/70 p-3">
+    <aside className="hidden min-h-0 flex-col overflow-hidden rounded-[22px] border border-white/75 bg-white/62 shadow-[0_14px_34px_rgba(83,101,132,0.09)] backdrop-blur lg:flex">
+      <div className="border-b border-slate-200/70 p-2.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
             <History size={15} className="text-slate-400" />
@@ -1242,7 +1243,7 @@ function ConversationPanel({
             </button>
           </div>
         </div>
-        <div className="mt-3 flex h-8 items-center gap-2 rounded-xl border border-slate-200 bg-white/75 px-2.5">
+        <div className="mt-2.5 flex h-8 items-center gap-2 rounded-xl border border-slate-200 bg-white/75 px-2.5">
           <Search size={13} className="shrink-0 text-slate-400" />
           <input
             value={query}
@@ -1253,9 +1254,9 @@ function ConversationPanel({
         </div>
       </div>
 
-      <div className="no-scrollbar min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2.5">
+      <div className="no-scrollbar min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
         {filtered.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-200 bg-white/55 p-5 text-center text-sm leading-6 text-slate-400">
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-white/55 p-4 text-center text-xs leading-5 text-slate-400">
             {query ? "没有匹配的对话" : "发送第一条消息后，对话会自动保存在这里。"}
           </div>
         ) : (
@@ -1263,14 +1264,14 @@ function ConversationPanel({
             <div
               key={conversation.id}
               className={cn(
-                "group flex items-start gap-1 rounded-2xl border pr-1 transition",
+                "group flex items-start gap-1 rounded-xl border pr-1 transition",
                 selectedId === conversation.id
                   ? "border-[#c7d2fe] bg-[#eef2ff] shadow-sm"
                   : "border-transparent hover:border-slate-200 hover:bg-white/70",
               )}
             >
-              <button type="button" onClick={() => onSelect(conversation.id)} className="min-w-0 flex-1 px-2.5 py-2 text-left">
-                <span className="block truncate text-sm font-semibold text-slate-800">
+              <button type="button" onClick={() => onSelect(conversation.id)} className="min-w-0 flex-1 px-2.5 py-1.5 text-left">
+                <span className="block truncate text-[13px] font-semibold text-slate-800">
                   {conversation.title || "未命名对话"}
                 </span>
               </button>
@@ -1316,28 +1317,28 @@ function EmptyState({
   onStarter: (prompt: string) => void;
 }) {
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-5 px-5 py-6">
-      <div className="rounded-3xl border border-white/80 bg-white/72 p-6 shadow-[0_18px_46px_rgba(83,101,132,0.10)]">
+    <div className="mx-auto flex h-full max-w-[1120px] flex-col gap-3 px-3 py-4 sm:px-4">
+      <div className="rounded-[22px] border border-white/80 bg-white/70 p-4 shadow-[0_12px_30px_rgba(83,101,132,0.08)]">
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#4f46e5]">Agent Workbench</p>
-        <div className="mt-3 grid gap-6 lg:grid-cols-[1fr_320px]">
+        <div className="mt-3 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
           <div>
-            <h1 className="max-w-2xl text-2xl font-bold text-slate-900 md:text-3xl">
+            <h1 className="max-w-2xl text-xl font-bold leading-tight text-slate-900 md:text-2xl">
               从一个目标开始，串起规划、知识检索、工具执行和结果交付。
             </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
               选择模型与 Agent，按任务复杂度切换思考模式，让 NexAgent 在知识库、MCP、Skills 和沙盒工具之间协同完成任务。
             </p>
-            <div className="mt-5 flex flex-wrap gap-3">
+            <div className="mt-3 flex flex-wrap gap-2">
               <Link
                 href="/creator"
-                className="brand-gradient inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(79,70,229,0.32)] hover:brightness-[1.06]"
+                className="brand-gradient inline-flex h-9 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(79,70,229,0.24)] hover:brightness-[1.06]"
               >
                 <Sparkles size={15} />
-                AI 创建工具
+                AI 创建 Agent / Skill
               </Link>
               <Link
                 href="/agents"
-                className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white/80 px-4 text-sm font-semibold text-slate-700 hover:bg-white"
+                className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white/80 px-3.5 text-sm font-semibold text-slate-700 hover:bg-white"
               >
                 <Bot size={15} />
                 配置 Agent
@@ -1357,19 +1358,19 @@ function EmptyState({
       </div>
 
       <div>
-        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">快速开始</p>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">快速开始</p>
         <div className="grid gap-3 md:grid-cols-3">
           {STARTERS.map(({ title, desc, prompt, icon: Icon }) => (
             <button
               key={title}
               type="button"
               onClick={() => onStarter(prompt)}
-              className="group rounded-2xl border border-white/80 bg-white/76 p-5 text-left shadow-[0_12px_28px_rgba(83,101,132,0.09)] transition hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_18px_42px_rgba(83,101,132,0.14)]"
+              className="group rounded-2xl border border-white/80 bg-white/72 p-4 text-left shadow-[0_8px_22px_rgba(83,101,132,0.08)] transition hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_14px_32px_rgba(83,101,132,0.12)]"
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#eef2ff] text-[#4f46e5]">
-                <Icon size={18} />
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#eef2ff] text-[#4f46e5]">
+                <Icon size={17} />
               </div>
-              <h2 className="mt-4 text-sm font-semibold text-slate-900">{title}</h2>
+              <h2 className="mt-3 text-sm font-semibold text-slate-900">{title}</h2>
               <p className="mt-1 text-xs leading-5 text-slate-500">{desc}</p>
             </button>
           ))}
@@ -1416,12 +1417,12 @@ function Inspector({
   if (collapsed) return null;
 
   return (
-    <aside className="hidden min-h-0 flex-col overflow-hidden rounded-3xl border border-white/80 bg-white/64 shadow-[0_18px_46px_rgba(83,101,132,0.10)] backdrop-blur xl:flex">
-      <div className="border-b border-slate-200/70 p-6">
+    <aside className="hidden min-h-0 flex-col overflow-hidden rounded-[22px] border border-white/75 bg-white/62 shadow-[0_14px_34px_rgba(83,101,132,0.09)] backdrop-blur xl:flex">
+      <div className="border-b border-slate-200/70 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#4f46e5]">Chat Profile</p>
-            <h2 className="mt-3 text-xl font-bold leading-tight text-slate-900">{profile.name}</h2>
+            <h2 className="mt-2 text-lg font-bold leading-tight text-slate-900">{profile.name}</h2>
           </div>
           <button
             type="button"
@@ -1433,15 +1434,15 @@ function Inspector({
             <PanelRightClose size={14} />
           </button>
         </div>
-        <p className="mt-3 text-sm leading-7 text-slate-500">
+        <p className="mt-2 text-xs leading-6 text-slate-500">
           当前对话使用 {agent?.name ?? "当前 Agent"}。这里只管理运行资源，Agent 与模型在顶部选择。
         </p>
       </div>
-      <div className="no-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+      <div className="no-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         <ConfigBlock
           title="配置作用方式"
           description="默认不覆盖 Agent 自己的资源配置；切换为自定义后才发送右侧选择项。"
-          className="p-5"
+          className="p-4"
         >
           <ConfigOption
             label="按 Agent 默认配置"
@@ -2025,11 +2026,11 @@ function Picker({
   children: React.ReactNode;
 }) {
   return (
-    <div className="relative" ref={refNode}>
+    <div className="relative min-w-0" ref={refNode}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="inline-flex h-9 max-w-72 items-center gap-2 rounded-xl border border-slate-200 bg-white/80 px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-white"
+        className="inline-flex h-8 max-w-[170px] items-center gap-1.5 rounded-xl border border-slate-200 bg-white/80 px-2.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-white"
       >
         {icon}
         <span className="truncate">{label}</span>

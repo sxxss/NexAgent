@@ -25,13 +25,13 @@ export function ChatInput({ value, onChange, onSend, onStop, isStreaming, disabl
     const el = ref.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 104)}px`;
   }, [value]);
 
   const canSend = !isStreaming && !!value.trim() && !disabled;
 
   return (
-    <div className="input-glow overflow-hidden rounded-2xl border border-white/70 bg-white/60 shadow-[0_18px_46px_rgba(83,101,132,0.16)] backdrop-blur-2xl">
+    <div className="input-glow overflow-hidden rounded-[18px] border border-white/70 bg-white/72 shadow-[0_12px_32px_rgba(83,101,132,0.13)] backdrop-blur-2xl">
       <textarea
         ref={ref}
         rows={1}
@@ -46,13 +46,13 @@ export function ChatInput({ value, onChange, onSend, onStop, isStreaming, disabl
         }}
         placeholder="输入任务、问题，或交给 Agent 处理的目标..."
         className={cn(
-          "max-h-28 min-h-8 w-full resize-none bg-transparent px-4 pt-2 pb-0.5",
+          "max-h-24 min-h-8 w-full resize-none bg-transparent px-3.5 pt-2 pb-0",
           "text-sm leading-6 text-slate-900 outline-none",
           "placeholder:text-slate-400",
           "disabled:cursor-not-allowed disabled:opacity-60",
         )}
       />
-      <div className="flex items-center justify-between gap-3 border-t border-white/50 bg-white/30 px-3 py-1.5">
+      <div className="flex items-center justify-between gap-3 border-t border-white/50 bg-white/30 px-2.5 py-1.5">
         <div className="flex items-center gap-2">
           <ChatInputHint />
           {voice.error ? <span className="max-w-[180px] truncate text-[11px] text-rose-500">{voice.error}</span> : null}

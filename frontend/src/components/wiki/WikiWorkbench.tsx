@@ -309,7 +309,7 @@ export function WikiWorkbench({
         </div>
       </aside>
 
-      <section className="min-h-0 min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5">
           <div className="flex min-w-0 items-center gap-7">
             {tabs.map((item) => (
@@ -337,9 +337,9 @@ export function WikiWorkbench({
 
         {error ? <div className="mx-5 mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</div> : null}
 
-        <div className="min-h-0 overflow-auto">
+        <div className="min-h-0 flex-1 overflow-hidden">
           {loading ? (
-            <div className="flex min-h-80 items-center justify-center text-sm text-slate-400">
+            <div className="flex h-full min-h-80 items-center justify-center text-sm text-slate-400">
               <Loader2 size={18} className="mr-2 animate-spin text-sky-600" />
               加载 Wiki...
             </div>
@@ -357,7 +357,7 @@ export function WikiWorkbench({
             />
           ) : null}
           {!loading && tab === "graph" ? (
-            <div className="p-4">
+            <div className="h-full overflow-auto p-4">
               <WikiGraphPanel
                 graph={graph}
                 options={graphOptions}
@@ -369,7 +369,7 @@ export function WikiWorkbench({
             </div>
           ) : null}
           {!loading && tab === "lint" ? (
-            <div className="p-4">
+            <div className="h-full overflow-auto p-4">
               <WikiLintPanel
                 kbId={kb.kb_id}
                 lint={lint}
@@ -379,7 +379,7 @@ export function WikiWorkbench({
             </div>
           ) : null}
           {!loading && tab === "crystallize" ? (
-            <div className="p-4">
+            <div className="h-full overflow-auto p-4">
               <WikiCrystallizePanel kbId={kb.kb_id} files={files} onCreated={(pageId) => void refresh(pageId)} />
             </div>
           ) : null}
@@ -394,7 +394,7 @@ function WikiResourcePane({ resources, pageDirectory }: { resources?: React.Reac
     <section className={wikiResourcePaneCompact}>
       <div className="flex min-h-0 flex-1 flex-col divide-y divide-slate-100">
         {resources ? <div className="shrink-0">{resources}</div> : null}
-        <div className="min-h-0 flex-1">{pageDirectory}</div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{pageDirectory}</div>
       </div>
     </section>
   );

@@ -12,11 +12,9 @@ import {
   Pencil,
   Plus,
   RefreshCw,
-  Sparkles,
   Trash2,
   Wrench,
 } from "lucide-react";
-import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { PageHeader } from "@/components/PageHeader";
@@ -174,10 +172,6 @@ export default function MCPPage() {
         description="管理 MCP server，测试连接状态，并控制每个 server 暴露给 Agent 的具体工具。"
         actions={
           <>
-            <Link href="/creator?type=mcp" className="inline-flex h-9 items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-semibold text-sky-700 hover:bg-sky-100">
-              <Sparkles size={14} />
-              AI 创建
-            </Link>
             <Button size="sm" onClick={() => setDialogOpen(true)}>
               <Plus size={14} />
               新增 MCP

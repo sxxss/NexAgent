@@ -344,6 +344,30 @@ textarea::placeholder {
   display: none;
 }
 
+.wiki-scrollbar {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.wiki-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.wiki-scrollbar::-webkit-scrollbar-track {
+  background: rgba(148, 163, 184, 0.14);
+  border-radius: 999px;
+}
+
+.wiki-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.48);
+  border-radius: 999px;
+}
+
+.wiki-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(71, 85, 105, 0.68);
+}
+
 /* Compact chat density: tighten vertical rhythm between message rows so more
    conversation fits on screen. Targets the per-message wrappers in MessageBubble. */
 .chat-compact > div {
